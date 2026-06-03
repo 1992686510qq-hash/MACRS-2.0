@@ -40,7 +40,7 @@ from lens_manager import LensManager, LensDefinition, LensResult
 from team_config import load_team_config, TeamConfig
 from validation_gate import ValidationGate
 from phase5_discourse import DiscoursePhase, DiscourseResult, apply_discourse_result
-from phase5_autofix import AutoFixPhase
+from phase7_autofix import AutoFixPhase
 from artifact_manager import ArtifactManager
 from llm_client import call_claude
 from json_utils import extract_json
@@ -1006,11 +1006,23 @@ def main():
         from agent_runner import _run_single_agent
         class _AgentRunnerAdapter:
             """Adapter: wraps _run_single_agent(agent_id, prompt, output_dir)
-            to match AutoFixPhase's expected agent_runner.run(prompt, source_dir) interface."""
+            to match AutoFixPhase's expected agent_runner.run(prompt, source_dir) interface.
+
+            _run_single_agent returns a dict wrapper:
+              {"status": "OK", "data": <parsed_json>, ...} or
+              {"status": "FAILED", "error": ..., "raw_output": ...}
+            This adapter extracts the actual LLM output (data or raw_output)
+            so AutoFixPhase receives the content directly.
+            """
             def __init__(self, fn):
                 self._fn = fn
             def run(self, prompt: str, source_dir: str):
                 result = self._fn("autofix", prompt, Path(source_dir))
+                if isinstance(result, dict):
+                    if result.get("status") == "OK" and "data" in result:
+                        return result["data"]
+                    # On failure, return raw output if available, else error string
+                    return result.get("raw_output") or result.get("error", str(result))
                 return result
         autofix_phase = AutoFixPhase(
             agent_runner=_AgentRunnerAdapter(_run_single_agent),

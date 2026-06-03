@@ -11,8 +11,8 @@ from typing import Optional, Any
 from enum import Enum
 from pathlib import Path
 import json
-import asyncio
 import logging
+import time
 from datetime import datetime
 
 from artifact_manager import FindingState as FixState
@@ -284,7 +284,6 @@ class AutoFixPhase:
                     f"Retrying in {wait_time:.2f}s"
                 )
                 if attempt < self.MAX_RETRY_ATTEMPTS - 1:
-                    import time
                     time.sleep(wait_time)
 
         # 所有重试都失败
@@ -757,7 +756,7 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     if len(sys.argv) < 3:
-        print("Usage: python phase5_autofix.py <source_dir> <artifact_path>")
+        print("Usage: python phase7_autofix.py <source_dir> <artifact_path>")
         sys.exit(1)
 
     source_dir = sys.argv[1]
