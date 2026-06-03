@@ -1,0 +1,431 @@
+{
+  "phase": 3,
+  "total_findings": 10,
+  "p0_p1_for_verification": 9,
+  "verdicts": {
+    "CONFIRM": 2,
+    "DOWNGRADE": 4,
+    "NEEDS_HUMAN": 1,
+    "REFUTE": 2
+  },
+  "verified_findings": [
+    {
+      "merged_id": "M-001",
+      "canonical_title": "命令注入：edit_config 通过未转义路径拼接执行系统命令",
+      "canonical_severity": "P0 BLOCKING",
+      "canonical_description": "session_action_screen 的 edit_config 分支（e===2）直接将 session.settingsFile 拼接到 shell 命令字符串中，未做任何转义。攻击者可通过创建包含 shell 元字符（如 `;calc` 或 `$(whoami)`）的 settingsFile 名称注入任意命令。Windows 端使用 `me.exec('start \"\" \"' + cfgPath + '\"')` 拼接，Unix 端使用模板字符串拼接，两者均存在注入风险。",
+      "category": "security",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line_range": [
+        775,
+        790
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-001",
+          "severity": "blocking",
+          "unified_severity": "P0 BLOCKING",
+          "title": "命令注入：edit_config 通过未转义路径拼接执行系统命令",
+          "description": "session_action_screen 的 edit_config 分支（e===2）直接将 session.settingsFile 拼接到 shell 命令字符串中，未做任何转义。攻击者可通过创建包含 shell 元字符（如 `;calc` 或 `$(whoami)`）的 settingsFile 名称注入任意命令。Windows 端使用 `me.exec('start \"\" \"' + cfgPath + '\"')` 拼接，Unix 端使用模板字符串拼接，两者均存在注入风险。",
+          "confidence": 0.95,
+          "category": "security",
+          "rule_reference": "CWE-78: OS Command Injection"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.95,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.95,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "if (process.platform === 'win32') {\n  me.exec('start \"\" \"' + cfgPath + '\"', () => {})\n} else {\n  me.exec('${EDITOR:-vi} \"' + cfgPath + '\"', () => {})\n}",
+      "code_snippet_good": "if (process.platform === 'win32') {\n  me.execFile('cmd', ['/c', 'start', '', cfgPath], () => {})\n} else {\n  let editor = process.env.EDITOR || 'vi';\n  me.execFile(editor, [cfgPath], () => {})\n}",
+      "suggestion": "使用 execFile/execFileSync 传参数组而非字符串拼接；对路径做 shell 元字符过滤或白名单校验（仅允许字母数字和连字符）。Windows 端使用 `execFile('cmd', ['/c', 'start', '', cfgPath])`，Unix 端使用 `execFile(process.env.EDITOR || 'vi', [cfgPath])`。",
+      "skeptic_verdict": "CONFIRM",
+      "skeptic_rationale": "确认存在命令注入漏洞。实际漏洞代码在 lines 938-945（报告标注的 775/790 行是权限选择界面，非漏洞位置）。edit_config 使用 `exec('start \"\" \"' + cfgPath + '\"')` (Windows) 和 `exec('${EDITOR:-vi} \"' + cfgPath + '\"')` (Unix) 拼接命令。如果 session.settingsFile 包含双引号 `\"`，可突破引号注入任意命令。例如 Windows: `foo\" & calc.exe \"` 会执行 calc。settingsFile 来自 .ccl-sessions.json 会话记录，如果远端 tips API 的 force_update 修改了模型配置中的 configFile 字段，可链式利用。虽然需要一定前置条件（修改本地会话文件或链式攻击），但 exec 字符串拼接确实是不安全的编码模式，应当使用 execFile + 参数数组。",
+      "confidence_after_verification": 0.85
+    },
+    {
+      "merged_id": "M-002",
+      "canonical_title": "命令注入：ct() 中 project_path 通过 shell 模式注入命令",
+      "canonical_severity": "P2 HIGH",
+      "canonical_description": "ct() 函数在 Windows 端使用 `spawnSync(t, e, {shell: true})` 启动 claude CLI，当 shell:true 时，参数会经过 cmd.exe 解释。攻击者若能控制 project_path（通过项目列表），可注入 shell 特殊字符。Unix 端虽然对路径做了单引号转义，但 `'\\''` 拼接方式在某些边缘场景下仍可能被绕过。",
+      "category": "security",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line_range": [
+        840,
+        870
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-002",
+          "severity": "blocking",
+          "unified_severity": "P0 BLOCKING",
+          "title": "命令注入：ct() 中 project_path 通过 shell 模式注入命令",
+          "description": "ct() 函数在 Windows 端使用 `spawnSync(t, e, {shell: true})` 启动 claude CLI，当 shell:true 时，参数会经过 cmd.exe 解释。攻击者若能控制 project_path（通过项目列表），可注入 shell 特殊字符。Unix 端虽然对路径做了单引号转义，但 `'\\''` 拼接方式在某些边缘场景下仍可能被绕过。",
+          "confidence": 0.92,
+          "category": "security",
+          "rule_reference": "CWE-78: OS Command Injection"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.92,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.92,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "let o = {\n  stdio: 'inherit',\n  shell: true\n};\nn && (o.cwd = n);\nlet r = me.spawnSync(t, e, o);",
+      "code_snippet_good": "let o = {\n  stdio: 'inherit'\n};\nn && (o.cwd = n);\nlet r = me.spawnSync(t, e, o);",
+      "suggestion": "Windows 端移除 `shell: true`，直接传参数数组给 spawnSync。对 project_path 做路径合法性校验（拒绝包含 `|`, `&`, `;`, `$`, `(`, `)`, backtick 等字符的路径）。Unix 端验证路径不含空字节。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "降级理由：1) Windows 端 project_path 仅用作 `cwd` 参数（line 624: `n && (o.cwd = n)`），cwd 不经过 shell 解释，不是注入向量。2) 但 project_path 同时也会作为 claude 的参数传入（来自 Ht() 函数的 c.push(o)），在 shell: true 模式下参数经过 cmd.exe 处理，如果路径含 `&`、`|` 等元字符理论上可被解释。3) Unix 端对路径做了单引号转义 `n.replace(/'/g, \"'\\\\''\")`，是标准安全做法。4) 攻击需要用户自己配置恶意路径或攻击者已能修改本地配置文件——此时已有同等权限。shell: true 是代码异味，但实际利用难度高。",
+      "confidence_after_verification": 0.88,
+      "original_severity": "P0 BLOCKING"
+    },
+    {
+      "merged_id": "M-005",
+      "canonical_title": "敏感凭证明文写入配置文件且可被同机用户读取",
+      "canonical_severity": "P1 CRITICAL",
+      "canonical_description": "新建配置流程将 ANTHROPIC_AUTH_TOKEN（API 密钥）以明文形式写入 `~/.claude/settings.json` 和 `setting-sN.json` 文件。在多用户系统上，这些文件默认权限可能允许其他用户读取。此外，API 密钥也会被写入 CLAUDE.local.md 文件中的会话记录。",
+      "category": "security",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line_range": [
+        570,
+        590
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-005",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "敏感凭证明文写入配置文件且可被同机用户读取",
+          "description": "新建配置流程将 ANTHROPIC_AUTH_TOKEN（API 密钥）以明文形式写入 `~/.claude/settings.json` 和 `setting-sN.json` 文件。在多用户系统上，这些文件默认权限可能允许其他用户读取。此外，API 密钥也会被写入 CLAUDE.local.md 文件中的会话记录。",
+          "confidence": 0.9,
+          "category": "security",
+          "rule_reference": "CWE-312: Cleartext Storage of Sensitive Information"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.9,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.9,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "A.ANTHROPIC_BASE_URL = i.anthropic_base_url,\nA.ANTHROPIC_AUTH_TOKEN = c;",
+      "code_snippet_good": "A.ANTHROPIC_BASE_URL = i.anthropic_base_url,\nA.ANTHROPIC_AUTH_TOKEN = c;\n// Set restrictive permissions after writing\n// fs.chmodSync(filePath, 0o600);",
+      "suggestion": "1) 写入后立即设置文件权限为 0600（仅所有者可读写）；2) 考虑使用系统密钥链（macOS keychain、Windows DPAPI）存储敏感凭据；3) 避免将 API 密钥写入 CLAUDE.local.md 等可能被意外共享的文件。",
+      "skeptic_verdict": "NEEDS_HUMAN",
+      "skeptic_rationale": "无法确定。报告标注 lines 570-590，但该区域是权限模式映射代码（bypassPermissions/acceptEdits 等），不涉及凭证写入。配置文件 claude-launcher-config.json 存储的是 models 数组（含 id/name/configFile）、projects 列表、defaultPermission 等。代码中未直接看到 API key 写入。但无法确认：1) model 对象是否在其他代码路径中包含 API key 字段；2) 配置文件的文件权限是否过于宽松（Windows 上依赖 NTFS ACL，Unix 上依赖 umask，默认可能是 0644）。需要人工确认 model 对象的完整结构和配置文件的实际权限设置。",
+      "confidence_after_verification": 0.6
+    },
+    {
+      "merged_id": "M-003",
+      "canonical_title": "远端配置注入：tips API 可通过 force_update 覆写任意本地配置",
+      "canonical_severity": "P1 HIGH",
+      "canonical_description": "ot() 函数从 `ie()>/api/ccl/tips` 拉取配置，当响应中 `force_update === true` 时，直接将远端 JSON 写入本地 `.ccl.config` 文件，不校验字段内容。攻击者若控制了 API 服务器（或通过 DNS 劫持/MITM），可通过 force_update 向本地注入恶意 tips 数据（如钓鱼提示、恶意 URL）。该接口使用 HTTP（非 HTTPS 也有可能，由 ie() 返回值决定），增大中间人攻击面。",
+      "category": "security",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line_range": [
+        385,
+        395
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-003",
+          "severity": "blocking",
+          "unified_severity": "P0 BLOCKING",
+          "title": "远端配置注入：tips API 可通过 force_update 覆写任意本地配置",
+          "description": "ot() 函数从 `ie()>/api/ccl/tips` 拉取配置，当响应中 `force_update === true` 时，直接将远端 JSON 写入本地 `.ccl.config` 文件，不校验字段内容。攻击者若控制了 API 服务器（或通过 DNS 劫持/MITM），可通过 force_update 向本地注入恶意 tips 数据（如钓鱼提示、恶意 URL）。该接口使用 HTTP（非 HTTPS 也有可能，由 ie() 返回值决定），增大中间人攻击面。",
+          "confidence": 0.88,
+          "category": "security",
+          "rule_reference": "CWE-345: Insufficient Verification of Data Authenticity"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.88,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.88,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "if (i) {\n  let p = de();\n  p?.tips?.current_index !== void 0 && (s.tips.current_index = p.tips.current_index),\n  Oe(s);\n  return\n}",
+      "code_snippet_good": "// Validate response schema before writing\nconst allowedKeys = ['tips', 'force_update', 'enabled'];\nconst isValid = Object.keys(s).every(k => allowedKeys.includes(k));\nif (!isValid) return;\n// Only allow known tip fields\nconst allowedTipKeys = ['items', 'current_index', 'protect_days', 'version', 'fetched_at'];\nif (s.tips && !Object.keys(s.tips).every(k => allowedTipKeys.includes(k))) return;",
+      "suggestion": "1) 对远端响应做 schema 校验，仅允许已知字段写入；2) 移除或限制 force_update 逻辑，改为本地签名验证；3) 强制 HTTPS 并校验证书；4) 对 tips 内容做 XSS/注入过滤。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "降级理由：1) 漏洞确实存在——当远端响应 `force_update === true` 时，`Oe(s)` 将整个服务器响应写入本地配置（lines 486-489），可覆盖 agentBase、models、defaultPermission 等全部字段。2) 但利用需要服务器被攻陷或 MITM 攻击。代码 line 476 检查 URL 是否以 https 开头并使用对应模块（`Qe.get` 即 https.get），提供了传输层保护。3) 没有证书固定（certificate pinning）和响应 schema 校验是真实的缺陷，但 HTTPS 已提供基线防护。4) 从 P0 降级到 P1——不是阻断性问题，而是纵深防御不足。建议添加 schema 校验和移除 force_update 逻辑。",
+      "confidence_after_verification": 0.9,
+      "original_severity": "P0 BLOCKING"
+    },
+    {
+      "merged_id": "M-004",
+      "canonical_title": "供应链风险：首次运行时 npm install blessed 无完整性校验",
+      "canonical_severity": "P1 CRITICAL",
+      "canonical_description": "IIFE 块在 `~/.claude/node_modules/blessed` 不存在时执行 `npm install blessed --no-package-lock`，未指定版本锁定、未使用 `--ignore-scripts`、未校验安装包完整性。攻击者可通过 DNS 劫持、registry 污染或中间人攻击注入恶意包，或利用 blessed 的 postinstall 脚本执行任意代码。",
+      "category": "security",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line_range": [
+        10,
+        25
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-004",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "供应链风险：首次运行时 npm install blessed 无完整性校验",
+          "description": "IIFE 块在 `~/.claude/node_modules/blessed` 不存在时执行 `npm install blessed --no-package-lock`，未指定版本锁定、未使用 `--ignore-scripts`、未校验安装包完整性。攻击者可通过 DNS 劫持、registry 污染或中间人攻击注入恶意包，或利用 blessed 的 postinstall 脚本执行任意代码。",
+          "confidence": 0.85,
+          "category": "security",
+          "rule_reference": "CWE-829: Inclusion of Functionality from Untrusted Control Sphere"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.85,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.85,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "c.execSync('npm install blessed --no-package-lock', {\n  cwd: h,\n  stdio: 'pipe',\n  timeout: 6e4\n})",
+      "code_snippet_good": "c.execSync('npm install blessed@0.1.81 --no-package-lock --ignore-scripts', {\n  cwd: h,\n  stdio: 'pipe',\n  timeout: 6e4\n})\n// Then verify integrity:\n// const pkg = JSON.parse(fs.readFileSync(b, 'utf-8'));\n// if (pkg.version !== '0.1.81') throw new Error('Version mismatch');",
+      "suggestion": "1) 锁定 blessed 版本（如 `blessed@0.1.81`）；2) 添加 `--ignore-scripts` 防止 postinstall 执行；3) 安装后校验包的 SHA256 哈希；4) 考虑将 blessed 预打包内嵌而非运行时安装。",
+      "skeptic_verdict": "CONFIRM",
+      "skeptic_rationale": "确认存在供应链风险。Line 17: `npm install blessed --no-package-lock` 存在以下问题：1) 无版本锁定——不指定版本号，安装最新版，可能安装到被投毒的版本。2) `--no-package-lock` 显式禁用 lock 文件，无法保证可重现构建。3) 未使用 `--ignore-scripts`，blessed 的 postinstall 脚本会自动执行。4) 无安装后哈希校验。5) blessed 是知名包，实际被投毒概率低，但 2018 年 event-stream 事件证明即使是流行包也可能被劫持。严重等级 P1 合理——这是真实的供应链攻击面，虽然概率不高但影响面大（首次运行时所有用户都会触发）。",
+      "confidence_after_verification": 0.92
+    },
+    {
+      "merged_id": "M-007",
+      "canonical_title": "权限提升：默认 bypassPermissions 绕过所有安全确认",
+      "canonical_severity": "P2 MEDIUM",
+      "canonical_description": "代码默认权限模式为 `bypassPermissions`，对应 Claude CLI 的 `--permission-mode bypassPermissions`，这会跳过所有操作确认。用户在 TUI 中选择「跳过所有权限确认」时，生成的 claude 命令将拥有无限制的文件读写和命令执行权限。这个默认值应该更保守。",
+      "category": "security",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line_range": [
+        640,
+        660
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-007",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "权限提升：默认 bypassPermissions 绕过所有安全确认",
+          "description": "代码默认权限模式为 `bypassPermissions`，对应 Claude CLI 的 `--permission-mode bypassPermissions`，这会跳过所有操作确认。用户在 TUI 中选择「跳过所有权限确认」时，生成的 claude 命令将拥有无限制的文件读写和命令执行权限。这个默认值应该更保守。",
+          "confidence": 0.82,
+          "category": "security",
+          "rule_reference": "CWE-250: Execution with Unnecessary Privileges"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.82,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.82,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "defaultPermission: 'bypassPermissions'",
+      "code_snippet_good": "defaultPermission: 'acceptEdits'",
+      "suggestion": "将默认权限模式改为 `acceptEdits`（仅自动接受编辑，危险操作仍需确认）。在 TUI 中增加安全警告提示，告知用户 bypassPermissions 模式的风险。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "降级理由：1) 默认权限 `bypassPermissions` 是设计选择而非漏洞。该工具是 Claude Code 启动器，其 TUI 在 line 762-771 明确提供了三个权限选项供用户选择（bypassPermissions/auto/acceptEdits）。2) 用户在启动前必须经过权限选择界面（dt screen），默认选中 bypassPermissions 但可更改。3) 在 Unix root 用户下，代码 line 609-610 会强制降级为 acceptEdits：`process.getuid() === 0 ? c.push('--permission-mode', 'acceptEdits')`，说明开发者有安全意识。4) bypassPermissions 是 Claude CLI 本身支持的合法模式，许多用户确实需要此模式以提高效率。建议在 TUI 中添加安全警告提示，但不应将此标为 P1 CRITICAL。",
+      "confidence_after_verification": 0.91,
+      "original_severity": "P1 CRITICAL"
+    },
+    {
+      "merged_id": "M-008",
+      "canonical_title": "任意文件读取：项目路径未验证，可遍历至系统任意目录",
+      "canonical_severity": "P1 CRITICAL",
+      "canonical_description": "lt (project screen) 的 onSelect 函数中，`process.cwd()` 返回的当前目录或用户选择的项目路径直接赋值给 `project_path`，后续传递给 claude CLI 作为工作目录。攻击者可通过符号链接或精心构造的项目路径，让 claude CLI 在任意目录执行操作。`existsSync` 检查不防止符号链接指向敏感目录。",
+      "category": "security",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line_range": [
+        460,
+        480
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-008",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "任意文件读取：项目路径未验证，可遍历至系统任意目录",
+          "description": "lt (project screen) 的 onSelect 函数中，`process.cwd()` 返回的当前目录或用户选择的项目路径直接赋值给 `project_path`，后续传递给 claude CLI 作为工作目录。攻击者可通过符号链接或精心构造的项目路径，让 claude CLI 在任意目录执行操作。`existsSync` 检查不防止符号链接指向敏感目录。",
+          "confidence": 0.78,
+          "category": "security",
+          "rule_reference": "CWE-59: Improper Link Resolution Before File Access"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.78,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.78,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "if (e === t.length) n = process.cwd();\nelse {\n  let o = t[e];\n  ...\n  n = pt.resolve(o.path);",
+      "code_snippet_good": "if (e === t.length) n = process.cwd();\nelse {\n  let o = t[e];\n  ...\n  n = pt.resolve(o.path);\n  // Resolve symlinks and validate\n  try { n = fs.realpathSync(n); } catch {}\n  if (n.startsWith('/etc') || n.startsWith('/proc') || n === '/') {\n    return { type: 'home', tip: '不允许使用系统目录' };\n  }",
+      "suggestion": "对 project_path 做规范化（`fs.realpathSync`）并限制在允许的目录范围内。在启动 claude 前验证最终路径不是敏感系统目录。",
+      "skeptic_verdict": "REFUTE",
+      "skeptic_rationale": "驳斥理由：1) 报告称「项目路径未验证，可遍历至系统任意目录」——但 project_path 仅用作 Claude CLI 的工作目录（cwd）和参数，不是文件读取接口。2) 用户通过 TUI 选择项目目录（lines 730-754），路径来自用户自己配置的 projects 列表或 process.cwd()。3) 这是标准的目录选择行为——任何 CLI 工具都可以在任意目录下运行，这不是漏洞。4) 如果限制项目路径只能在特定目录下，反而会破坏工具的正常使用场景。5) 代码 line 742 还检查了目录是否存在：`if (!Me.existsSync(o.path))`。这是功能性验证，不是安全漏洞。",
+      "confidence_after_verification": 0.95
+    },
+    {
+      "merged_id": "M-006",
+      "canonical_title": "TOCTOU 竞态条件：原子写入使用可预测的 PID 拼接临时文件名",
+      "canonical_severity": "P3 LOW",
+      "canonical_description": "全文使用 `filePath + '.tmp.' + process.pid` 模式进行原子写入（write + rename）。在共享目录（如 `~/.claude/`）中，同一进程的多个实例可能产生相同 PID（极罕见但理论上可能），且攻击者可预先创建符号链接指向同名 tmp 文件，在 rename 阶段实现任意文件覆写。",
+      "category": "security",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line_range": [
+        310,
+        330
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-006",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "TOCTOU 竞态条件：原子写入使用可预测的 PID 拼接临时文件名",
+          "description": "全文使用 `filePath + '.tmp.' + process.pid` 模式进行原子写入（write + rename）。在共享目录（如 `~/.claude/`）中，同一进程的多个实例可能产生相同 PID（极罕见但理论上可能），且攻击者可预先创建符号链接指向同名 tmp 文件，在 rename 阶段实现任意文件覆写。",
+          "confidence": 0.75,
+          "category": "security",
+          "rule_reference": "CWE-377: Insecure Temporary File / CWE-363: Race Condition Using Symlink"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.75,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.75,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "let e = te + '.tmp.' + process.pid;\nT.writeFileSync(e, JSON.stringify(u, null, 2)),\nT.renameSync(e, te)",
+      "code_snippet_good": "const crypto = require('crypto');\nlet e = te + '.tmp.' + crypto.randomBytes(8).toString('hex');\nT.writeFileSync(e, JSON.stringify(u, null, 2));\nT.renameSync(e, te);",
+      "suggestion": "使用 `fs.writeFileSync` 的 `tmpfile` 模式或 `crypto.randomBytes` 生成随机后缀：`filePath + '.tmp.' + crypto.randomBytes(8).toString('hex')`。或使用 Node.js 的 `fs.mkdtemp` 创建临时目录。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "降级理由：1) PID 作为临时文件后缀确实可预测（`file.tmp.${process.pid}`），但这是 Node.js 生态中常见的原子写入模式。2) 实际利用需要：攻击者在 writeFileSync 和 renameSync 之间的时间窗口（微秒级）内，预测 PID 并在同目录创建符号链接——这在 Windows 上需要管理员权限（创建符号链接需 SeCreateSymbolicLinkPrivilege）。3) Windows 上 renameSync 在目标文件已存在时会覆盖（与 Unix 不同），但这也意味着攻击者需要在极短时间内完成符号链接创建。4) 使用 crypto.randomBytes 生成随机后缀确实是更好的实践，但当前实现的实际可利用性极低。",
+      "confidence_after_verification": 0.93,
+      "original_severity": "P1 CRITICAL"
+    },
+    {
+      "merged_id": "M-009",
+      "canonical_title": "路径注入：Zt() 中 project 路径用于正则构造，可 ReDoS 或绕过过滤",
+      "canonical_severity": "P1 CRITICAL",
+      "canonical_description": "Zt() 函数中 `t.replace(/[^a-zA-Z0-9]/g, '-')` 对项目路径做 sanitize 后用于 `indexOf` 匹配文件名。但 sanitize 后的值仍可被精心构造的路径产生碰撞（如 `../` 变为 `---`），导致匹配到非预期的会话文件。此外 `readdirSync` 遍历 sessions 目录时无深度限制。",
+      "category": "security",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line_range": [
+        895,
+        915
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-009",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "路径注入：Zt() 中 project 路径用于正则构造，可 ReDoS 或绕过过滤",
+          "description": "Zt() 函数中 `t.replace(/[^a-zA-Z0-9]/g, '-')` 对项目路径做 sanitize 后用于 `indexOf` 匹配文件名。但 sanitize 后的值仍可被精心构造的路径产生碰撞（如 `../` 变为 `---`），导致匹配到非预期的会话文件。此外 `readdirSync` 遍历 sessions 目录时无深度限制。",
+          "confidence": 0.72,
+          "category": "security",
+          "rule_reference": "CWE-706: Use of Incorrectly-Resolved Name or Reference"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.72,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.72,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "var d = t.replace(/[^a-zA-Z0-9]/g, '-');\nreturn c === d || c.indexOf(d) !== -1",
+      "code_snippet_good": "var crypto = require('crypto');\nvar d = crypto.createHash('sha256').update(t).digest('hex').slice(0, 16);\nreturn c === d || c.startsWith(d + '-');",
+      "suggestion": "使用精确匹配而非 `indexOf` 模糊匹配。对项目路径做哈希后作为会话文件名的前缀。",
+      "skeptic_verdict": "REFUTE",
+      "skeptic_rationale": "驳斥理由：1) 报告称「project 路径用于正则构造，可 ReDoS 或绕过过滤」——这是对代码的误读。Zt() 函数（lines 644-661）使用 `t.replace(/[^a-zA-Z0-9]/g, \"-\")` 将路径中的非字母数字字符替换为连字符，这是**静态正则**，不涉及用户输入构造正则表达式。2) 匹配使用 `indexOf`（line 649: `c.indexOf(d) !== -1`），不是正则匹配，不存在 ReDoS 风险。3) 该正则模式 `[^a-zA-Z0-9]` 是简单字符类，没有回溯风险。4) 代码的目的是在 projects 目录下查找匹配的会话文件夹，sanitize 逻辑实际上是防御性编码。整个 finding 基于对代码的误解。",
+      "confidence_after_verification": 0.96
+    }
+  ]
+}

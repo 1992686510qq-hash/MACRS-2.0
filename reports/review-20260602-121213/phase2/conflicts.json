@@ -1,0 +1,212 @@
+[
+  {
+    "conflict_id": "CFL-001",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "tools/search/fsearch/fsearch.sh",
+    "missing_agent": "C",
+    "reported_by": [
+      "B"
+    ],
+    "finding_ids": [
+      "B-001"
+    ],
+    "max_severity": "P0 BLOCKING",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-002",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "tools/vision/glm-vision-mcp.py",
+    "missing_agent": "C",
+    "reported_by": [
+      "B"
+    ],
+    "finding_ids": [
+      "B-002"
+    ],
+    "max_severity": "P0 BLOCKING",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-003",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "tools/vision/describe-image.py",
+    "missing_agent": "C",
+    "reported_by": [
+      "B"
+    ],
+    "finding_ids": [
+      "B-003"
+    ],
+    "max_severity": "P0 BLOCKING",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-004",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "scripts/quick-test.sh",
+    "missing_agent": "C",
+    "reported_by": [
+      "B"
+    ],
+    "finding_ids": [
+      "B-004"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-005",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "tools/fetch/smart-fetch.sh",
+    "missing_agent": "C",
+    "reported_by": [
+      "B"
+    ],
+    "finding_ids": [
+      "B-005"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-006",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "tools/vision/glm-vision-mcp.py",
+    "missing_agent": "C",
+    "reported_by": [
+      "B"
+    ],
+    "finding_ids": [
+      "B-006"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-007",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "tools/platform/zlib/download-book.js",
+    "missing_agent": "C",
+    "reported_by": [
+      "B"
+    ],
+    "finding_ids": [
+      "B-007"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-008",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "tools/platform/zsxq/delete-article.js",
+    "missing_agent": "C",
+    "reported_by": [
+      "B"
+    ],
+    "finding_ids": [
+      "B-008"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-009",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "scripts/pw-multi.js",
+    "missing_agent": "B",
+    "reported_by": [
+      "C"
+    ],
+    "finding_ids": [
+      "C-002"
+    ],
+    "max_severity": "P0 BLOCKING",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-010",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "tools/vision/describe-image.py",
+    "missing_agent": "B",
+    "reported_by": [
+      "C"
+    ],
+    "finding_ids": [
+      "C-003"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-011",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "shared-scripts/utils/playwright-helpers.js",
+    "missing_agent": "B",
+    "reported_by": [
+      "C"
+    ],
+    "finding_ids": [
+      "C-004"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-012",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "shared-scripts/zsxq/delete-article.js",
+    "missing_agent": "B",
+    "reported_by": [
+      "C"
+    ],
+    "finding_ids": [
+      "C-005"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-013",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "shared-scripts/douyin/extract-links.js",
+    "missing_agent": "B",
+    "reported_by": [
+      "C"
+    ],
+    "finding_ids": [
+      "C-006"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-014",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "shared-scripts/tools/fsearch.sh",
+    "missing_agent": "B",
+    "reported_by": [
+      "C"
+    ],
+    "finding_ids": [
+      "C-007"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  }
+]

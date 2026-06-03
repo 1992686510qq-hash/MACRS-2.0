@@ -1,0 +1,259 @@
+{
+  "agent_id": "B",
+  "skill": "Claude-BugHunter",
+  "philosophy": "你是'攻击者思维'的安全审计专家。你审查代码时的默认假设是：有恶意攻击者会仔细阅读这段代码，寻找任何可能的突破口。你不是在找'不优雅'的代码——你是在找'可利用'的代码。你的核心理念来自 574+ 个真实 HackerOne 漏洞报告的模式提炼。",
+  "review_scope": {
+    "files": [
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\agents.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\pricing.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\open.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\session.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\sessions.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\snapshots.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\scanner.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\shared.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\snapshot.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\sse.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\watcher.js"
+    ],
+    "lines_total": 1956
+  },
+  "findings": [
+    {
+      "id": "B-001",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "line": 21,
+      "line_range": [
+        21,
+        229
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "所有 API 端点无任何身份认证，攻击者可完全控制面板",
+      "description": "整个 HTTP 服务器（index.js:21 http.createServer）没有任何身份验证机制。所有 API 端点（/api/sessions、/api/session/:id、/api/create-and-open、/api/snapshot/delete/:id、/api/terminal-bat/:id、/api/events 等）对任何能访问 5022 端口的客户端完全开放。攻击者可以：1) 读取所有会话数据（含对话历史）；2) 创建新会话并 spawn 进程；3) 删除任意快照；4) 通过 /api/terminal-bat 触发终端会话恢复；5) 通过 SSE 实时监控用户活动。CORS 只限制了 Origin 头，但浏览器外的攻击者（curl、脚本）不受 CORS 约束。",
+      "suggestion": "添加 API 密钥或 token 认证。最简方案：启动时生成随机 token，写入 ~/.claude/panel-token，所有 API 请求必须携带 Authorization header。SSE 连接通过 URL query param 传递 token。示例：\n```javascript\nvar crypto = require('crypto');\nvar PANEL_TOKEN = crypto.randomBytes(32).toString('hex');\n// 启动时写入文件\nfs.writeFileSync(tokenPath, PANEL_TOKEN);\n// 每个请求检查\nvar authHeader = req.headers.authorization;\nif (authHeader !== 'Bearer ' + PANEL_TOKEN) {\n  res.writeHead(401); res.end('Unauthorized'); return;\n}\n```",
+      "code_snippet_bad": "var server = http.createServer(function(req, res) {\n  var origin = req.headers.origin;\n  if (origin && /^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/.test(origin)) {\n    res.setHeader(\"Access-Control-Allow-Origin\", origin);\n  }\n  // 直接处理请求，无认证检查",
+      "code_snippet_good": "var crypto = require('crypto');\nvar PANEL_TOKEN = fs.existsSync(tokenPath) ? fs.readFileSync(tokenPath, 'utf-8') : crypto.randomBytes(32).toString('hex');\nif (!fs.existsSync(tokenPath)) fs.writeFileSync(tokenPath, PANEL_TOKEN);\n\nvar server = http.createServer(function(req, res) {\n  // Token 认证\n  var url = new URL(req.url, 'http://localhost');\n  var token = req.headers.authorization ? req.headers.authorization.replace('Bearer ', '') : url.searchParams.get('token');\n  if (token !== PANEL_TOKEN) {\n    res.writeHead(401, {'Content-Type': 'application/json'});\n    res.end(JSON.stringify({error: 'unauthorized'}));\n    return;\n  }\n  // ... 继续处理",
+      "rule_reference": "CWE-306: Missing Authentication for Critical Function",
+      "confidence": 0.97
+    },
+    {
+      "id": "B-002",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "line": 123,
+      "line_range": [
+        123,
+        126
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "Math.random() 生成会话 UUID，可预测导致会话劫持",
+      "description": "sessionId 和 genUuid() 使用 Math.random() 生成 UUID v4（index.js:123-126, 142-145）。Math.random() 不是密码学安全的 PRNG，其内部状态可以通过观察若干输出来推断。攻击者如果能观察到几个生成的 UUID（通过 /api/sessions 列表），就可以预测后续生成的 UUID，从而：1) 预测新会话 ID 并提前访问；2) 伪造会话 ID 进行会话劫持。同样的问题也影响 fakePid 生成（line 187）。",
+      "suggestion": "使用 crypto.randomUUID()（Node.js 19+）或 crypto.randomBytes() 生成 UUID：\n```javascript\nvar crypto = require('crypto');\nvar sessionId = crypto.randomUUID();\n// 或\nfunction genUuid() {\n  return crypto.randomUUID();\n}\n// fakePid 也应使用安全随机数\nvar fakePid = crypto.randomInt(100000, 999999);\n```",
+      "code_snippet_bad": "var sessionId = \"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, function(c) {\n  var r = Math.random() * 16 | 0, v = c === \"x\" ? r : (r & 0x3 | 0x8);\n  return v.toString(16);\n});",
+      "code_snippet_good": "var crypto = require('crypto');\nvar sessionId = crypto.randomUUID();",
+      "rule_reference": "CWE-330: Use of Insufficiently Random Values",
+      "confidence": 0.9
+    },
+    {
+      "id": "B-003",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\session.js",
+      "line": 165,
+      "line_range": [
+        160,
+        175
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "API 响应泄露完整文件系统路径，辅助攻击者侦察",
+      "description": "session.js:165 和 sessions.js:30 在 API 响应中暴露了 filePath 字段（完整文件系统路径），包括用户目录结构、.claude/projects 下的会话文件路径。攻击者可以利用这些信息：1) 了解服务器目录结构；2) 推断用户名和项目结构；3) 为后续路径遍历攻击提供目标信息。cwd 字段也泄露了工作目录。",
+      "suggestion": "从 API 响应中移除 filePath 和 cwd 字段，或将其脱敏：\n```javascript\n// 移除敏感路径信息\ndelete resp.filePath;\n// 或只返回相对路径\nresp.filePath = path.basename(fpath);\n```",
+      "code_snippet_bad": "var resp = {\n  id: cached.id, title: cached.title, cwd: cached.cwd, model: cached.model,\n  // ...\n  filePath: fpath\n};",
+      "code_snippet_good": "var resp = {\n  id: cached.id, title: cached.title, model: cached.model,\n  // 移除 cwd 和 filePath，或脱敏\n  // filePath: path.basename(fpath)  // 只返回文件名\n};",
+      "rule_reference": "CWE-200: Exposure of Sensitive Information",
+      "confidence": 0.92
+    },
+    {
+      "id": "B-004",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\session.js",
+      "line": 110,
+      "line_range": [
+        105,
+        120
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "无界文件读取导致内存耗尽 DoS",
+      "description": "多处代码将整个 JSONL 文件读入内存：session.js:110 buildRelationsResponse 读取整个父文件（fs.readFileSync + split('\\n')）；session.js:134 读取所有子 agent 文件；scanner.js:60 parseSessionChunk 在 limit=0 时读取全文；agents.js:55 parseSubAgent 读取整个 agent 文件。攻击者可以通过创建超大 JSONL 文件（或诱导 AI 生成大量内容），然后请求 /api/session/:id?full=1 或 /api/session/:id/relations 触发内存耗尽，导致服务器 OOM 崩溃。",
+      "suggestion": "1) 为所有文件读取添加大小上限检查；2) 使用流式解析替代全量读取；3) 对 full=1 请求添加文件大小限制：\n```javascript\nvar MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB\nvar stat = fs.statSync(fpath);\nif (stat.size > MAX_FILE_SIZE) {\n  res.writeHead(413); res.end(JSON.stringify({error: 'file too large'}));\n  return;\n}\n// buildRelationsResponse 使用流式读取\nvar readline = require('readline');\nvar rl = readline.createInterface({ input: fs.createReadStream(fpath) });\nrl.on('line', function(line) { /* 逐行处理 */ });\n```",
+      "code_snippet_bad": "// buildRelationsResponse - 读取整个文件\nvar pContent = fs.readFileSync(relTarget._file, \"utf-8\");\npLines = pContent.trim().split(\"\\n\");",
+      "code_snippet_good": "// 流式读取，限制行数\nvar MAX_LINES = 10000;\nvar pLines = [];\nvar rl = require('readline').createInterface({ input: fs.createReadStream(relTarget._file) });\nrl.on('line', function(line) {\n  if (pLines.length < MAX_LINES) pLines.push(line);\n  else rl.close();\n});",
+      "rule_reference": "CWE-400: Uncontrolled Resource Consumption",
+      "confidence": 0.88
+    },
+    {
+      "id": "B-005",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "line": 38,
+      "line_range": [
+        38,
+        39
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "请求处理器中使用同步 I/O 阻塞事件循环",
+      "description": "index.js:38 fs.readFileSync(importFile)、index.js:55 fs.readFileSync(HTML_FILE)、index.js:137 fs.readFileSync(sourceFile)、index.js:178 fs.writeFileSync(newJsonl)、routes/open.js:65 fs.readFileSync(configPath)、snapshot.js:15 fs.writeFileSync 等多处在 HTTP 请求处理路径中使用同步文件 I/O。Node.js 是单线程的，同步 I/O 会阻塞整个事件循环。当处理大文件或磁盘 I/O 慢时，所有其他请求都会被阻塞，导致：1) SSE 心跳中断；2) 所有 API 响应延迟；3) 严重时触发 SSE 客户端超时断开。",
+      "suggestion": "将同步 I/O 替换为异步版本：\n```javascript\n// 替换 fs.readFileSync\nfs.readFile(importFile, 'utf8', function(err, importData) {\n  if (err) { res.writeHead(500); res.end('read error'); return; }\n  // 处理数据...\n});\n// 或使用 fs.promises\nvar fsp = require('fs').promises;\nvar data = await fsp.readFile(importFile, 'utf8');\n```",
+      "code_snippet_bad": "var importData = fs.readFileSync(importFile, \"utf8\");",
+      "code_snippet_good": "fs.readFile(importFile, 'utf8', function(err, importData) {\n  if (err) { res.writeHead(500); res.end('read error'); return; }\n  // 继续处理...\n});",
+      "rule_reference": "Node.js Best Practices: Avoid blocking the event loop",
+      "confidence": 0.93
+    },
+    {
+      "id": "B-006",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "line": 32,
+      "line_range": [
+        32,
+        49
+      ],
+      "severity": "nit",
+      "category": "security",
+      "title": "/import-localstorage 和 /migrate 端点缺少 HTTP 方法检查",
+      "description": "/import-localstorage（line 32）和 /migrate（line 64）不检查 HTTP 请求方法。这意味着：1) GET 请求可以触发这些端点（浏览器预加载、link prefetch 可能意外触发）；2) /api/create-and-open（line 103）也不检查方法，GET 请求就能创建新会话并 spawn 进程。攻击者可以通过 CSRF-like 方式（诱导用户点击链接）触发会话创建。虽然 CORS 限制了浏览器来源，但 prefetch 行为不受 CORS 约束。",
+      "suggestion": "为修改性操作添加 HTTP 方法检查：\n```javascript\nif (req.url === '/import-localstorage' && req.method === 'GET') {\n  // 只允许 GET\n}\nif (req.url.startsWith('/api/create-and-open') && req.method === 'POST') {\n  // 只允许 POST\n}\n```",
+      "code_snippet_bad": "if (req.url === \"/import-localstorage\") {\n  // 不检查方法，GET/POST/PUT/DELETE 都能触发",
+      "code_snippet_good": "if (req.url === \"/import-localstorage\" && req.method === \"GET\") {\n  // 只允许 GET",
+      "rule_reference": "CWE-352: Cross-Site Request Forgery",
+      "confidence": 0.82
+    },
+    {
+      "id": "B-007",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\open.js",
+      "line": 170,
+      "line_range": [
+        162,
+        200
+      ],
+      "severity": "nit",
+      "category": "correctness",
+      "title": "settings.json swap 的引用计数逻辑存在缺陷",
+      "description": "open.js:170 swapSettingsJson 函数中，引用计数 _settingsRefCounts[configFile] 在函数入口处递增（line 175），但无论 swap 是否实际执行都会递增。当 _settingsWriteLock 为 true 时跳过 swap（line 180），但引用计数仍然增加。这导致引用计数与实际使用情况不一致。此外，_settingsWriteLock 是简单的布尔值，在 Node.js 单线程模型下虽然不会出现真正的竞态，但如果未来代码引入 await/yield，锁逻辑就会失效。",
+      "suggestion": "将引用计数移到 swap 成功之后，或使用更明确的状态管理：\n```javascript\nfunction swapSettingsJson(configFile) {\n  if (!configFile || !isValidConfigName(configFile)) return;\n  if (_settingsWriteLock) {\n    console.log('[open] settings.json 写入中，跳过');\n    return;\n  }\n  _settingsWriteLock = true;\n  try {\n    // 执行 swap\n    // ...\n    _settingsRefCounts[configFile] = (_settingsRefCounts[configFile] || 0) + 1;\n  } catch(e) { /* ... */ }\n  finally { _settingsWriteLock = false; }\n}\n```",
+      "code_snippet_bad": "// 引用计数在锁检查之前递增\nif (!_settingsRefCounts[configFile]) _settingsRefCounts[configFile] = 0;\n_settingsRefCounts[configFile]++;\nif (_settingsWriteLock) { return; } // 跳过但计数已增加",
+      "code_snippet_good": "if (_settingsWriteLock) { return; }\n_settingsWriteLock = true;\ntry {\n  // 执行 swap...\n  _settingsRefCounts[configFile] = (_settingsRefCounts[configFile] || 0) + 1;\n} finally { _settingsWriteLock = false; }",
+      "rule_reference": "Correctness: Reference counting accuracy",
+      "confidence": 0.78
+    },
+    {
+      "id": "B-008",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "line": 21,
+      "line_range": [
+        21,
+        215
+      ],
+      "severity": "suggestion",
+      "category": "security",
+      "title": "API 端点无速率限制，可被滥用进行 DoS",
+      "description": "所有 API 端点没有速率限制。攻击者可以：1) 高频请求 /api/sessions 触发大量 scanSessions 调用，消耗 CPU 和磁盘 I/O；2) 高频请求 /api/create-and-open 创建大量会话文件，填满磁盘；3) 高频请求 /api/snapshot/create 创建大量快照文件；4) 大量 SSE 连接耗尽服务器资源（虽然有 SSE_MAX_CLIENTS=50 限制，但连接建立/断开本身有开销）。",
+      "suggestion": "添加简单的内存速率限制器：\n```javascript\nvar rateLimitMap = new Map(); // ip -> {count, resetTime}\nfunction checkRateLimit(ip, maxReq, windowMs) {\n  var now = Date.now();\n  var entry = rateLimitMap.get(ip);\n  if (!entry || now > entry.resetTime) {\n    rateLimitMap.set(ip, {count: 1, resetTime: now + windowMs});\n    return true;\n  }\n  if (entry.count >= maxReq) return false;\n  entry.count++;\n  return true;\n}\n// 在请求处理开始处\nvar clientIp = req.socket.remoteAddress;\nif (!checkRateLimit(clientIp, 60, 60000)) {\n  res.writeHead(429); res.end('Too Many Requests'); return;\n}\n```",
+      "rule_reference": "CWE-770: Allocation of Resources Without Limits",
+      "confidence": 0.85
+    },
+    {
+      "id": "B-009",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\open.js",
+      "line": 65,
+      "line_range": [
+        60,
+        80
+      ],
+      "severity": "learning",
+      "category": "security",
+      "title": "配置文件中的环境变量可注入到子进程，实现 API 劫持",
+      "description": "open.js:65 spawnDirect 函数从配置文件读取 env vars 并注入到子进程环境。虽然限制了 ANTHROPIC_* 和 CLAUDE_* 前缀（line 73），但 ANTHROPIC_BASE_URL 和 ANTHROPIC_API_KEY 都在这个范围内。如果攻击者能修改 ~/.claude/setting-*.json 文件（通过其他漏洞或本地访问），可以：1) 设置 ANTHROPIC_BASE_URL 指向恶意代理服务器，截获所有 API 通信和 API Key；2) 替换 ANTHROPIC_API_KEY 为攻击者的 key，让受害者为攻击者的账户消耗额度。",
+      "suggestion": "1) 对配置文件内容进行完整性校验（如 HMAC）；2) 在日志中记录实际使用的 ANTHROPIC_BASE_URL；3) 考虑对 BASE_URL 做白名单限制：\n```javascript\nvar ALLOWED_BASE_URLS = ['https://api.anthropic.com', 'https://api.openai.com'];\nif (cfg.env && cfg.env.ANTHROPIC_BASE_URL) {\n  if (!ALLOWED_BASE_URLS.some(function(u) { return cfg.env.ANTHROPIC_BASE_URL.startsWith(u); })) {\n    console.error('[open] 拒绝不信任的 BASE_URL:', cfg.env.ANTHROPIC_BASE_URL);\n    delete cfg.env.ANTHROPIC_BASE_URL;\n  }\n}\n```",
+      "rule_reference": "CWE-426: Untrusted Search Path",
+      "confidence": 0.75
+    },
+    {
+      "id": "B-010",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\shared.js",
+      "line": 90,
+      "line_range": [
+        85,
+        115
+      ],
+      "severity": "suggestion",
+      "category": "correctness",
+      "title": "fs.watch 在 Windows 上不可靠，可能遗漏文件变更",
+      "description": "shared.js:90 watchCclSessions 使用 fs.watch 监控 .ccl-sessions.json 文件变化。fs.watch 在 Windows 上存在已知问题：1) 不会报告所有事件；2) 在网络驱动器上不可靠；3) 可能报告重复事件。同样，watcher.js:20 也使用 fs.watch 监控项目目录。如果 fs.watch 失败或遗漏事件，新的 CCL 会话映射不会被自动检测，导致会话配置丢失。",
+      "suggestion": "1) 添加轮询后备方案（已有 30s 间隔的 processChanges，但 watchCclSessions 没有）；2) 使用 chokidar 库替代 fs.watch（更可靠的跨平台文件监控）；3) 至少为 watchCclSessions 添加定期重新扫描：\n```javascript\n// 添加轮询后备\nsetInterval(function() {\n  try {\n    var data = JSON.parse(fs.readFileSync(CCL_SESSIONS_FILE, 'utf-8'));\n    if (data.length > lastCount) {\n      // 处理新条目...\n      lastCount = data.length;\n    }\n  } catch(e) {}\n}, 10000);\n```",
+      "code_snippet_bad": "fs.watch(CCL_SESSIONS_FILE, function() {\n  // 仅依赖 fs.watch，无后备方案\n  try {\n    var data = JSON.parse(fs.readFileSync(CCL_SESSIONS_FILE, \"utf-8\"));",
+      "code_snippet_good": "// fs.watch + 轮询双重保障\nvar lastCheck = 0;\nfunction checkCclFile() {\n  try {\n    var data = JSON.parse(fs.readFileSync(CCL_SESSIONS_FILE, 'utf-8'));\n    if (data.length > lastCount) { /* 处理 */ lastCount = data.length; }\n  } catch(e) {}\n}\nfs.watch(CCL_SESSIONS_FILE, function() { checkCclFile(); });\nsetInterval(checkCclFile, 10000);",
+      "rule_reference": "Node.js fs.watch platform limitations",
+      "confidence": 0.75
+    },
+    {
+      "id": "B-011",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\snapshots.js",
+      "line": 35,
+      "line_range": [
+        30,
+        45
+      ],
+      "severity": "suggestion",
+      "category": "security",
+      "title": "快照创建无大小/频率限制，可填满磁盘",
+      "description": "snapshots.js:35 /api/snapshot/create 端点没有频率限制，且 snapshot.js:27 saveSnapshot 没有检查总快照数量或磁盘空间。虽然自动快照有 30 个上限清理（snapshot.js:40），但手动快照（manual-*）不受此限制。攻击者可以：1) 高频调用 /api/snapshot/create 创建大量快照文件；2) 每个快照包含所有会话数据，可能很大；3) 最终填满磁盘，导致系统不可用。",
+      "suggestion": "1) 为手动快照也添加数量上限；2) 添加创建频率限制；3) 检查磁盘可用空间：\n```javascript\n// 在 saveSnapshot 中添加手动快照限制\nvar manuals = shared.snapshotList.filter(function(s) { return s.id.indexOf('manual-') === 0; });\nif (manuals.length > 50) {\n  // 删除最旧的手动快照\n  manuals.sort(function(a, b) { return a.timestamp.localeCompare(b.timestamp); });\n  deleteSnapshot(manuals[0].id);\n}\n```",
+      "rule_reference": "CWE-770: Allocation of Resources Without Limits",
+      "confidence": 0.8
+    }
+  ],
+  "metrics": {
+    "total_findings": 11,
+    "by_severity": {
+      "blocking": 1,
+      "important": 4,
+      "nit": 2,
+      "suggestion": 3,
+      "learning": 1
+    },
+    "by_category": {
+      "security": 8,
+      "bug": 1,
+      "correctness": 2
+    },
+    "review_duration_seconds": 420
+  },
+  "praise": [
+    {
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\session.js",
+      "line": 15,
+      "comment": "会话 ID 使用严格的 UUID 正则验证 (/^[0-9a-f]{8}-...$/i)，有效防止了路径遍历和注入攻击"
+    },
+    {
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\open.js",
+      "line": 53,
+      "comment": "isValidConfigName() 使用严格的正则 /^setting-[a-zA-Z0-9_-]+\\.json$/ 验证配置名，在所有使用点都调用了验证，防止路径遍历"
+    },
+    {
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "line": 23,
+      "comment": "CORS 策略限制为 localhost/127.0.0.1 来源，使用正则精确匹配端口，比宽松的 Access-Control-Allow-Origin: * 安全得多"
+    },
+    {
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\sse.js",
+      "line": 22,
+      "comment": "SSE 客户端数有上限控制 (SSE_MAX_CLIENTS=50)，超出时自动断开最旧连接，防止连接耗尽"
+    },
+    {
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\snapshots.js",
+      "line": 25,
+      "comment": "快照 ID 使用 /^[a-zA-Z0-9_-]+$/ 验证，有效防止路径遍历攻击"
+    }
+  ]
+}

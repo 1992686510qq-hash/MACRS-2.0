@@ -1,0 +1,48 @@
+{
+  "phase": 2,
+  "timestamp": "2026-06-02T05:08:28.103639+00:00",
+  "input_reviews": {
+    "B": 11,
+    "C": 14
+  },
+  "agents_loaded": [
+    "B",
+    "C"
+  ],
+  "total_findings_before_dedup": 25,
+  "total_findings_after_dedup": 24,
+  "merged_away": 1,
+  "merge_rate": 0.04,
+  "consensus_findings": 0,
+  "single_source_findings": 23,
+  "total_conflicts": 1,
+  "conflicts_by_type": {
+    "severity": 1,
+    "existence": 0,
+    "category": 0
+  },
+  "needs_human_resolution": 1,
+  "severity_distribution": {
+    "P0 BLOCKING": 2,
+    "P1 CRITICAL": 11,
+    "P2 HIGH": 6,
+    "P4 LOW": 1,
+    "P3 MEDIUM": 4
+  },
+  "category_distribution": {
+    "security": 9,
+    "bug": 1,
+    "correctness": 4,
+    "maintainability": 7,
+    "performance": 3
+  },
+  "agent_contributions": {
+    "B": 11,
+    "C": 14
+  },
+  "quality_metrics": {
+    "consensus_rate": 0.0,
+    "conflict_rate": 0.0417,
+    "dedup_merge_rate": 0.04
+  }
+}

@@ -1,0 +1,692 @@
+{
+  "phase": 3,
+  "total_findings": 20,
+  "p0_p1_for_verification": 15,
+  "verdicts": {
+    "REFUTE": 15
+  },
+  "verified_findings": [
+    {
+      "merged_id": "M-011",
+      "canonical_title": "shared-scripts/ 与 tools/ 下 7 对文件完全重复，违反 DRY 原则",
+      "canonical_severity": "P0 BLOCKING",
+      "canonical_description": "经逐字节比对，以下 7 对文件内容完全一致：bilibili/extract-links.js、douyin/extract-links.js、quark/download-file.js、zlib/download-book.js、zsxq/delete-article.js、zsxq/publish-article.js、以及 tools/fsearch.sh 与 shared-scripts/tools/fsearch.sh。这意味着每次 bug 修复或功能更新必须同步修改两处，否则将产生静默分歧。这是架构层面最严重的技术债务——它不会立即引发 bug，但会在每次维护时制造隐患。",
+      "category": "maintainability",
+      "file": "shared-scripts/ (全目录) vs tools/ (全目录)",
+      "line_range": [
+        0,
+        0
+      ],
+      "sources": [
+        {
+          "agent": "C",
+          "finding_id": "C-001",
+          "severity": "blocking",
+          "unified_severity": "P0 BLOCKING",
+          "title": "shared-scripts/ 与 tools/ 下 7 对文件完全重复，违反 DRY 原则",
+          "description": "经逐字节比对，以下 7 对文件内容完全一致：bilibili/extract-links.js、douyin/extract-links.js、quark/download-file.js、zlib/download-book.js、zsxq/delete-article.js、zsxq/publish-article.js、以及 tools/fsearch.sh 与 shared-scripts/tools/fsearch.sh。这意味着每次 bug 修复或功能更新必须同步修改两处，否则将产生静默分歧。这是架构层面最严重的技术债务——它不会立即引发 bug，但会在每次维护时制造隐患。",
+          "confidence": 1.0,
+          "category": "maintainability",
+          "rule_reference": "DRY (Don't Repeat Yourself) — The Pragmatic Programmer"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 1.0,
+        "consensus_boost": 0.0,
+        "final_confidence": 1.0,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "maintainability"
+        ]
+      },
+      "suggestion": "选择一个权威来源（建议 tools/ 目录），删除 shared-scripts/ 中的重复文件，改为 symlink 或在 shared-scripts/ 中仅保留 re-export 模块。或者统一目录结构，消除双源维护。",
+      "skeptic_verdict": "REFUTE",
+      "skeptic_rationale": "Neither shared-scripts/ nor tools/ directories exist under D:/MACRS/coordinator/. The entire finding is based on non-existent files. Cannot verify duplication of files that don't exist.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-012",
+      "canonical_title": "scripts/pw-multi.js 与 tools/browser/proxy/pw-multi.js 完全重复",
+      "canonical_severity": "P0 BLOCKING",
+      "canonical_description": "两个文件逐字节相同（119行）。当需要修复清理逻辑、环境变量处理或 spawn 参数时，开发者必须同时修改两处，极易遗漏。",
+      "category": "maintainability",
+      "file": "scripts/pw-multi.js",
+      "line_range": [
+        37,
+        37
+      ],
+      "sources": [
+        {
+          "agent": "C",
+          "finding_id": "C-002",
+          "severity": "blocking",
+          "unified_severity": "P0 BLOCKING",
+          "title": "scripts/pw-multi.js 与 tools/browser/proxy/pw-multi.js 完全重复",
+          "description": "两个文件逐字节相同（119行）。当需要修复清理逻辑、环境变量处理或 spawn 参数时，开发者必须同时修改两处，极易遗漏。",
+          "confidence": 1.0,
+          "category": "maintainability",
+          "rule_reference": "DRY — Single Source of Truth"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 1.0,
+        "consensus_boost": 0.0,
+        "final_confidence": 1.0,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "maintainability"
+        ]
+      },
+      "suggestion": "保留 tools/browser/proxy/pw-multi.js 作为权威版本，scripts/pw-multi.js 改为 require 或直接 symlink。",
+      "skeptic_verdict": "REFUTE",
+      "skeptic_rationale": "Neither scripts/pw-multi.js nor tools/browser/proxy/pw-multi.js exist. The directories scripts/ and tools/ are absent from the codebase entirely.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-001",
+      "canonical_title": "python3 -c 代码注入：用户输入通过三引号字符串插值导致 RCE",
+      "canonical_severity": "P0 BLOCKING",
+      "canonical_description": "KEYWORD 来自命令行参数 $*，未经任何转义直接嵌入 python3 -c 的三引号字符串（'''$KEYWORD'''）。攻击者可通过闭合三引号注入任意 Python 代码，实现远程命令执行。shared-scripts/tools/fsearch.sh 存在相同漏洞。",
+      "category": "security",
+      "file": "tools/search/fsearch/fsearch.sh",
+      "line_range": [
+        22,
+        24
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-001",
+          "severity": "blocking",
+          "unified_severity": "P0 BLOCKING",
+          "title": "python3 -c 代码注入：用户输入通过三引号字符串插值导致 RCE",
+          "description": "KEYWORD 来自命令行参数 $*，未经任何转义直接嵌入 python3 -c 的三引号字符串（'''$KEYWORD'''）。攻击者可通过闭合三引号注入任意 Python 代码，实现远程命令执行。shared-scripts/tools/fsearch.sh 存在相同漏洞。",
+          "confidence": 0.98,
+          "category": "security",
+          "rule_reference": "CWE-78 OS Command Injection / CWE-94 Code Injection"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.98,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.98,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "KEYWORD=\"$*\"\nENCODED=$(python3 -c \"import urllib.parse; print(urllib.parse.quote('''$KEYWORD'''))\")",
+      "code_snippet_good": "KEYWORD=\"$*\"\nENCODED=$(python3 -c \"import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1]))\" \"$KEYWORD\")",
+      "suggestion": "使用 sys.argv 传参替代字符串插值：ENCODED=$(python3 -c \"import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1]))\" \"$KEYWORD\")",
+      "skeptic_verdict": "REFUTE",
+      "skeptic_rationale": "File tools/search/fsearch/fsearch.sh does not exist. The tools/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-002",
+      "canonical_title": "MCP Server 任意文件读取：image_path 参数无路径校验",
+      "canonical_severity": "P0 BLOCKING",
+      "canonical_description": "analyze_image 函数直接将用户传入的 image_path 传给 Path(path).read_bytes()，无路径白名单、目录限制或符号链接检查。MCP 工具调用者可读取服务器上任意文件（如 C:\\Windows\\System32\\config\\SAM、/etc/shadow）。虽然后续有 Path(image_path).exists() 检查，但这仅阻止不存在的文件，不阻止合法路径的越权访问。",
+      "category": "security",
+      "file": "tools/vision/glm-vision-mcp.py",
+      "line_range": [
+        75,
+        85
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-002",
+          "severity": "blocking",
+          "unified_severity": "P0 BLOCKING",
+          "title": "MCP Server 任意文件读取：image_path 参数无路径校验",
+          "description": "analyze_image 函数直接将用户传入的 image_path 传给 Path(path).read_bytes()，无路径白名单、目录限制或符号链接检查。MCP 工具调用者可读取服务器上任意文件（如 C:\\Windows\\System32\\config\\SAM、/etc/shadow）。虽然后续有 Path(image_path).exists() 检查，但这仅阻止不存在的文件，不阻止合法路径的越权访问。",
+          "confidence": 0.95,
+          "category": "security",
+          "rule_reference": "CWE-22 Path Traversal / CWE-73 External Control of File Name or Path"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.95,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.95,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "def analyze_image(image_path: str, question: str = \"请详细描述这张图片的内容\") -> str:\n    ...\n    data = Path(path).read_bytes()",
+      "code_snippet_good": "ALLOWED_DIRS = [Path.home() / 'Desktop', Path.home() / 'Downloads', Path.home() / 'Pictures']\nMAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB\n\ndef validate_image_path(image_path: str) -> Path:\n    p = Path(image_path).resolve()\n    if not any(str(p).startswith(str(d.resolve())) for d in ALLOWED_DIRS):\n        raise ValueError(f\"Path not in allowed directories: {p}\")\n    if p.stat().st_size > MAX_FILE_SIZE:\n        raise ValueError(\"File too large\")\n    return p",
+      "suggestion": "1) 添加允许的目录白名单（如用户桌面、下载目录）；2) 使用 os.path.realpath() 解析符号链接后检查路径前缀；3) 拒绝包含 .. 的路径；4) 限制文件大小（如 50MB）防止内存耗尽。",
+      "skeptic_verdict": "REFUTE",
+      "skeptic_rationale": "File tools/vision/glm-vision-mcp.py does not exist. The tools/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-013",
+      "canonical_title": "preprocess() 函数在两个文件中重复，且描述文件仍在使用已废弃的 GLM-4V-Flash",
+      "canonical_severity": "P1 CRITICAL",
+      "canonical_description": "describe-image.py 和 glm-vision-mcp.py 都定义了 preprocess() 函数，逻辑几乎相同（resize/compress/base64）。更关键的是，describe-image.py 使用 model='GLM-4V-Flash'，而 glm-vision-mcp.py 已升级到 'GLM-5V-Turbo'。同一个视觉能力，两个入口使用不同模型版本，违背架构一致性。glm-vision-mcp.py 还增加了 max_tokens=4096 的推理模型适配，而 describe-image.py 仍是 max_tokens=1024。",
+      "category": "maintainability",
+      "file": "tools/vision/describe-image.py",
+      "line_range": [
+        22,
+        40
+      ],
+      "sources": [
+        {
+          "agent": "C",
+          "finding_id": "C-003",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "preprocess() 函数在两个文件中重复，且描述文件仍在使用已废弃的 GLM-4V-Flash",
+          "description": "describe-image.py 和 glm-vision-mcp.py 都定义了 preprocess() 函数，逻辑几乎相同（resize/compress/base64）。更关键的是，describe-image.py 使用 model='GLM-4V-Flash'，而 glm-vision-mcp.py 已升级到 'GLM-5V-Turbo'。同一个视觉能力，两个入口使用不同模型版本，违背架构一致性。glm-vision-mcp.py 还增加了 max_tokens=4096 的推理模型适配，而 describe-image.py 仍是 max_tokens=1024。",
+          "confidence": 0.95,
+          "category": "maintainability",
+          "rule_reference": "DRY + Single Responsibility"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.95,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.95,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "maintainability"
+        ]
+      },
+      "suggestion": "将 preprocess() 提取为共享工具模块（如 vision-utils.py），两个入口 import 同一份。统一模型版本到 GLM-5V-Turbo，或明确标注 describe-image.py 为轻量版/兼容版。",
+      "skeptic_verdict": "REFUTE",
+      "skeptic_rationale": "File tools/vision/describe-image.py does not exist. The tools/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-014",
+      "canonical_title": "angularClick 事件顺序不一致：click 在 mousedown 之前触发",
+      "canonical_severity": "P1 CRITICAL",
+      "canonical_description": "shared-scripts/utils/playwright-helpers.js 中 angularClick 的 dispatchEvent 顺序为 click → mousedown → mouseup，而 tools/browser/helpers/playwright-helpers.js 中为 mousedown → mouseup → click。真实浏览器的事件顺序是 mousedown → mouseup → click。shared-scripts 版本在 click 之前就触发了 click，这会导致依赖事件顺序的 Angular 组件行为异常。由于这两份文件都是'权威来源'（重复文件问题），不同入口调用不同版本会产生不一致的行为。",
+      "category": "correctness",
+      "file": "shared-scripts/utils/playwright-helpers.js",
+      "line_range": [
+        17,
+        21
+      ],
+      "sources": [
+        {
+          "agent": "C",
+          "finding_id": "C-004",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "angularClick 事件顺序不一致：click 在 mousedown 之前触发",
+          "description": "shared-scripts/utils/playwright-helpers.js 中 angularClick 的 dispatchEvent 顺序为 click → mousedown → mouseup，而 tools/browser/helpers/playwright-helpers.js 中为 mousedown → mouseup → click。真实浏览器的事件顺序是 mousedown → mouseup → click。shared-scripts 版本在 click 之前就触发了 click，这会导致依赖事件顺序的 Angular 组件行为异常。由于这两份文件都是'权威来源'（重复文件问题），不同入口调用不同版本会产生不一致的行为。",
+          "confidence": 0.95,
+          "category": "correctness",
+          "rule_reference": "Correctness — Browser Event Model"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.95,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.95,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "correctness"
+        ]
+      },
+      "code_snippet_bad": "// shared-scripts 版本 (错误顺序)\nelement.dispatchEvent(new MouseEvent('click', { bubbles: true }));\nelement.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));\nelement.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));",
+      "code_snippet_good": "// 正确顺序\nelement.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));\nelement.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));\nelement.dispatchEvent(new MouseEvent('click', { bubbles: true }));",
+      "suggestion": "统一为 mousedown → mouseup → click 的正确顺序，且消除重复文件（见 C-001）。",
+      "skeptic_verdict": "REFUTE",
+      "skeptic_rationale": "File shared-scripts/utils/playwright-helpers.js does not exist. The shared-scripts/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-004",
+      "canonical_title": "SSRF：TARGET_URL 未校验直接传入 curl 和 cdp-proxy",
+      "canonical_severity": "P1 CRITICAL",
+      "canonical_description": "TARGET_URL 来自命令行参数 $1，未经任何 URL 校验（协议白名单、域名黑名单）直接传给 curl 和 cdp-proxy。攻击者可利用此脚本探测内网服务（如 http://169.254.169.254/ 获取云实例元数据、http://127.0.0.1:6379/ 探测 Redis 等）。",
+      "category": "security",
+      "file": "scripts/quick-test.sh",
+      "line_range": [
+        12,
+        68
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-004",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "SSRF：TARGET_URL 未校验直接传入 curl 和 cdp-proxy",
+          "description": "TARGET_URL 来自命令行参数 $1，未经任何 URL 校验（协议白名单、域名黑名单）直接传给 curl 和 cdp-proxy。攻击者可利用此脚本探测内网服务（如 http://169.254.169.254/ 获取云实例元数据、http://127.0.0.1:6379/ 探测 Redis 等）。",
+          "confidence": 0.9,
+          "category": "security",
+          "rule_reference": "CWE-918 Server-Side Request Forgery"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.9,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.9,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "TARGET_URL=\"$1\"\n...\nHTTP_CODE=$(curl \"${CURL_ARGS[@]}\" \"$TARGET_URL\" 2>/dev/null || echo \"000\")",
+      "code_snippet_good": "TARGET_URL=\"$1\"\n# Validate URL scheme\nif ! echo \"$TARGET_URL\" | grep -qE '^https?://'; then\n    echo \"Only http/https URLs allowed\" >&2; exit 1\nfi\n# Block private IP ranges\nBLOCKED=$(node -e \"try{const u=new URL(process.argv[1]);const h=u.hostname;if(h==='127.0.0.1'||h==='localhost'||h==='0.0.0.0'||h.startsWith('10.')||h.startsWith('192.168.')||h.startsWith('172.16.')||h.startsWith('169.254.'))process.stdout.write('1')}catch{}\" \"$TARGET_URL\")\nif [ \"$BLOCKED\" = '1' ]; then\n    echo \"Private/internal URLs blocked\" >&2; exit 1\nfi",
+      "suggestion": "1) 校验 URL 协议只允许 http/https；2) 使用 Python/Node 解析 URL 后检查 host 不是私有 IP（10.x, 172.16-31.x, 192.168.x, 127.x, 169.254.x）；3) 至少在日志中警告内网目标。",
+      "skeptic_verdict": "REFUTE",
+      "skeptic_rationale": "File scripts/quick-test.sh does not exist. The scripts/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-015",
+      "canonical_title": "zsxq delete-article 中 click 事件调用冗余且顺序矛盾",
+      "canonical_severity": "P1 CRITICAL",
+      "canonical_description": "step4_clickDelete 函数先 dispatchEvent(click) 再调用原生 .click()。注释说'必须用 dispatchEvent 而非 click()'，但代码两个都调了。原生 .click() 不会触发 Angular 的事件绑定，如果 Angular 只监听 dispatchEvent 的 click，后面的 .click() 是多余的；如果 Angular 也监听原生 click，则 dispatchEvent 的 click 会被触发两次。这与 step3_openMenu 中只用 dispatchEvent 的模式不一致。",
+      "category": "correctness",
+      "file": "shared-scripts/zsxq/delete-article.js",
+      "line_range": [
+        49,
+        53
+      ],
+      "sources": [
+        {
+          "agent": "C",
+          "finding_id": "C-005",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "zsxq delete-article 中 click 事件调用冗余且顺序矛盾",
+          "description": "step4_clickDelete 函数先 dispatchEvent(click) 再调用原生 .click()。注释说'必须用 dispatchEvent 而非 click()'，但代码两个都调了。原生 .click() 不会触发 Angular 的事件绑定，如果 Angular 只监听 dispatchEvent 的 click，后面的 .click() 是多余的；如果 Angular 也监听原生 click，则 dispatchEvent 的 click 会被触发两次。这与 step3_openMenu 中只用 dispatchEvent 的模式不一致。",
+          "confidence": 0.9,
+          "category": "correctness",
+          "rule_reference": "Consistency + Correctness"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.9,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.9,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "correctness"
+        ]
+      },
+      "code_snippet_bad": "deleteItem.dispatchEvent(new MouseEvent('click', { bubbles: true }));\ndeleteItem.click();  // 冗余或导致双触发",
+      "code_snippet_good": "deleteItem.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));\ndeleteItem.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));\ndeleteItem.dispatchEvent(new MouseEvent('click', { bubbles: true }));",
+      "suggestion": "与 step3_openMenu 保持一致，只用 dispatchEvent 系列（mousedown → mouseup → click），去掉原生 .click() 调用。",
+      "skeptic_verdict": "REFUTE",
+      "skeptic_rationale": "File shared-scripts/zsxq/delete-article.js does not exist. The shared-scripts/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-017",
+      "canonical_title": "fsearch.sh 存在命令注入风险：用户输入未经转义直接嵌入 Python 字符串",
+      "canonical_severity": "P1 CRITICAL",
+      "canonical_description": "KEYWORD 通过 `'''$KEYWORD'''` 传入 python3 -c 的字符串中。如果用户输入包含 ''' 或反斜杠等特殊字符，可以逃逸 Python 字符串边界，执行任意 Python 代码。例如输入 `test''' + __import__('os').system('rm -rf /') + '''` 会导致代码注入。",
+      "category": "security",
+      "file": "shared-scripts/tools/fsearch.sh",
+      "line_range": [
+        30,
+        34
+      ],
+      "sources": [
+        {
+          "agent": "C",
+          "finding_id": "C-007",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "fsearch.sh 存在命令注入风险：用户输入未经转义直接嵌入 Python 字符串",
+          "description": "KEYWORD 通过 `'''$KEYWORD'''` 传入 python3 -c 的字符串中。如果用户输入包含 ''' 或反斜杠等特殊字符，可以逃逸 Python 字符串边界，执行任意 Python 代码。例如输入 `test''' + __import__('os').system('rm -rf /') + '''` 会导致代码注入。",
+          "confidence": 0.9,
+          "category": "security",
+          "rule_reference": "Security — Input Sanitization"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.9,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.9,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "ENCODED=$(python3 -c \"import urllib.parse; print(urllib.parse.quote('''$KEYWORD'''))\")",
+      "code_snippet_good": "ENCODED=$(python3 -c \"import urllib.parse, os; print(urllib.parse.quote(os.environ['KEYWORD']))\" <<< \"$KEYWORD\")",
+      "suggestion": "使用环境变量传递 KEYWORD 到 Python，而非字符串插值：`KEYWORD=\"$KEYWORD\" python3 -c \"import os; KEYWORD=os.environ['KEYWORD']; ...\"`。或使用 Python 的 shlex.quote()。",
+      "skeptic_verdict": "REFUTE",
+      "skeptic_rationale": "File shared-scripts/tools/fsearch.sh does not exist. The shared-scripts/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-005",
+      "canonical_title": "SSRF：smart-fetch.sh 允许 curl 请求任意内网地址",
+      "canonical_severity": "P1 CRITICAL",
+      "canonical_description": "与 B-004 同类问题。smart-fetch.sh 作为智能抓取工具，接受任意 URL 并通过 curl 直连或 cdp-proxy 渲染。无任何 SSRF 防护。当在云服务器或 CI/CD 环境中运行时，攻击者可借此读取实例元数据（AWS/GCP/Azure 的 IMDS）。",
+      "category": "security",
+      "file": "tools/fetch/smart-fetch.sh",
+      "line_range": [
+        120,
+        140
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-005",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "SSRF：smart-fetch.sh 允许 curl 请求任意内网地址",
+          "description": "与 B-004 同类问题。smart-fetch.sh 作为智能抓取工具，接受任意 URL 并通过 curl 直连或 cdp-proxy 渲染。无任何 SSRF 防护。当在云服务器或 CI/CD 环境中运行时，攻击者可借此读取实例元数据（AWS/GCP/Azure 的 IMDS）。",
+          "confidence": 0.88,
+          "category": "security",
+          "rule_reference": "CWE-918 Server-Side Request Forgery"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.88,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.88,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "TARGET_URL=\"$arg\"\n...\nmain() {\n    ...  \n    if try_curl \"$proxy\"; then\n        return 0\n    fi",
+      "code_snippet_good": "TARGET_URL=\"$arg\"\n# SSRF guard\nVALID=$(node -e \"try{const u=new URL(process.argv[1]);const h=u.hostname;if(!['http:','https:'].includes(u.protocol)||h==='127.0.0.1'||h==='localhost'||/^10\\.|^192\\.168\\.|^172\\.(1[6-9]|2[0-9]|3[01])\\.|^169\\.254\\./.test(h))process.stdout.write('0');else process.stdout.write('1')}catch{process.stdout.write('0')}\" \"$TARGET_URL\")\nif [ \"$VALID\" != '1' ]; then\n    echo \"[smart-fetch] URL blocked (SSRF guard)\" >&2; return 1\nfi",
+      "suggestion": "在 main() 函数入口添加 URL 协议和目标 IP 校验，阻断私有地址段。",
+      "skeptic_verdict": "REFUTE",
+      "skeptic_rationale": "File tools/fetch/smart-fetch.sh does not exist. The tools/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-006",
+      "canonical_title": "拒绝服务：无文件大小限制可导致内存耗尽",
+      "canonical_severity": "P1 CRITICAL",
+      "canonical_description": "preprocess 函数在压缩前先用 Path(path).read_bytes() 将整个文件读入内存。对于超大图片（如 2GB 的 TIFF），这将导致 Python 进程 OOM 崩溃。虽然有 MAX_DIM 缩放逻辑，但缩放发生在 Image.open() 之后，此时完整文件已加载到内存。describe-image.py 存在同样问题。",
+      "category": "security",
+      "file": "tools/vision/glm-vision-mcp.py",
+      "line_range": [
+        30,
+        40
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-006",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "拒绝服务：无文件大小限制可导致内存耗尽",
+          "description": "preprocess 函数在压缩前先用 Path(path).read_bytes() 将整个文件读入内存。对于超大图片（如 2GB 的 TIFF），这将导致 Python 进程 OOM 崩溃。虽然有 MAX_DIM 缩放逻辑，但缩放发生在 Image.open() 之后，此时完整文件已加载到内存。describe-image.py 存在同样问题。",
+          "confidence": 0.88,
+          "category": "security",
+          "rule_reference": "CWE-400 Uncontrolled Resource Consumption"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.88,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.88,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "def preprocess(path: str) -> str:\n    from PIL import Image\n    data = Path(path).read_bytes()",
+      "code_snippet_good": "MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB\n\ndef preprocess(path: str) -> str:\n    from PIL import Image\n    file_size = Path(path).stat().st_size\n    if file_size > MAX_FILE_SIZE:\n        raise ValueError(f\"Image too large: {file_size} bytes (max {MAX_FILE_SIZE})\")\n    data = Path(path).read_bytes()",
+      "suggestion": "在 read_bytes() 之前先检查文件大小，超过阈值（如 50MB）直接拒绝。",
+      "skeptic_verdict": "REFUTE",
+      "skeptic_rationale": "File tools/vision/glm-vision-mcp.py does not exist (duplicate target of M-002). The tools/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-003",
+      "canonical_title": "任意文件读取：image_path 参数无路径校验（CLI 版本）",
+      "canonical_severity": "P0 BLOCKING",
+      "canonical_description": "preprocess 函数直接 Path(path).read_bytes() 读取任意路径的文件。CLI 版本虽然通常由用户自行调用风险较低，但如果被其他脚本包装或在自动化流水线中使用，同样存在任意文件读取风险。与 B-002 同源，属于同一漏洞在不同入口点的体现。",
+      "category": "security",
+      "file": "tools/vision/describe-image.py",
+      "line_range": [
+        33,
+        42
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-003",
+          "severity": "blocking",
+          "unified_severity": "P0 BLOCKING",
+          "title": "任意文件读取：image_path 参数无路径校验（CLI 版本）",
+          "description": "preprocess 函数直接 Path(path).read_bytes() 读取任意路径的文件。CLI 版本虽然通常由用户自行调用风险较低，但如果被其他脚本包装或在自动化流水线中使用，同样存在任意文件读取风险。与 B-002 同源，属于同一漏洞在不同入口点的体现。",
+          "confidence": 0.85,
+          "category": "security",
+          "rule_reference": "CWE-22 Path Traversal"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.85,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.85,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "def preprocess(path):\n    data = Path(path).read_bytes()",
+      "code_snippet_good": "def preprocess(path):\n    p = Path(path).resolve()\n    if not p.exists():\n        raise FileNotFoundError(f\"Image not found: {p}\")\n    if p.stat().st_size > 50 * 1024 * 1024:\n        raise ValueError(\"Image file too large (max 50MB)\")\n    data = p.read_bytes()",
+      "suggestion": "添加路径规范化和目录白名单校验，限制文件大小。",
+      "skeptic_verdict": "REFUTE",
+      "skeptic_rationale": "File tools/vision/describe-image.py does not exist (duplicate target of M-013). The tools/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-016",
+      "canonical_title": "抖音搜索 API 拦截模式存在事件监听器累积泄漏",
+      "canonical_severity": "P1 CRITICAL",
+      "canonical_description": "extractFromSearchPage 的 while 循环每次迭代调用 page.on('response', onResponse)，在 finally 中调用 page.off('response', onResponse)。但 onResponse 是在循环体内用 async (response) => {...} 创建的闭包，每次迭代都是新的函数引用。page.off 需要与 page.on 传入同一个函数引用才能移除。由于 onResponse 在循环开头声明，finally 中 off 的确实是同一个引用，这部分是正确的。但深层问题是：当 searchJson 未命中（staleCount++），循环仍会继续，下一次迭代会再次注册新的 onResponse，此时如果上一次的 finally 已经 off 了旧的，新的又注册了——在滚动等待期间（waitForTimeout 1500ms * 8次），可能有多个 onResponse 同时活跃，导致 searchJson 被后续响应覆盖。",
+      "category": "bug",
+      "file": "shared-scripts/douyin/extract-links.js",
+      "line_range": [
+        52,
+        57
+      ],
+      "sources": [
+        {
+          "agent": "C",
+          "finding_id": "C-006",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "抖音搜索 API 拦截模式存在事件监听器累积泄漏",
+          "description": "extractFromSearchPage 的 while 循环每次迭代调用 page.on('response', onResponse)，在 finally 中调用 page.off('response', onResponse)。但 onResponse 是在循环体内用 async (response) => {...} 创建的闭包，每次迭代都是新的函数引用。page.off 需要与 page.on 传入同一个函数引用才能移除。由于 onResponse 在循环开头声明，finally 中 off 的确实是同一个引用，这部分是正确的。但深层问题是：当 searchJson 未命中（staleCount++），循环仍会继续，下一次迭代会再次注册新的 onResponse，此时如果上一次的 finally 已经 off 了旧的，新的又注册了——在滚动等待期间（waitForTimeout 1500ms * 8次），可能有多个 onResponse 同时活跃，导致 searchJson 被后续响应覆盖。",
+          "confidence": 0.85,
+          "category": "bug",
+          "rule_reference": "Resource Management — Clean Code"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.85,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.85,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "bug"
+        ]
+      },
+      "suggestion": "将 onResponse 的注册移到循环外部，或在每次迭代开头显式清理 searchJson 并确保只有一个活跃的 response listener。更好的方案是用 page.waitForResponse() 替代手动 on/off 模式。",
+      "skeptic_verdict": "REFUTE",
+      "skeptic_rationale": "File shared-scripts/douyin/extract-links.js does not exist. The shared-scripts/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-007",
+      "canonical_title": "URL 注入：从不可信 DOM 构造完整 URL 可能触发 javascript: 协议",
+      "canonical_severity": "P1 CRITICAL",
+      "canonical_description": "step3_parseResults 中 new URL(href, location.origin).href 将 DOM 中提取的 href 直接构造完整 URL。如果恶意页面注入 javascript:alert(1) 或 data:text/html,... 形式的 href，后续 page.goto() 将执行该 URL。虽然 Z-Library 本身不太可能被 XSS，但作为通用模式存在风险。shared-scripts/zlib/download-book.js 存在同样问题。",
+      "category": "security",
+      "file": "tools/platform/zlib/download-book.js",
+      "line_range": [
+        120,
+        135
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-007",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "URL 注入：从不可信 DOM 构造完整 URL 可能触发 javascript: 协议",
+          "description": "step3_parseResults 中 new URL(href, location.origin).href 将 DOM 中提取的 href 直接构造完整 URL。如果恶意页面注入 javascript:alert(1) 或 data:text/html,... 形式的 href，后续 page.goto() 将执行该 URL。虽然 Z-Library 本身不太可能被 XSS，但作为通用模式存在风险。shared-scripts/zlib/download-book.js 存在同样问题。",
+          "confidence": 0.8,
+          "category": "security",
+          "rule_reference": "CWE-939 Improper Authorization in Handler with Custom URL Scheme"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.8,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.8,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "books.push({\n  title: text,\n  href,\n  fullUrl: new URL(href, location.origin).href\n});",
+      "code_snippet_good": "if (!href.startsWith('/') && !href.startsWith('http')) continue;  // skip non-HTTP links\nbooks.push({\n  title: text,\n  href,\n  fullUrl: new URL(href, location.origin).href\n});",
+      "suggestion": "在构造 URL 前验证 href 以 / 或 http 开头，拒绝 javascript:、data:、vbscript: 等协议。",
+      "skeptic_verdict": "REFUTE",
+      "skeptic_rationale": "File tools/platform/zlib/download-book.js does not exist. The tools/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-008",
+      "canonical_title": "CSS 选择器注入：articleId 未转义直接拼入 querySelector",
+      "canonical_severity": "P1 CRITICAL",
+      "canonical_description": "step2_clickDetail 中 articleId 直接嵌入 CSS 选择器字符串 a.link-of-topic[href*=\"${articleId}\"]。如果 articleId 包含 ] 或 \" 字符，会破坏选择器语法，可能导致意外的 DOM 匹配或选择器解析错误。虽然利用难度较高，但在自动化流程中 articleId 可能来自不可信的 API 响应。shared-scripts/zsxq/delete-article.js 存在同样问题。",
+      "category": "security",
+      "file": "tools/platform/zsxq/delete-article.js",
+      "line_range": [
+        43,
+        50
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-008",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "CSS 选择器注入：articleId 未转义直接拼入 querySelector",
+          "description": "step2_clickDetail 中 articleId 直接嵌入 CSS 选择器字符串 a.link-of-topic[href*=\"${articleId}\"]。如果 articleId 包含 ] 或 \" 字符，会破坏选择器语法，可能导致意外的 DOM 匹配或选择器解析错误。虽然利用难度较高，但在自动化流程中 articleId 可能来自不可信的 API 响应。shared-scripts/zsxq/delete-article.js 存在同样问题。",
+          "confidence": 0.75,
+          "category": "security",
+          "rule_reference": "CWE-79 Improper Neutralization of Input During Web Page Generation"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.75,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.75,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "function step2_clickDetail(articleId) {\n  const link = document.querySelector(`a.link-of-topic[href*=\"${articleId}\"]`);",
+      "code_snippet_good": "function step2_clickDetail(articleId) {\n  const safeId = CSS.escape(articleId);\n  const link = document.querySelector(`a.link-of-topic[href*=\"${safeId}\"]`);",
+      "suggestion": "使用 CSS.escape() 转义 articleId，或改用 Array.from(document.querySelectorAll('a.link-of-topic')).filter(a => a.href.includes(articleId))。",
+      "skeptic_verdict": "REFUTE",
+      "skeptic_rationale": "File tools/platform/zsxq/delete-article.js does not exist. The tools/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    }
+  ]
+}

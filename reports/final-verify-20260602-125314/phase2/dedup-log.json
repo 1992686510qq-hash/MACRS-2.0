@@ -1,0 +1,252 @@
+{
+  "decisions": [
+    {
+      "pair": [
+        "B-001",
+        "B-002"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0191,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-001",
+        "B-005"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0096,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-001",
+        "B-006"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0861,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-001",
+        "B-008"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "line_range_overlap",
+      "overlap_ratio": 0.933,
+      "title_similarity": 0.1429,
+      "decision": "MERGE",
+      "rationale": "line_range_overlap 0.93 > 0.5 threshold"
+    },
+    {
+      "pair": [
+        "B-002",
+        "B-005"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-002",
+        "B-006"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-002",
+        "B-008"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0205,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-005",
+        "B-006"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.1111,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-005",
+        "B-008"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0103,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-006",
+        "B-008"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0923,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-003",
+        "B-004"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\session.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-007",
+        "B-009"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\open.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-002",
+        "C-012"
+      ],
+      "file": "scanner.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-003",
+        "C-005"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-003",
+        "C-006"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0481,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-003",
+        "C-009"
+      ],
+      "file": "index.js",
+      "match_type": "borderline",
+      "overlap_ratio": 0.4727,
+      "title_similarity": 0.1538,
+      "decision": "KEEP_SEPARATE",
+      "rationale": "Both metrics below threshold (overlap=0.47, title_sim=0.15). Keeping separate."
+    },
+    {
+      "pair": [
+        "C-005",
+        "C-006"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-005",
+        "C-009"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0818,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-006",
+        "C-009"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0227,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-007",
+        "C-014"
+      ],
+      "file": "routes\\session.js",
+      "match_type": "none",
+      "overlap_ratio": 0.1089,
+      "title_similarity": 0.1111,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    }
+  ],
+  "statistics": {
+    "total_findings_before_dedup": 25,
+    "total_merged_groups": 24,
+    "total_findings_after_dedup": 24,
+    "findings_merged_away": 1,
+    "merge_rate": 0.04,
+    "borderline_cases": 1
+  }
+}

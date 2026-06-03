@@ -1,0 +1,888 @@
+{
+  "decisions": [
+    {
+      "pair": [
+        "A-001",
+        "A-002"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.4444,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-001",
+        "A-006"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.2143,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-001",
+        "A-007"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-001",
+        "A-008"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-001",
+        "A-010"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0111,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-001",
+        "C-003"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-001",
+        "C-007"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-001",
+        "C-008"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-001",
+        "C-011"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-001",
+        "C-013"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-002",
+        "A-006"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.2308,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-002",
+        "A-007"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-002",
+        "A-008"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-002",
+        "A-010"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0074,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-002",
+        "C-003"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-002",
+        "C-007"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-002",
+        "C-008"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-002",
+        "C-011"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-002",
+        "C-013"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-006",
+        "A-007"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0769,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-006",
+        "A-008"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-006",
+        "A-010"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0444,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-006",
+        "C-003"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.3077,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-006",
+        "C-007"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-006",
+        "C-008"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-006",
+        "C-011"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0833,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-006",
+        "C-013"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-007",
+        "A-008"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-007",
+        "A-010"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0481,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-007",
+        "C-003"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-007",
+        "C-007"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-007",
+        "C-008"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-007",
+        "C-011"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.1667,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-007",
+        "C-013"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-008",
+        "A-010"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0407,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-008",
+        "C-003"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-008",
+        "C-007"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-008",
+        "C-008"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-008",
+        "C-011"
+      ],
+      "file": "index.js",
+      "match_type": "borderline",
+      "overlap_ratio": 0.3793,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": "Both metrics below threshold (overlap=0.38, title_sim=0.00). Keeping separate."
+    },
+    {
+      "pair": [
+        "A-008",
+        "C-013"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-010",
+        "C-003"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0222,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-010",
+        "C-007"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0333,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-010",
+        "C-008"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0222,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-010",
+        "C-011"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.1074,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-010",
+        "C-013"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0222,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-003",
+        "C-007"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-003",
+        "C-008"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-003",
+        "C-011"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-003",
+        "C-013"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-007",
+        "C-008"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.2,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-007",
+        "C-011"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-007",
+        "C-013"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-008",
+        "C-011"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-008",
+        "C-013"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0909,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-011",
+        "C-013"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-003",
+        "C-012"
+      ],
+      "file": "watcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.2308,
+      "title_similarity": 0.2857,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-004",
+        "A-005"
+      ],
+      "file": "agents.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.2222,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-004",
+        "A-015"
+      ],
+      "file": "agents.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-004",
+        "C-006"
+      ],
+      "file": "agents.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.1,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-005",
+        "A-015"
+      ],
+      "file": "agents.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-005",
+        "C-006"
+      ],
+      "file": "agents.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-015",
+        "C-006"
+      ],
+      "file": "agents.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-012",
+        "A-014"
+      ],
+      "file": "scanner.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-012",
+        "C-001"
+      ],
+      "file": "scanner.js",
+      "match_type": "line_range_overlap",
+      "overlap_ratio": 0.6,
+      "title_similarity": 0.2,
+      "decision": "MERGE",
+      "rationale": "line_range_overlap 0.60 > 0.5 threshold"
+    },
+    {
+      "pair": [
+        "A-012",
+        "C-010"
+      ],
+      "file": "scanner.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-014",
+        "C-001"
+      ],
+      "file": "scanner.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-014",
+        "C-010"
+      ],
+      "file": "scanner.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0625,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-001",
+        "C-010"
+      ],
+      "file": "scanner.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-001",
+        "B-002"
+      ],
+      "file": "server/index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-001",
+        "B-006"
+      ],
+      "file": "server/index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-002",
+        "B-006"
+      ],
+      "file": "server/index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-004",
+        "B-007"
+      ],
+      "file": "server/routes/open.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.1818,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-002",
+        "C-009"
+      ],
+      "file": "shared.js",
+      "match_type": "none",
+      "overlap_ratio": 0.087,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    }
+  ],
+  "statistics": {
+    "total_findings_before_dedup": 35,
+    "total_merged_groups": 34,
+    "total_findings_after_dedup": 34,
+    "findings_merged_away": 1,
+    "merge_rate": 0.0286,
+    "borderline_cases": 1
+  }
+}

@@ -1,0 +1,250 @@
+{
+  "agent_id": "A",
+  "skill": "code-review-skill",
+  "philosophy": "你是'可维护性优先'的代码审查专家。你的核心理念来自 The Pragmatic Programmer 和 Clean Code 传统：代码首先是写给人看的，其次才是给机器执行的。你关注：命名是否自解释？函数是否做且只做一件事？抽象层次是否一致？重复代码是否可以提取？注释是否解释了'为什么'而非'做了什么'？",
+  "review_scope": {
+    "files": [
+      "server/agents.js",
+      "server/index.js",
+      "server/pricing.js",
+      "server/routes/open.js",
+      "server/routes/session.js",
+      "server/routes/sessions.js",
+      "server/routes/snapshots.js",
+      "server/scanner.js",
+      "server/shared.js",
+      "server/snapshot.js",
+      "server/sse.js",
+      "server/watcher.js"
+    ],
+    "lines_total": 1955
+  },
+  "findings": [
+    {
+      "id": "A-001",
+      "file": "server/routes/session.js",
+      "line": 299,
+      "line_range": [
+        299,
+        300
+      ],
+      "severity": "blocking",
+      "category": "bug",
+      "title": "pLines 未初始化时直接访问 .length 导致未捕获 TypeError",
+      "description": "在 buildRelationsResponse 中，pLines 在 line 130 的 try-catch 块内通过 `var pLines = pContent.trim().split(\"\\n\")` 声明。由于 var 提升，如果 line 129 的 readFileSync 抛出异常，pLines 将是 undefined。而 line 299 的 `for (var wi = 0; wi < pLines.length; wi++)` 位于 try-catch 块之外，会抛出未捕获的 TypeError，导致整个 HTTP 请求 500 崩溃。",
+      "suggestion": "在 waterfall 循环前添加防御性检查：`if (!pLines) pLines = [];`，或将整个 buildRelationsResponse 顶部统一声明 `var pLines = [];`，在 try 块内赋值。",
+      "code_snippet_bad": "  try {\n    var pContent = fs.readFileSync(relTarget._file, \"utf-8\");\n    var pLines = pContent.trim().split(\"\\n\");\n    // ...\n  } catch (e) {}\n  // ... 200 lines later ...\n  for (var wi = 0; wi < pLines.length; wi++) {",
+      "code_snippet_good": "  var pLines = [];  // 声明在顶部\n  try {\n    var pContent = fs.readFileSync(relTarget._file, \"utf-8\");\n    pLines = pContent.trim().split(\"\\n\");\n    // ...\n  } catch (e) {}\n  // pLines is always an array now",
+      "rule_reference": "Clean Code: Defensive Programming; JavaScript: var hoisting semantics",
+      "confidence": 0.95
+    },
+    {
+      "id": "A-002",
+      "file": "server/index.js",
+      "line": 46,
+      "line_range": [
+        46,
+        65
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "import-localstorage 路由存在 XSS 注入风险",
+      "description": "该路由从 import-data.json 读取用户可控数据，通过 `JSON.stringify(JSON.parse(importData))` 处理后直接拼接进 HTML 的 `<script>` 标签中。虽然现代 V8 的 JSON.stringify 会将 `<` 转义为 `\\u003c`（从而缓解 `</script>` 注入），但这依赖引擎实现而非规范保证。此外，如果 import-data.json 包含含有模板字符串反引号或特殊 Unicode 字符的值，仍可能破坏 JS 语法。该路由无任何认证机制，任何能访问 localhost:5022 的进程都可以触发。",
+      "suggestion": "1) 将 JSON 数据通过 `JSON.stringify(safeData)` 再次编码后赋值给 JS 变量，确保不会破坏脚本上下文；2) 考虑添加简单的 token 认证或限制为 POST 方法；3) 至少添加 CSP 头 `Content-Security-Policy: script-src 'self'`。",
+      "code_snippet_bad": "var safeData = JSON.stringify(JSON.parse(importData));\nvar html = '...<script>!function(){var d=' + safeData + ';var ok=0...'",
+      "code_snippet_good": "var safeData = JSON.stringify(JSON.parse(importData));\n// 使用 JSON.stringify 再次编码，确保安全嵌入 JS 字符串\nvar html = '...<script>!function(){var d=' + JSON.stringify(safeData) + ';var ok=0...'",
+      "rule_reference": "OWASP: XSS Prevention; CWE-79",
+      "confidence": 0.85
+    },
+    {
+      "id": "A-003",
+      "file": "server/index.js",
+      "line": 97,
+      "line_range": [
+        86,
+        117
+      ],
+      "severity": "important",
+      "category": "correctness",
+      "title": "UUID 正则替换可能误伤消息内容中的 UUID 模式",
+      "description": "在 /api/create-and-open 路由中，UUID 正则 `/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi` 被应用于整个 JSONL 文件内容（包括消息正文）。如果用户的对话内容中恰好包含 UUID 格式的字符串（如文件路径、API 响应等），这些也会被替换为新 UUID，导致消息内容损坏。此外，替换使用 `.split().join()` 而非正则的 `.replace()`，对于大小写混合的 UUID 可能产生不一致的替换结果。",
+      "suggestion": "1) 逐行解析 JSONL，只在结构化字段（sessionId、promptId 等）中替换 UUID，跳过 message.content 等自由文本字段；2) 建立精确的 UUID → 新 UUID 映射表，避免内容误伤。",
+      "code_snippet_bad": "var foundUuids = sourceContent.match(uuidRegex);\n// ...\nvar newContent = sourceContent.split(sourceSessionId).join(sessionId);\nvar oldUuids = Object.keys(uuidMap);\nfor (var oi = 0; oi < oldUuids.length; oi++) {\n  newContent = newContent.split(oldUuids[oi]).join(uuidMap[oldUuids[oi]]);\n}",
+      "code_snippet_good": "// 逐行解析，只替换结构化字段\nvar newLines = sourceContent.split(\"\\n\").map(function(line) {\n  try {\n    var obj = JSON.parse(line);\n    if (obj.sessionId && uuidMap[obj.sessionId]) obj.sessionId = uuidMap[obj.sessionId];\n    if (obj.promptId && uuidMap[obj.promptId]) obj.promptId = uuidMap[obj.promptId];\n    // 只替换已知的结构化 UUID 字段，不碰 message.content\n    return JSON.stringify(obj);\n  } catch (e) { return line; }\n});\nvar newContent = newLines.join(\"\\n\");",
+      "rule_reference": "Pragmatic Programmer: Orthogonality; Don't Repeat Yourself in transformations",
+      "confidence": 0.9
+    },
+    {
+      "id": "A-004",
+      "file": "server/routes/session.js",
+      "line": 111,
+      "line_range": [
+        111,
+        370
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "buildRelationsResponse 函数过长（~260行），违反单一职责原则",
+      "description": "该函数承担了 5 个完全不同的职责：1) 解析 dispatch 调用、2) 解析子 Agent 信息、3) 匹配 dispatch 到 sub-agent、4) 阶段检测（phase detection）、5) 瀑布流追踪（waterfall trace）。这使得函数极难理解、测试和维护。任何一部分的修改都可能意外影响其他部分。",
+      "suggestion": "拆分为 5 个独立函数：`parseDispatchCalls(pLines)`、`parseSubAgentNodes(parentDir, relId)`、`matchDispatchToAgents(dispatchCalls, nodes, relId)`、`detectPhases(matchedEdges, userMessages)`、`buildWaterfallTrace(pLines)`。buildRelationsResponse 变为编排层，依次调用这些函数。",
+      "rule_reference": "Clean Code: Functions should be small, and then smaller; Single Responsibility Principle",
+      "confidence": 0.95
+    },
+    {
+      "id": "A-005",
+      "file": "server/routes/session.js",
+      "line": 50,
+      "line_range": [
+        50,
+        56
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "变量 m 在同一函数中被重复声明，存在遮蔽混淆",
+      "description": "在 makeSessionRouter 的 handle 函数中，line 50 声明 `var m` 用于 URL query 参数匹配（match 结果），而 line 56 在 scanner.scanSessions 回调中又声明 `var m` 作为循环计数器。虽然 var 提升使得这在技术上不冲突（同一作用域内后者覆盖前者），但这种命名遮蔽极易让维护者混淆两个 m 的含义。",
+      "suggestion": "将 line 50 的 `var m` 重命名为 `var configMatch`，将 line 56 的循环变量重命名为 `var j` 或 `var idx`。",
+      "code_snippet_bad": "var m = urlParts[1].match(/config=([^&]+)/);\n// ...\nfor (var m = 0; m < all2.length; m++) { if (all2[m].id === openId) {",
+      "code_snippet_good": "var configMatch = urlParts[1].match(/config=([^&]+)/);\n// ...\nfor (var j = 0; j < all2.length; j++) { if (all2[j].id === openId) {",
+      "rule_reference": "Clean Code: Meaningful Names; ESLint: no-redeclare",
+      "confidence": 0.9
+    },
+    {
+      "id": "A-006",
+      "file": "server/watcher.js",
+      "line": 35,
+      "line_range": [
+        35,
+        58
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "processChanges 存在竞态条件：_processing 标志在异步操作期间不安全",
+      "description": "`_processing` 标志在 `scanSessions` Promise 链的 `.finally()` 中重置为 false。但由于 `scanSessions` 是异步的，存在以下竞态窗口：1) 第一次调用 processChanges 设置 _processing=true；2) scanSessions 开始异步执行；3) fs.watch 的 debounce 回调或 30s setInterval 再次触发 processChanges；4) 如果第一次调用的 Promise 尚未 resolve，_processing 仍为 true，第二次调用被正确跳过——但如果第一次调用的 Promise 在 debounce 超时前 resolve 了（文件很小，扫描极快），_processing 被重置，而 debounce 回调恰好在此时触发，就会启动第二次并发扫描，两次扫描的结果可能交错写入缓存。",
+      "suggestion": "使用 Promise 链式锁替代布尔标志：`var _scanPromise = null; function processChanges() { if (_scanPromise) return; _scanPromise = scanSessions(...).finally(() => { _scanPromise = null; }); }`。这保证了即使前一次扫描快速完成，下一次扫描也会等待完全结束后再启动。",
+      "code_snippet_bad": "var _processing = false;\nfunction processChanges() {\n  if (_processing) return;\n  _processing = true;\n  try {\n    scanner.scanSessions(...).then(function(sessions) {\n      // ...\n    }).finally(function() {\n      _processing = false;\n    });\n  } catch (e) {\n    _processing = false;\n  }\n}",
+      "code_snippet_good": "var _scanPromise = null;\nfunction processChanges() {\n  if (_scanPromise) return;\n  _scanPromise = scanner.scanSessions(shared.PROJECTS_DIR, []).then(function(sessions) {\n    agents.scanSubAgents(sessions);\n    // ... process results ...\n    sse.broadcastSSE({ type: \"sessions-update\", timestamp: new Date().toISOString() });\n  }).catch(function(e) {\n    console.error(\"[CC面板] processChanges error:\", e.message);\n  }).finally(function() {\n    _scanPromise = null;\n  });\n}",
+      "rule_reference": "Concurrency: Atomic check-and-act; Node.js Event Loop semantics",
+      "confidence": 0.85
+    },
+    {
+      "id": "A-007",
+      "file": "server/shared.js",
+      "line": 34,
+      "line_range": [
+        34,
+        39
+      ],
+      "severity": "important",
+      "category": "performance",
+      "title": "sessionCache / subAgentCache / fileOffsets 无大小上限，长期运行存在内存泄漏风险",
+      "description": "这三个 Map 在 shared.js 中导出，被 scanner.js 和 agents.js 不断写入但从未清理。对于长时间运行的面板（数天/数周），随着会话数量增长，这三个缓存会无限膨胀。特别是 sessionCache 存储了每个会话的完整元数据（包括 keyDecisions 数组），fileOffsets 存储了每个文件的偏移量。如果管理了数百个会话，内存占用可能达到数百 MB。",
+      "suggestion": "1) 为 sessionCache 添加 LRU 淘汰策略（保留最近访问的 N 个会话）；2) 在每次 scanSessions 结束后，清理不在扫描结果中的过期条目；3) 对 keyDecisions 数组设置更严格的上限（当前是 100，可以降到 20）。",
+      "rule_reference": "Performance: Memory Management; Pragmatic Programmer: Estimate to Avoid Surprises",
+      "confidence": 0.85
+    },
+    {
+      "id": "A-008",
+      "file": "server/index.js",
+      "line": 130,
+      "line_range": [
+        130,
+        135
+      ],
+      "severity": "nit",
+      "category": "performance",
+      "title": "QR 码图片每次请求都同步读取磁盘，未使用缓存",
+      "description": "/qr-wechat.png 和 /qr-alipay.jpg 路由每次 HTTP 请求都执行 fs.existsSync + fs.readFileSync，将整个图片文件读入内存后返回。对于静态不变的图片文件，这是不必要的磁盘 I/O。在高并发场景下（虽然面板不太可能承受高并发），这会增加不必要的延迟。",
+      "suggestion": "在启动时将 QR 码图片预加载到 Buffer 中缓存，请求时直接返回缓存的 Buffer。添加 `var qrWxCache = null;` 在模块顶层，在 server.listen 之前预加载。",
+      "rule_reference": "Performance: Cache static assets",
+      "confidence": 0.75
+    },
+    {
+      "id": "A-009",
+      "file": "server/routes/open.js",
+      "line": 217,
+      "line_range": [
+        217,
+        250
+      ],
+      "severity": "nit",
+      "category": "maintainability",
+      "title": "swapSettingsJson 的引用计数只增不减，_settingsRefCounts 永远增长",
+      "description": "在 swapSettingsJson 函数中，`_settingsRefCounts[configFile]++` 在每次调用时递增，但没有任何代码在会话结束时递减。这意味着引用计数永远增长，永远不会降为 0。虽然当前代码中引用计数实际上没有被用于任何逻辑判断（只是记录），但如果未来有人基于这个计数做决策（例如决定是否可以安全删除配置文件），就会得到错误的结果。",
+      "suggestion": "要么移除引用计数（因为它没有实际用途），要么添加 `releaseSettingsConfig(configFile)` 函数在会话关闭时调用。当前状态下，这段代码是误导性的死代码。",
+      "code_snippet_bad": "if (!_settingsRefCounts[configFile]) _settingsRefCounts[configFile] = 0;\n_settingsRefCounts[configFile]++;",
+      "code_snippet_good": "// 移除无用的引用计数，或添加配套的释放逻辑\n// function releaseSettingsConfig(configFile) {\n//   if (_settingsRefCounts[configFile]) _settingsRefCounts[configFile]--;\n// }",
+      "rule_reference": "Clean Code: Dead Code; Pragmatic Programmer: Orthogonality",
+      "confidence": 0.8
+    },
+    {
+      "id": "A-010",
+      "file": "server/scanner.js",
+      "line": 156,
+      "line_range": [
+        156,
+        178
+      ],
+      "severity": "nit",
+      "category": "maintainability",
+      "title": "mergeSessionData 中 _seenPromptIds 合并无去重上限，可能无限增长",
+      "description": "mergeSessionData 在合并增量数据时，将 delta._seenPromptIds 中的所有 promptId 复制到 cached._seenPromptIds 中，没有任何大小限制。promptId 是用户消息的唯一标识符，随着会话对话轮数增加，这个集合会无限增长。对于一个有数千轮对话的长会话，_seenPromptIds 可能包含数千个条目，占用可观内存。",
+      "suggestion": "添加上限检查，当 _seenPromptIds 超过一定大小（如 10000）时，使用 LRU 策略淘汰最旧的条目，或改用布隆过滤器来近似去重。",
+      "rule_reference": "Performance: Bounded data structures",
+      "confidence": 0.75
+    },
+    {
+      "id": "A-011",
+      "file": "server/index.js",
+      "line": 86,
+      "line_range": [
+        86,
+        117
+      ],
+      "severity": "nit",
+      "category": "correctness",
+      "title": "时间戳替换可能破坏 JSONL 中的时间顺序语义",
+      "description": "/api/create-and-open 路由使用全局递增的时间戳替换源文件中的所有时间戳（`new Date(tsBase + tsCounter++).toISOString()`）。这假设源文件中的时间戳是按顺序出现的，但实际上 JSONL 文件可能因并发写入或追加而出现时间戳乱序。替换后所有时间戳变为严格递增，这可能改变会话的行为（例如 scanner.js 中基于时间戳的状态判断逻辑依赖时间戳反映真实的文件修改时间）。",
+      "suggestion": "保留原始时间戳之间的相对间隔，而不是简单递增。或者只替换 lastTimestamp 相关的元数据时间戳，保留消息级别的时间戳不变。",
+      "rule_reference": "Correctness: Preserve semantic invariants during transformation",
+      "confidence": 0.75
+    }
+  ],
+  "metrics": {
+    "total_findings": 11,
+    "by_severity": {
+      "blocking": 1,
+      "important": 6,
+      "nit": 4
+    },
+    "by_category": {
+      "bug": 2,
+      "security": 1,
+      "correctness": 2,
+      "performance": 2,
+      "maintainability": 4
+    },
+    "review_duration_seconds": 480
+  },
+  "praise": [
+    {
+      "file": "server/scanner.js",
+      "line": 120,
+      "comment": "增量解析设计（parseSessionChunk with offset）非常巧妙——通过记录 fileOffsets 只读取新增内容，避免了每次请求都全量解析大 JSONL 文件。这是真正的性能优化，且实现干净。"
+    },
+    {
+      "file": "server/routes/open.js",
+      "line": 113,
+      "comment": "P0-001/P0-002/P0-003 的安全修复标注很专业——写入锁、configName 格式验证、路径遍历防护都体现了安全意识。isValidConfigName 的正则验证是正确的防御性编程实践。"
+    },
+    {
+      "file": "server/shared.js",
+      "line": 14,
+      "comment": "sessionConfigMap 的持久化设计（loadSessionConfigMap/saveSessionConfigMap）简洁有效——JSON 文件存储 Map，启动时加载，变更时保存。这是正确的状态持久化模式。"
+    },
+    {
+      "file": "server/sse.js",
+      "line": 1,
+      "comment": "SSE 模块职责单一、接口清晰——broadcastSSE、addSSEClient、removeSSEClient、handleSSE、cleanupSSE 各司其职，是整个项目中模块化做得最好的文件。"
+    }
+  ]
+}

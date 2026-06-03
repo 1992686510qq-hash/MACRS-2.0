@@ -1,0 +1,137 @@
+[
+  {
+    "conflict_id": "CFL-001",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "index.js",
+    "missing_agent": "C",
+    "reported_by": [
+      "A"
+    ],
+    "finding_ids": [
+      "A-002"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-002",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "index.js",
+    "missing_agent": "C",
+    "reported_by": [
+      "A"
+    ],
+    "finding_ids": [
+      "A-003"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-003",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "scanner.js",
+    "missing_agent": "C",
+    "reported_by": [
+      "A"
+    ],
+    "finding_ids": [
+      "A-005"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-004",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "index.js",
+    "missing_agent": "C",
+    "reported_by": [
+      "A"
+    ],
+    "finding_ids": [
+      "A-009"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-005",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "index.js",
+    "missing_agent": "A",
+    "reported_by": [
+      "C"
+    ],
+    "finding_ids": [
+      "C-001"
+    ],
+    "max_severity": "P0 BLOCKING",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-006",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "index.js",
+    "missing_agent": "A",
+    "reported_by": [
+      "C"
+    ],
+    "finding_ids": [
+      "C-003"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-007",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "shared.js",
+    "missing_agent": "A",
+    "reported_by": [
+      "C"
+    ],
+    "finding_ids": [
+      "C-004"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-008",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "scanner.js",
+    "missing_agent": "A",
+    "reported_by": [
+      "C"
+    ],
+    "finding_ids": [
+      "C-005"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-009",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "index.js",
+    "missing_agent": "A",
+    "reported_by": [
+      "C"
+    ],
+    "finding_ids": [
+      "C-006"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  }
+]

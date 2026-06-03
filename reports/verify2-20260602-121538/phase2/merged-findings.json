@@ -1,0 +1,1320 @@
+[
+  {
+    "merged_id": "M-003",
+    "canonical_title": "UUID 正则替换可能误伤消息内容中的 UUID 模式",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "在 /api/create-and-open 路由中，UUID 正则 `/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi` 被应用于整个 JSONL 文件内容（包括消息正文）。如果用户的对话内容中恰好包含 UUID 格式的字符串（如文件路径、API 响应等），这些也会被替换为新 UUID，导致消息内容损坏。此外，替换使用 `.split().join()` 而非正则的 `.replace()`，对于大小写混合的 UUID 可能产生不一致的替换结果。",
+    "category": "correctness",
+    "file": "server/index.js",
+    "line_range": [
+      86,
+      117
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-003",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "UUID 正则替换可能误伤消息内容中的 UUID 模式",
+        "description": "在 /api/create-and-open 路由中，UUID 正则 `/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi` 被应用于整个 JSONL 文件内容（包括消息正文）。如果用户的对话内容中恰好包含 UUID 格式的字符串（如文件路径、API 响应等），这些也会被替换为新 UUID，导致消息内容损坏。此外，替换使用 `.split().join()` 而非正则的 `.replace()`，对于大小写混合的 UUID 可能产生不一致的替换结果。",
+        "confidence": 0.9,
+        "category": "correctness",
+        "rule_reference": "Pragmatic Programmer: Orthogonality; Don't Repeat Yourself in transformations"
+      },
+      {
+        "agent": "A",
+        "finding_id": "A-011",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "时间戳替换可能破坏 JSONL 中的时间顺序语义",
+        "description": "/api/create-and-open 路由使用全局递增的时间戳替换源文件中的所有时间戳（`new Date(tsBase + tsCounter++).toISOString()`）。这假设源文件中的时间戳是按顺序出现的，但实际上 JSONL 文件可能因并发写入或追加而出现时间戳乱序。替换后所有时间戳变为严格递增，这可能改变会话的行为（例如 scanner.js 中基于时间戳的状态判断逻辑依赖时间戳反映真实的文件修改时间）。",
+        "confidence": 0.75,
+        "category": "correctness",
+        "rule_reference": "Correctness: Preserve semantic invariants during transformation"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.825,
+      "consensus_boost": 0.15,
+      "final_confidence": 0.975,
+      "agent_count": 2
+    },
+    "status": "consensus",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 1,
+      "category_conflict": false,
+      "categories": [
+        "correctness"
+      ]
+    },
+    "code_snippet_bad": "var foundUuids = sourceContent.match(uuidRegex);\n// ...\nvar newContent = sourceContent.split(sourceSessionId).join(sessionId);\nvar oldUuids = Object.keys(uuidMap);\nfor (var oi = 0; oi < oldUuids.length; oi++) {\n  newContent = newContent.split(oldUuids[oi]).join(uuidMap[oldUuids[oi]]);\n}",
+    "code_snippet_good": "// 逐行解析，只替换结构化字段\nvar newLines = sourceContent.split(\"\\n\").map(function(line) {\n  try {\n    var obj = JSON.parse(line);\n    if (obj.sessionId && uuidMap[obj.sessionId]) obj.sessionId = uuidMap[obj.sessionId];\n    if (obj.promptId && uuidMap[obj.promptId]) obj.promptId = uuidMap[obj.promptId];\n    // 只替换已知的结构化 UUID 字段，不碰 message.content\n    return JSON.stringify(obj);\n  } catch (e) { return line; }\n});\nvar newContent = newLines.join(\"\\n\");",
+    "suggestion": "1) 逐行解析 JSONL，只在结构化字段（sessionId、promptId 等）中替换 UUID，跳过 message.content 等自由文本字段；2) 建立精确的 UUID → 新 UUID 映射表，避免内容误伤。"
+  },
+  {
+    "merged_id": "M-001",
+    "canonical_title": "pLines 未初始化时直接访问 .length 导致未捕获 TypeError",
+    "canonical_severity": "P0 BLOCKING",
+    "canonical_description": "在 buildRelationsResponse 中，pLines 在 line 130 的 try-catch 块内通过 `var pLines = pContent.trim().split(\"\\n\")` 声明。由于 var 提升，如果 line 129 的 readFileSync 抛出异常，pLines 将是 undefined。而 line 299 的 `for (var wi = 0; wi < pLines.length; wi++)` 位于 try-catch 块之外，会抛出未捕获的 TypeError，导致整个 HTTP 请求 500 崩溃。",
+    "category": "bug",
+    "file": "server/routes/session.js",
+    "line_range": [
+      299,
+      300
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-001",
+        "severity": "blocking",
+        "unified_severity": "P0 BLOCKING",
+        "title": "pLines 未初始化时直接访问 .length 导致未捕获 TypeError",
+        "description": "在 buildRelationsResponse 中，pLines 在 line 130 的 try-catch 块内通过 `var pLines = pContent.trim().split(\"\\n\")` 声明。由于 var 提升，如果 line 129 的 readFileSync 抛出异常，pLines 将是 undefined。而 line 299 的 `for (var wi = 0; wi < pLines.length; wi++)` 位于 try-catch 块之外，会抛出未捕获的 TypeError，导致整个 HTTP 请求 500 崩溃。",
+        "confidence": 0.95,
+        "category": "bug",
+        "rule_reference": "Clean Code: Defensive Programming; JavaScript: var hoisting semantics"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.95,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.95,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "bug"
+      ]
+    },
+    "code_snippet_bad": "  try {\n    var pContent = fs.readFileSync(relTarget._file, \"utf-8\");\n    var pLines = pContent.trim().split(\"\\n\");\n    // ...\n  } catch (e) {}\n  // ... 200 lines later ...\n  for (var wi = 0; wi < pLines.length; wi++) {",
+    "code_snippet_good": "  var pLines = [];  // 声明在顶部\n  try {\n    var pContent = fs.readFileSync(relTarget._file, \"utf-8\");\n    pLines = pContent.trim().split(\"\\n\");\n    // ...\n  } catch (e) {}\n  // pLines is always an array now",
+    "suggestion": "在 waterfall 循环前添加防御性检查：`if (!pLines) pLines = [];`，或将整个 buildRelationsResponse 顶部统一声明 `var pLines = [];`，在 try 块内赋值。"
+  },
+  {
+    "merged_id": "M-004",
+    "canonical_title": "buildRelationsResponse 函数过长（~260行），违反单一职责原则",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "该函数承担了 5 个完全不同的职责：1) 解析 dispatch 调用、2) 解析子 Agent 信息、3) 匹配 dispatch 到 sub-agent、4) 阶段检测（phase detection）、5) 瀑布流追踪（waterfall trace）。这使得函数极难理解、测试和维护。任何一部分的修改都可能意外影响其他部分。",
+    "category": "maintainability",
+    "file": "server/routes/session.js",
+    "line_range": [
+      111,
+      370
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-004",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "buildRelationsResponse 函数过长（~260行），违反单一职责原则",
+        "description": "该函数承担了 5 个完全不同的职责：1) 解析 dispatch 调用、2) 解析子 Agent 信息、3) 匹配 dispatch 到 sub-agent、4) 阶段检测（phase detection）、5) 瀑布流追踪（waterfall trace）。这使得函数极难理解、测试和维护。任何一部分的修改都可能意外影响其他部分。",
+        "confidence": 0.95,
+        "category": "maintainability",
+        "rule_reference": "Clean Code: Functions should be small, and then smaller; Single Responsibility Principle"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.95,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.95,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "suggestion": "拆分为 5 个独立函数：`parseDispatchCalls(pLines)`、`parseSubAgentNodes(parentDir, relId)`、`matchDispatchToAgents(dispatchCalls, nodes, relId)`、`detectPhases(matchedEdges, userMessages)`、`buildWaterfallTrace(pLines)`。buildRelationsResponse 变为编排层，依次调用这些函数。"
+  },
+  {
+    "merged_id": "M-011",
+    "canonical_title": "XSS via </script> injection in /import-localstorage",
+    "canonical_severity": "P0 BLOCKING",
+    "canonical_description": "The /import-localstorage route reads import-data.json and embeds it directly into an HTML <script> block via string concatenation: `var html = '...var d=' + safeData + ';...'`. While JSON.stringify(JSON.parse(...)) ensures valid JSON, JSON.stringify does NOT escape `</script>` sequences. If import-data.json contains a string like `</script><img src=x onerror=alert(document.cookie)>`, the HTML parser will close the script tag prematurely and execute the injected payload. This is a classic script-tag breakout XSS (CWE-79). An attacker who can control or poison import-data.json achieves arbitrary JavaScript execution in the admin's browser.",
+    "category": "security",
+    "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+    "line_range": [
+      27,
+      28
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-001",
+        "severity": "blocking",
+        "unified_severity": "P0 BLOCKING",
+        "title": "XSS via </script> injection in /import-localstorage",
+        "description": "The /import-localstorage route reads import-data.json and embeds it directly into an HTML <script> block via string concatenation: `var html = '...var d=' + safeData + ';...'`. While JSON.stringify(JSON.parse(...)) ensures valid JSON, JSON.stringify does NOT escape `</script>` sequences. If import-data.json contains a string like `</script><img src=x onerror=alert(document.cookie)>`, the HTML parser will close the script tag prematurely and execute the injected payload. This is a classic script-tag breakout XSS (CWE-79). An attacker who can control or poison import-data.json achieves arbitrary JavaScript execution in the admin's browser.",
+        "confidence": 0.95,
+        "category": "security",
+        "rule_reference": "CWE-79: Cross-site Scripting (XSS)"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.95,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.95,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var safeData = JSON.stringify(JSON.parse(importData));\nvar html = '...<script>...var d=' + safeData + ';...</script>...';",
+    "code_snippet_good": "// Option A: Escape </script> sequences\nvar safeData = JSON.stringify(JSON.parse(importData)).replace(/<\\//g, '<\\\\/');\n\n// Option B (preferred): Serve via API endpoint\n// GET /api/import-data → return JSON\n// In HTML: fetch('/api/import-data').then(r=>r.json()).then(d => { ... })",
+    "suggestion": "Escape forward-slash sequences before embedding JSON in HTML: `var safeData = JSON.stringify(JSON.parse(importData)).replace(/<\\//g, '<\\\\/');`. Better yet, serve the data as a JSON endpoint (`/api/import-data`) and fetch it via `fetch().then(r=>r.json())` from the HTML page, completely separating data from script context."
+  },
+  {
+    "merged_id": "M-023",
+    "canonical_title": "shared.js 充当全局可变状态中心（God Object 反模式）",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "shared.js 导出了 15+ 个可变状态变量（Map、数组、标量），被所有其他模块直接读写。这是典型的 God Object 反模式：状态变更无法追踪、模块间隐式耦合严重、无法隔离测试任何模块。sessionCache、subAgentCache、fileOffsets、sessionConfigMap、sseClients、watchers、snapshotList、pendingChanges 等全局可变状态散布在 module.exports 中，任何模块都能在任何时刻修改任何状态，导致竞态条件和不可预测行为。",
+    "category": "maintainability",
+    "file": "shared.js",
+    "line_range": [
+      95,
+      129
+    ],
+    "sources": [
+      {
+        "agent": "C",
+        "finding_id": "C-001",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "shared.js 充当全局可变状态中心（God Object 反模式）",
+        "description": "shared.js 导出了 15+ 个可变状态变量（Map、数组、标量），被所有其他模块直接读写。这是典型的 God Object 反模式：状态变更无法追踪、模块间隐式耦合严重、无法隔离测试任何模块。sessionCache、subAgentCache、fileOffsets、sessionConfigMap、sseClients、watchers、snapshotList、pendingChanges 等全局可变状态散布在 module.exports 中，任何模块都能在任何时刻修改任何状态，导致竞态条件和不可预测行为。",
+        "confidence": 0.95,
+        "category": "maintainability",
+        "rule_reference": "Clean Architecture — 依赖规则：内部层不应知道外部层的实现细节。shared.js 打破了所有层的边界。"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.95,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.95,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "suggestion": "将 shared.js 拆分为独立的状态管理模块，每个模块封装自己的状态并提供明确的 API：1) SessionStore 封装 sessionCache + fileOffsets；2) AgentStore 封装 subAgentCache；3) ConfigStore 封装 sessionConfigMap + cclProjectMap；4) SSEManager 封装 sseClients。每个 Store 通过方法暴露读写操作，禁止外部直接操作内部 Map。示例：\n```js\n// session-store.js\nclass SessionStore {\n  constructor() { this._cache = new Map(); this._offsets = new Map(); }\n  get(id) { return this._cache.get(id); }\n  set(id, data) { this._cache.set(id, data); }\n  getAll() { return Array.from(this._cache.values()); }\n}\nmodule.exports = new SessionStore();\n```"
+  },
+  {
+    "merged_id": "M-026",
+    "canonical_title": "watchCclSessions 是职责过多的 God Function，且错误被静默吞没",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "watchCclSessions() 函数（56-93行）同时承担了：文件监控设置、JSON 文件解析、目录递归扫描、基于时间戳的文件匹配、配置持久化、日志记录——至少 6 个职责。更严重的是，内部有 3 个空 catch 块（行59、88、90），错误被完全吞没。如果 CCL 文件损坏、磁盘满、权限问题等，系统会静默失败，用户完全无法感知问题。行59的 catch 甚至没有花括号（`try { ... } catch {}`），是不完整的错误处理。",
+    "category": "bug",
+    "file": "shared.js",
+    "line_range": [
+      56,
+      93
+    ],
+    "sources": [
+      {
+        "agent": "C",
+        "finding_id": "C-004",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "watchCclSessions 是职责过多的 God Function，且错误被静默吞没",
+        "description": "watchCclSessions() 函数（56-93行）同时承担了：文件监控设置、JSON 文件解析、目录递归扫描、基于时间戳的文件匹配、配置持久化、日志记录——至少 6 个职责。更严重的是，内部有 3 个空 catch 块（行59、88、90），错误被完全吞没。如果 CCL 文件损坏、磁盘满、权限问题等，系统会静默失败，用户完全无法感知问题。行59的 catch 甚至没有花括号（`try { ... } catch {}`），是不完整的错误处理。",
+        "confidence": 0.94,
+        "category": "bug",
+        "rule_reference": "The Pragmatic Programmer: 'Dead Programs Tell No Lies' — 静默吞没错误比程序崩溃更危险，因为问题被隐藏了。"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.94,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.94,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "bug"
+      ]
+    },
+    "suggestion": "1) 拆分为独立函数：parseCclFile()、scanRecentJsonlFiles()、autoMapSession()；2) 空 catch 块至少添加 console.error 日志；3) 对关键错误（如文件损坏）通过 SSE 广播通知前端。示例：\n```js\nfunction parseCclFile() {\n  try {\n    return JSON.parse(fs.readFileSync(CCL_SESSIONS_FILE, 'utf-8'));\n  } catch (e) {\n    console.error('[shared] CCL 文件解析失败:', e.message);\n    return null;\n  }\n}\n```"
+  },
+  {
+    "merged_id": "M-025",
+    "canonical_title": "index.js 主处理函数是 220 行的单体（God Function）",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "HTTP server 的回调函数直接内联了所有非路由逻辑：CORS 处理、HTML 服务、/import-localstorage 的完整 HTML 生成、/migrate 的完整 HTML 生成、静态文件服务、/api/create-and-open 的完整业务逻辑（UUID 生成、JSONL 文件 fork、时间戳替换、元数据创建、进程启动）。这个函数违反了单一职责原则，混合了路由、业务逻辑、文件 I/O、进程管理等职责。/api/create-and-open 路由尤其严重——约 80 行代码包含了会话 fork 的完整实现。",
+    "category": "maintainability",
+    "file": "index.js",
+    "line_range": [
+      1,
+      220
+    ],
+    "sources": [
+      {
+        "agent": "C",
+        "finding_id": "C-003",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "index.js 主处理函数是 220 行的单体（God Function）",
+        "description": "HTTP server 的回调函数直接内联了所有非路由逻辑：CORS 处理、HTML 服务、/import-localstorage 的完整 HTML 生成、/migrate 的完整 HTML 生成、静态文件服务、/api/create-and-open 的完整业务逻辑（UUID 生成、JSONL 文件 fork、时间戳替换、元数据创建、进程启动）。这个函数违反了单一职责原则，混合了路由、业务逻辑、文件 I/O、进程管理等职责。/api/create-and-open 路由尤其严重——约 80 行代码包含了会话 fork 的完整实现。",
+        "confidence": 0.93,
+        "category": "maintainability",
+        "rule_reference": "SRP（单一职责原则）— 每个模块应该只有一个变更理由。index.js 目前有至少 6 个变更理由。"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.93,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.93,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "suggestion": "将 /api/create-and-open 的逻辑提取到 routes/create-and-open.js；将 /import-localstorage 和 /migrate 的 HTML 模板提取到独立的 .html 文件或 templates 模块；将静态文件服务提取到 routes/static.js。最终 index.js 应只保留 < 30 行的路由分发逻辑。"
+  },
+  {
+    "merged_id": "M-012",
+    "canonical_title": "Math.random() used for session UUID generation — predictable IDs",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "The /api/create-and-open endpoint generates session IDs using `Math.random()` (`var r = Math.random() * 16 | 0`). Math.random() is not cryptographically secure — its output is predictable given a few samples (especially on V8/Node.js, where the xorshift128+ PRNG can be fully recovered after observing ~3 outputs). An attacker who observes or guesses a session ID can hijack that session by calling /api/open-session/{id} to launch it in their VSCode, or /api/terminal-bat/{id} to resume it in their terminal. This also applies to the `fakePid` generation (line ~128) which uses the same weak PRNG.",
+    "category": "security",
+    "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+    "line_range": [
+      97,
+      105
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-002",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "Math.random() used for session UUID generation — predictable IDs",
+        "description": "The /api/create-and-open endpoint generates session IDs using `Math.random()` (`var r = Math.random() * 16 | 0`). Math.random() is not cryptographically secure — its output is predictable given a few samples (especially on V8/Node.js, where the xorshift128+ PRNG can be fully recovered after observing ~3 outputs). An attacker who observes or guesses a session ID can hijack that session by calling /api/open-session/{id} to launch it in their VSCode, or /api/terminal-bat/{id} to resume it in their terminal. This also applies to the `fakePid` generation (line ~128) which uses the same weak PRNG.",
+        "confidence": 0.92,
+        "category": "security",
+        "rule_reference": "CWE-330: Use of Insufficiently Random Values"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.92,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.92,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var sessionId = \"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, function(c) {\n  var r = Math.random() * 16 | 0, v = c === \"x\" ? r : (r & 0x3 | 0x8);\n  return v.toString(16);\n});",
+    "code_snippet_good": "var crypto = require('crypto');\nvar sessionId = crypto.randomUUID();",
+    "suggestion": "Replace Math.random() with crypto.randomUUID() (Node.js 14.17+) or `require('crypto').randomBytes(16)` for all ID generation:\n```javascript\nvar crypto = require('crypto');\nvar sessionId = crypto.randomUUID();\n```"
+  },
+  {
+    "merged_id": "M-024",
+    "canonical_title": "session.js 与 agents.js 存在大量重复的 JSONL 解析逻辑",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "session.js 的 buildRelationsResponse() 中（行142-200）自行实现了子Agent文件的 JSONL 解析逻辑（读取文件、解析行、提取 token/model/tool_use），与 agents.js 的 parseSubAgent() 功能几乎完全相同。同样的模式也出现在 agents.js 的 parseSubAgent() 和 scanner.js 的 parseSessionChunk() 中——三处代码都在做 JSONL 行解析、token 统计、model 提取、tool_use 计数。违反 DRY 原则，任何解析逻辑的修改需要同步更新三处代码，极易遗漏导致不一致。",
+    "category": "maintainability",
+    "file": "routes\\session.js",
+    "line_range": [
+      142,
+      200
+    ],
+    "sources": [
+      {
+        "agent": "C",
+        "finding_id": "C-002",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "session.js 与 agents.js 存在大量重复的 JSONL 解析逻辑",
+        "description": "session.js 的 buildRelationsResponse() 中（行142-200）自行实现了子Agent文件的 JSONL 解析逻辑（读取文件、解析行、提取 token/model/tool_use），与 agents.js 的 parseSubAgent() 功能几乎完全相同。同样的模式也出现在 agents.js 的 parseSubAgent() 和 scanner.js 的 parseSessionChunk() 中——三处代码都在做 JSONL 行解析、token 统计、model 提取、tool_use 计数。违反 DRY 原则，任何解析逻辑的修改需要同步更新三处代码，极易遗漏导致不一致。",
+        "confidence": 0.92,
+        "category": "maintainability",
+        "rule_reference": "DRY 原则 — Don't Repeat Yourself。The Pragmatic Programmer: 'Every piece of knowledge must have a single, unambiguous, authoritative representation within a system.'"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.92,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.92,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "suggestion": "抽取统一的 JSONL 解析核心函数，所有模块复用：\n```js\n// jsonl-parser.js\nfunction parseJsonlStats(filePath) {\n  // 统一的 JSONL 解析逻辑：token统计、model提取、tool_use计数、状态推断\n  return { tokens, model, toolCallCount, status, ... };\n}\n```\n然后 session.js、agents.js、scanner.js 都调用此函数，各自只负责自己的业务逻辑（如关系图构建、子Agent扫描、会话缓存）。"
+  },
+  {
+    "merged_id": "M-005",
+    "canonical_title": "变量 m 在同一函数中被重复声明，存在遮蔽混淆",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "在 makeSessionRouter 的 handle 函数中，line 50 声明 `var m` 用于 URL query 参数匹配（match 结果），而 line 56 在 scanner.scanSessions 回调中又声明 `var m` 作为循环计数器。虽然 var 提升使得这在技术上不冲突（同一作用域内后者覆盖前者），但这种命名遮蔽极易让维护者混淆两个 m 的含义。",
+    "category": "maintainability",
+    "file": "server/routes/session.js",
+    "line_range": [
+      50,
+      56
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-005",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "变量 m 在同一函数中被重复声明，存在遮蔽混淆",
+        "description": "在 makeSessionRouter 的 handle 函数中，line 50 声明 `var m` 用于 URL query 参数匹配（match 结果），而 line 56 在 scanner.scanSessions 回调中又声明 `var m` 作为循环计数器。虽然 var 提升使得这在技术上不冲突（同一作用域内后者覆盖前者），但这种命名遮蔽极易让维护者混淆两个 m 的含义。",
+        "confidence": 0.9,
+        "category": "maintainability",
+        "rule_reference": "Clean Code: Meaningful Names; ESLint: no-redeclare"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.9,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.9,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "code_snippet_bad": "var m = urlParts[1].match(/config=([^&]+)/);\n// ...\nfor (var m = 0; m < all2.length; m++) { if (all2[m].id === openId) {",
+    "code_snippet_good": "var configMatch = urlParts[1].match(/config=([^&]+)/);\n// ...\nfor (var j = 0; j < all2.length; j++) { if (all2[j].id === openId) {",
+    "suggestion": "将 line 50 的 `var m` 重命名为 `var configMatch`，将 line 56 的循环变量重命名为 `var j` 或 `var idx`。"
+  },
+  {
+    "merged_id": "M-031",
+    "canonical_title": "buildRelationsResponse 中 pLines 变量在 try 块外被引用但可能未定义",
+    "canonical_severity": "P3 MEDIUM",
+    "canonical_description": "在 buildRelationsResponse 函数中，pLines 在行123的 try 块内声明并赋值，但在行205的 phase detection 代码中被直接引用（`for (var pi2 = 0; pi2 < pLines.length; pi2++)`）。如果 try 块中的文件读取失败（catch 块为空），pLines 将是未定义的，导致运行时 TypeError。虽然 catch 块为空会隐藏原始错误，但后续的 pLines.length 访问会抛出异常，可能导致整个 API 请求返回 500。",
+    "category": "correctness",
+    "file": "routes\\session.js",
+    "line_range": [
+      200,
+      280
+    ],
+    "sources": [
+      {
+        "agent": "C",
+        "finding_id": "C-009",
+        "severity": "suggestion",
+        "unified_severity": "P3 MEDIUM",
+        "title": "buildRelationsResponse 中 pLines 变量在 try 块外被引用但可能未定义",
+        "description": "在 buildRelationsResponse 函数中，pLines 在行123的 try 块内声明并赋值，但在行205的 phase detection 代码中被直接引用（`for (var pi2 = 0; pi2 < pLines.length; pi2++)`）。如果 try 块中的文件读取失败（catch 块为空），pLines 将是未定义的，导致运行时 TypeError。虽然 catch 块为空会隐藏原始错误，但后续的 pLines.length 访问会抛出异常，可能导致整个 API 请求返回 500。",
+        "confidence": 0.9,
+        "category": "correctness",
+        "rule_reference": "Clean Code: 'Prefer Exceptions to Returning Error Codes' — 空 catch 块 + 后续未定义变量访问 = 隐藏错误后崩溃。"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.9,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.9,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "correctness"
+      ]
+    },
+    "suggestion": "在 try 块前初始化 `var pLines = [];`，或在 catch 块中设置默认值。更好的做法是将整个函数改为 async，使用 try-catch 正确处理文件读取错误并向客户端返回有意义的错误响应。"
+  },
+  {
+    "merged_id": "M-013",
+    "canonical_title": "Internal file path disclosure via /api/session/{id} response",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "The buildSessionDetailResponse function includes the full server-side file path in the response: `filePath: fpath`. This exposes the internal directory structure (e.g., `C:\\Users\\Administrator\\.claude\\projects\\C--Users-Administrator\\{uuid}.jsonl`) to any caller. Combined with other information, this helps an attacker map the filesystem for path traversal or targeted file access. (CWE-200: Exposure of Sensitive Information)",
+    "category": "security",
+    "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\session.js",
+    "line_range": [
+      95,
+      95
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-003",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "Internal file path disclosure via /api/session/{id} response",
+        "description": "The buildSessionDetailResponse function includes the full server-side file path in the response: `filePath: fpath`. This exposes the internal directory structure (e.g., `C:\\Users\\Administrator\\.claude\\projects\\C--Users-Administrator\\{uuid}.jsonl`) to any caller. Combined with other information, this helps an attacker map the filesystem for path traversal or targeted file access. (CWE-200: Exposure of Sensitive Information)",
+        "confidence": 0.88,
+        "category": "security",
+        "rule_reference": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.88,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.88,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var resp = {\n  id: cached.id, title: cached.title, /* ... */\n  filePath: fpath  // exposes C:\\Users\\Administrator\\.claude\\projects\\...\n};",
+    "code_snippet_good": "var resp = {\n  id: cached.id, title: cached.title, /* ... */\n  // filePath removed — internal paths should not be exposed\n};",
+    "suggestion": "Remove the `filePath` field from the API response, or return only a relative/basename path if the frontend needs it for display purposes."
+  },
+  {
+    "merged_id": "M-028",
+    "canonical_title": "/api/create-and-open 使用 Math.random() 生成 UUID，存在碰撞风险",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "行125-129的 UUID 生成使用 Math.random()：`'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) { var r = Math.random() * 16 | 0; ... })'。Math.random() 不是密码学安全的，且在同一进程中快速连续调用时可能产生重复值。此外，同一函数中两次使用相同的 UUID 生成模式（行125的 sessionId 和行133的 genUuid），进一步增加了碰撞概率。虽然这是本地工具，但 UUID 碰撞会导致会话文件被覆盖。",
+    "category": "bug",
+    "file": "index.js",
+    "line_range": [
+      114,
+      145
+    ],
+    "sources": [
+      {
+        "agent": "C",
+        "finding_id": "C-006",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "/api/create-and-open 使用 Math.random() 生成 UUID，存在碰撞风险",
+        "description": "行125-129的 UUID 生成使用 Math.random()：`'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) { var r = Math.random() * 16 | 0; ... })'。Math.random() 不是密码学安全的，且在同一进程中快速连续调用时可能产生重复值。此外，同一函数中两次使用相同的 UUID 生成模式（行125的 sessionId 和行133的 genUuid），进一步增加了碰撞概率。虽然这是本地工具，但 UUID 碰撞会导致会话文件被覆盖。",
+        "confidence": 0.88,
+        "category": "bug",
+        "rule_reference": "The Pragmatic Programmer: 'Don't Use Random Numbers as Keys' — 随机数生成器的输出空间远小于 UUID 的理论空间。"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.88,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.88,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "bug"
+      ]
+    },
+    "suggestion": "使用 Node.js 内置的 crypto.randomUUID()（Node 14.17+）：\n```js\nvar sessionId = require('crypto').randomUUID();\n```"
+  },
+  {
+    "merged_id": "M-002",
+    "canonical_title": "import-localstorage 路由存在 XSS 注入风险",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "该路由从 import-data.json 读取用户可控数据，通过 `JSON.stringify(JSON.parse(importData))` 处理后直接拼接进 HTML 的 `<script>` 标签中。虽然现代 V8 的 JSON.stringify 会将 `<` 转义为 `\\u003c`（从而缓解 `</script>` 注入），但这依赖引擎实现而非规范保证。此外，如果 import-data.json 包含含有模板字符串反引号或特殊 Unicode 字符的值，仍可能破坏 JS 语法。该路由无任何认证机制，任何能访问 localhost:5022 的进程都可以触发。",
+    "category": "security",
+    "file": "server/index.js",
+    "line_range": [
+      46,
+      65
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-002",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "import-localstorage 路由存在 XSS 注入风险",
+        "description": "该路由从 import-data.json 读取用户可控数据，通过 `JSON.stringify(JSON.parse(importData))` 处理后直接拼接进 HTML 的 `<script>` 标签中。虽然现代 V8 的 JSON.stringify 会将 `<` 转义为 `\\u003c`（从而缓解 `</script>` 注入），但这依赖引擎实现而非规范保证。此外，如果 import-data.json 包含含有模板字符串反引号或特殊 Unicode 字符的值，仍可能破坏 JS 语法。该路由无任何认证机制，任何能访问 localhost:5022 的进程都可以触发。",
+        "confidence": 0.85,
+        "category": "security",
+        "rule_reference": "OWASP: XSS Prevention; CWE-79"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.85,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.85,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var safeData = JSON.stringify(JSON.parse(importData));\nvar html = '...<script>!function(){var d=' + safeData + ';var ok=0...'",
+    "code_snippet_good": "var safeData = JSON.stringify(JSON.parse(importData));\n// 使用 JSON.stringify 再次编码，确保安全嵌入 JS 字符串\nvar html = '...<script>!function(){var d=' + JSON.stringify(safeData) + ';var ok=0...'",
+    "suggestion": "1) 将 JSON 数据通过 `JSON.stringify(safeData)` 再次编码后赋值给 JS 变量，确保不会破坏脚本上下文；2) 考虑添加简单的 token 认证或限制为 POST 方法；3) 至少添加 CSP 头 `Content-Security-Policy: script-src 'self'`。"
+  },
+  {
+    "merged_id": "M-006",
+    "canonical_title": "processChanges 存在竞态条件：_processing 标志在异步操作期间不安全",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "`_processing` 标志在 `scanSessions` Promise 链的 `.finally()` 中重置为 false。但由于 `scanSessions` 是异步的，存在以下竞态窗口：1) 第一次调用 processChanges 设置 _processing=true；2) scanSessions 开始异步执行；3) fs.watch 的 debounce 回调或 30s setInterval 再次触发 processChanges；4) 如果第一次调用的 Promise 尚未 resolve，_processing 仍为 true，第二次调用被正确跳过——但如果第一次调用的 Promise 在 debounce 超时前 resolve 了（文件很小，扫描极快），_processing 被重置，而 debounce 回调恰好在此时触发，就会启动第二次并发扫描，两次扫描的结果可能交错写入缓存。",
+    "category": "bug",
+    "file": "server/watcher.js",
+    "line_range": [
+      35,
+      58
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-006",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "processChanges 存在竞态条件：_processing 标志在异步操作期间不安全",
+        "description": "`_processing` 标志在 `scanSessions` Promise 链的 `.finally()` 中重置为 false。但由于 `scanSessions` 是异步的，存在以下竞态窗口：1) 第一次调用 processChanges 设置 _processing=true；2) scanSessions 开始异步执行；3) fs.watch 的 debounce 回调或 30s setInterval 再次触发 processChanges；4) 如果第一次调用的 Promise 尚未 resolve，_processing 仍为 true，第二次调用被正确跳过——但如果第一次调用的 Promise 在 debounce 超时前 resolve 了（文件很小，扫描极快），_processing 被重置，而 debounce 回调恰好在此时触发，就会启动第二次并发扫描，两次扫描的结果可能交错写入缓存。",
+        "confidence": 0.85,
+        "category": "bug",
+        "rule_reference": "Concurrency: Atomic check-and-act; Node.js Event Loop semantics"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.85,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.85,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "bug"
+      ]
+    },
+    "code_snippet_bad": "var _processing = false;\nfunction processChanges() {\n  if (_processing) return;\n  _processing = true;\n  try {\n    scanner.scanSessions(...).then(function(sessions) {\n      // ...\n    }).finally(function() {\n      _processing = false;\n    });\n  } catch (e) {\n    _processing = false;\n  }\n}",
+    "code_snippet_good": "var _scanPromise = null;\nfunction processChanges() {\n  if (_scanPromise) return;\n  _scanPromise = scanner.scanSessions(shared.PROJECTS_DIR, []).then(function(sessions) {\n    agents.scanSubAgents(sessions);\n    // ... process results ...\n    sse.broadcastSSE({ type: \"sessions-update\", timestamp: new Date().toISOString() });\n  }).catch(function(e) {\n    console.error(\"[CC面板] processChanges error:\", e.message);\n  }).finally(function() {\n    _scanPromise = null;\n  });\n}",
+    "suggestion": "使用 Promise 链式锁替代布尔标志：`var _scanPromise = null; function processChanges() { if (_scanPromise) return; _scanPromise = scanSessions(...).finally(() => { _scanPromise = null; }); }`。这保证了即使前一次扫描快速完成，下一次扫描也会等待完全结束后再启动。"
+  },
+  {
+    "merged_id": "M-007",
+    "canonical_title": "sessionCache / subAgentCache / fileOffsets 无大小上限，长期运行存在内存泄漏风险",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "这三个 Map 在 shared.js 中导出，被 scanner.js 和 agents.js 不断写入但从未清理。对于长时间运行的面板（数天/数周），随着会话数量增长，这三个缓存会无限膨胀。特别是 sessionCache 存储了每个会话的完整元数据（包括 keyDecisions 数组），fileOffsets 存储了每个文件的偏移量。如果管理了数百个会话，内存占用可能达到数百 MB。",
+    "category": "performance",
+    "file": "server/shared.js",
+    "line_range": [
+      34,
+      39
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-007",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "sessionCache / subAgentCache / fileOffsets 无大小上限，长期运行存在内存泄漏风险",
+        "description": "这三个 Map 在 shared.js 中导出，被 scanner.js 和 agents.js 不断写入但从未清理。对于长时间运行的面板（数天/数周），随着会话数量增长，这三个缓存会无限膨胀。特别是 sessionCache 存储了每个会话的完整元数据（包括 keyDecisions 数组），fileOffsets 存储了每个文件的偏移量。如果管理了数百个会话，内存占用可能达到数百 MB。",
+        "confidence": 0.85,
+        "category": "performance",
+        "rule_reference": "Performance: Memory Management; Pragmatic Programmer: Estimate to Avoid Surprises"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.85,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.85,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "performance"
+      ]
+    },
+    "suggestion": "1) 为 sessionCache 添加 LRU 淘汰策略（保留最近访问的 N 个会话）；2) 在每次 scanSessions 结束后，清理不在扫描结果中的过期条目；3) 对 keyDecisions 数组设置更严格的上限（当前是 100，可以降到 20）。"
+  },
+  {
+    "merged_id": "M-014",
+    "canonical_title": "No security headers — missing CSP, X-Content-Type-Options, X-Frame-Options",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "The HTTP server sets CORS headers for localhost origins but does not set any security response headers: no Content-Security-Policy, no X-Content-Type-Options (allows MIME sniffing), no X-Frame-Options (allows clickjacking via iframe embedding), no Referrer-Policy. The /import-localstorage and /migrate routes serve HTML pages that could be framed by a malicious page on the same origin, enabling clickjacking attacks to trick the user into triggering session creation or other actions.",
+    "category": "security",
+    "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+    "line_range": [
+      18,
+      21
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-004",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "No security headers — missing CSP, X-Content-Type-Options, X-Frame-Options",
+        "description": "The HTTP server sets CORS headers for localhost origins but does not set any security response headers: no Content-Security-Policy, no X-Content-Type-Options (allows MIME sniffing), no X-Frame-Options (allows clickjacking via iframe embedding), no Referrer-Policy. The /import-localstorage and /migrate routes serve HTML pages that could be framed by a malicious page on the same origin, enabling clickjacking attacks to trick the user into triggering session creation or other actions.",
+        "confidence": 0.85,
+        "category": "security",
+        "rule_reference": "CWE-693: Protection Mechanism Failure"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.85,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.85,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var server = http.createServer(function(req, res) {\n  var origin = req.headers.origin;\n  if (origin && /^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/.test(origin)) {\n    res.setHeader(\"Access-Control-Allow-Origin\", origin);\n  }\n  // no security headers set\n});",
+    "code_snippet_good": "var server = http.createServer(function(req, res) {\n  var origin = req.headers.origin;\n  if (origin && /^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/.test(origin)) {\n    res.setHeader(\"Access-Control-Allow-Origin\", origin);\n  }\n  res.setHeader('X-Content-Type-Options', 'nosniff');\n  res.setHeader('X-Frame-Options', 'DENY');\n  res.setHeader('Referrer-Policy', 'no-referrer');\n});",
+    "suggestion": "Add security headers to all responses in the main server handler:\n```javascript\nres.setHeader('X-Content-Type-Options', 'nosniff');\nres.setHeader('X-Frame-Options', 'DENY');\nres.setHeader('Referrer-Policy', 'no-referrer');\n```"
+  },
+  {
+    "merged_id": "M-017",
+    "canonical_title": "Mass UUID replacement in forked sessions — collateral damage to JSONL content",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "The /api/create-and-open endpoint forks a source session by reading its JSONL file and replacing ALL UUIDs found via a greedy regex (`/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi`). This regex matches UUIDs embedded in file paths, tool outputs, error messages, and user-provided content — not just session/participant IDs. A tool output containing a UUID (e.g., a git commit hash, npm package ID, or database record) would be silently corrupted. This could cause the forked session to malfunction or produce incorrect results. The timestamp replacement (`/\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z/g`) has the same problem — it replaces timestamps in user messages and tool outputs, not just metadata timestamps.",
+    "category": "security",
+    "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+    "line_range": [
+      140,
+      175
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-007",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "Mass UUID replacement in forked sessions — collateral damage to JSONL content",
+        "description": "The /api/create-and-open endpoint forks a source session by reading its JSONL file and replacing ALL UUIDs found via a greedy regex (`/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi`). This regex matches UUIDs embedded in file paths, tool outputs, error messages, and user-provided content — not just session/participant IDs. A tool output containing a UUID (e.g., a git commit hash, npm package ID, or database record) would be silently corrupted. This could cause the forked session to malfunction or produce incorrect results. The timestamp replacement (`/\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z/g`) has the same problem — it replaces timestamps in user messages and tool outputs, not just metadata timestamps.",
+        "confidence": 0.85,
+        "category": "security",
+        "rule_reference": "CWE-20: Improper Input Validation"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.85,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.85,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;\nvar foundUuids = sourceContent.match(uuidRegex);\n// replaces ALL UUIDs everywhere in the file content\nnewContent = newContent.split(oldUuids[oi]).join(uuidMap[oldUuids[oi]]);\n\nvar tsRegex = /\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z/g;\nnewContent = newContent.replace(tsRegex, function() { /* ... */ });",
+    "code_snippet_good": "// Parse line by line, only replace in structural fields\nvar lines = sourceContent.split('\\n');\nvar newLines = lines.map(function(line) {\n  try {\n    var obj = JSON.parse(line);\n    if (obj.sessionId && uuidMap[obj.sessionId]) obj.sessionId = uuidMap[obj.sessionId];\n    if (obj.promptId && uuidMap[obj.promptId]) obj.promptId = uuidMap[obj.promptId];\n    if (obj.timestamp) obj.timestamp = new Date(Date.now()++).toISOString();\n    // Do NOT touch obj.message.content — it may contain arbitrary text\n    return JSON.stringify(obj);\n  } catch(e) { return line; }\n});",
+    "suggestion": "Instead of blind regex replacement, parse each JSONL line as JSON and only replace UUIDs/timestamps in known structural fields (sessionId, promptId, timestamp at the top level). Leave message content untouched."
+  },
+  {
+    "merged_id": "M-027",
+    "canonical_title": "同步文件 I/O 在请求热路径中阻塞事件循环",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "parseSessionChunk() 使用 fs.openSync + fs.readSync 读取整个 JSONL 文件，在 scanSessions 的每次调用中执行。当会话数量增长时（例如 100+ 个会话），每次 API 请求（/api/sessions、/api/session/:id）都会触发全量或增量扫描，同步 I/O 阻塞 Node.js 事件循环。agents.js 的 parseSubAgent() 同样使用 readFileSync。对于本地工具来说，当会话文件变大（单个 JSONL 可达数 MB）或会话数量增多时，会导致 SSE 推送延迟和 API 响应变慢。",
+    "category": "performance",
+    "file": "scanner.js",
+    "line_range": [
+      110,
+      150
+    ],
+    "sources": [
+      {
+        "agent": "C",
+        "finding_id": "C-005",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "同步文件 I/O 在请求热路径中阻塞事件循环",
+        "description": "parseSessionChunk() 使用 fs.openSync + fs.readSync 读取整个 JSONL 文件，在 scanSessions 的每次调用中执行。当会话数量增长时（例如 100+ 个会话），每次 API 请求（/api/sessions、/api/session/:id）都会触发全量或增量扫描，同步 I/O 阻塞 Node.js 事件循环。agents.js 的 parseSubAgent() 同样使用 readFileSync。对于本地工具来说，当会话文件变大（单个 JSONL 可达数 MB）或会话数量增多时，会导致 SSE 推送延迟和 API 响应变慢。",
+        "confidence": 0.85,
+        "category": "performance",
+        "rule_reference": "Clean Code: 'Performance is an architectural concern.' 同步 I/O 在事件循环架构中是结构性缺陷，不是优化点。"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.85,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.85,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "performance"
+      ]
+    },
+    "suggestion": "1) 将 parseSessionChunk 改为异步版本（使用 fs.promises.open + read），配合现有的 async scanSessions；2) 对增量扫描路径（startOffset > 0），使用流式读取而非一次性读取剩余部分；3) 考虑对 agent 文件解析添加缓存——agent 文件解析结果在同一次 scanSessions 调用中不会变化。"
+  },
+  {
+    "merged_id": "M-029",
+    "canonical_title": "路由处理器内嵌大段 HTML 字符串，降低可维护性",
+    "canonical_severity": "P3 MEDIUM",
+    "canonical_description": "/import-localstorage（行60-70）和 /migrate（行80-100）两个路由各自内嵌了完整的 HTML 页面（含 CSS 和 JavaScript），单个 HTML 字符串超过 30 行。这些 HTML 模板与服务器逻辑混合在一起，无法被前端工具链处理（如压缩、lint），修改 HTML 需要在 JavaScript 字符串中操作，容易引入语法错误。",
+    "category": "maintainability",
+    "file": "index.js",
+    "line_range": [
+      55,
+      100
+    ],
+    "sources": [
+      {
+        "agent": "C",
+        "finding_id": "C-007",
+        "severity": "suggestion",
+        "unified_severity": "P3 MEDIUM",
+        "title": "路由处理器内嵌大段 HTML 字符串，降低可维护性",
+        "description": "/import-localstorage（行60-70）和 /migrate（行80-100）两个路由各自内嵌了完整的 HTML 页面（含 CSS 和 JavaScript），单个 HTML 字符串超过 30 行。这些 HTML 模板与服务器逻辑混合在一起，无法被前端工具链处理（如压缩、lint），修改 HTML 需要在 JavaScript 字符串中操作，容易引入语法错误。",
+        "confidence": 0.85,
+        "category": "maintainability",
+        "rule_reference": "SRP — 模板渲染不是 HTTP 路由处理器的职责。"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.85,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.85,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "suggestion": "将 HTML 模板提取到独立的 .html 文件（如 templates/import.html、templates/migrate.html），服务器端用 fs.readFileSync 读取后发送。这还允许未来添加模板变量替换（如动态端口号）。"
+  },
+  {
+    "merged_id": "M-016",
+    "canonical_title": "No authentication — all API endpoints accessible to any local process",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "The server has zero authentication. Any process running on the same machine (including browser tabs, malicious extensions, or other user-space malware) can call any endpoint: /api/create-and-open to spawn new Claude Code sessions with arbitrary configs, /api/terminal-bat/{id} to hijack existing sessions, /api/snapshot/delete/{id} to destroy snapshots, or /api/open-session/{id} to launch sessions. While the CORS check limits browser-based cross-origin access to localhost, any local process (curl, another Node.js script, a browser extension with native messaging) can freely interact with all endpoints. This is especially dangerous because the server spawns child processes (claude CLI) with user-level privileges.",
+    "category": "security",
+    "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\open.js",
+    "line_range": [
+      1,
+      5
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-006",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "No authentication — all API endpoints accessible to any local process",
+        "description": "The server has zero authentication. Any process running on the same machine (including browser tabs, malicious extensions, or other user-space malware) can call any endpoint: /api/create-and-open to spawn new Claude Code sessions with arbitrary configs, /api/terminal-bat/{id} to hijack existing sessions, /api/snapshot/delete/{id} to destroy snapshots, or /api/open-session/{id} to launch sessions. While the CORS check limits browser-based cross-origin access to localhost, any local process (curl, another Node.js script, a browser extension with native messaging) can freely interact with all endpoints. This is especially dangerous because the server spawns child processes (claude CLI) with user-level privileges.",
+        "confidence": 0.82,
+        "category": "security",
+        "rule_reference": "CWE-306: Missing Authentication for Critical Function"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.82,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.82,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "// No auth check — any request is processed\nvar server = http.createServer(function(req, res) {\n  if (sse.handleSSE(req, res)) return;\n  if (req.url === \"/import-localstorage\") { /* ... */ }\n  // ... all endpoints open\n});",
+    "code_snippet_good": "var crypto = require('crypto');\nvar PANEL_TOKEN = crypto.randomBytes(32).toString('hex');\n// Write to file for dashboard to read\nfs.writeFileSync(path.join(__dirname, '.panel-token'), PANEL_TOKEN);\n\nfunction checkAuth(req, res) {\n  var token = req.headers['x-panel-token'];\n  if (token !== PANEL_TOKEN) {\n    res.writeHead(401); res.end('Unauthorized');\n    return false;\n  }\n  return true;\n}",
+    "suggestion": "Add a shared secret/token authentication mechanism:\n1. Generate a random token on server start, write it to a config file\n2. Require the token in a custom header (X-Panel-Token) for all mutating endpoints\n3. For the HTML dashboard, pass the token as a URL parameter or cookie\nAlternatively, use a Unix socket instead of a TCP port for local-only access."
+  },
+  {
+    "merged_id": "M-009",
+    "canonical_title": "swapSettingsJson 的引用计数只增不减，_settingsRefCounts 永远增长",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "在 swapSettingsJson 函数中，`_settingsRefCounts[configFile]++` 在每次调用时递增，但没有任何代码在会话结束时递减。这意味着引用计数永远增长，永远不会降为 0。虽然当前代码中引用计数实际上没有被用于任何逻辑判断（只是记录），但如果未来有人基于这个计数做决策（例如决定是否可以安全删除配置文件），就会得到错误的结果。",
+    "category": "maintainability",
+    "file": "server/routes/open.js",
+    "line_range": [
+      217,
+      250
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-009",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "swapSettingsJson 的引用计数只增不减，_settingsRefCounts 永远增长",
+        "description": "在 swapSettingsJson 函数中，`_settingsRefCounts[configFile]++` 在每次调用时递增，但没有任何代码在会话结束时递减。这意味着引用计数永远增长，永远不会降为 0。虽然当前代码中引用计数实际上没有被用于任何逻辑判断（只是记录），但如果未来有人基于这个计数做决策（例如决定是否可以安全删除配置文件），就会得到错误的结果。",
+        "confidence": 0.8,
+        "category": "maintainability",
+        "rule_reference": "Clean Code: Dead Code; Pragmatic Programmer: Orthogonality"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.8,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.8,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "code_snippet_bad": "if (!_settingsRefCounts[configFile]) _settingsRefCounts[configFile] = 0;\n_settingsRefCounts[configFile]++;",
+    "code_snippet_good": "// 移除无用的引用计数，或添加配套的释放逻辑\n// function releaseSettingsConfig(configFile) {\n//   if (_settingsRefCounts[configFile]) _settingsRefCounts[configFile]--;\n// }",
+    "suggestion": "要么移除引用计数（因为它没有实际用途），要么添加 `releaseSettingsConfig(configFile)` 函数在会话关闭时调用。当前状态下，这段代码是误导性的死代码。"
+  },
+  {
+    "merged_id": "M-015",
+    "canonical_title": "PID collision risk — Math.random() generates 6-digit PIDs that can overwrite existing session metadata",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "The /api/create-and-open endpoint generates a fake PID with `Math.floor(Math.random() * 900000) + 100000` and writes it to `{sessionsDir}/{fakePid}.json`. If this PID collides with an existing session metadata file (probability ~1/900000 per call, non-negligible over time), it silently overwrites the existing session's metadata. This could corrupt another session's state or cause the panel to display incorrect information. Combined with B-002 (predictable Math.random), an attacker could predict the PID and target a specific existing file.",
+    "category": "security",
+    "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+    "line_range": [
+      128,
+      130
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-005",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "PID collision risk — Math.random() generates 6-digit PIDs that can overwrite existing session metadata",
+        "description": "The /api/create-and-open endpoint generates a fake PID with `Math.floor(Math.random() * 900000) + 100000` and writes it to `{sessionsDir}/{fakePid}.json`. If this PID collides with an existing session metadata file (probability ~1/900000 per call, non-negligible over time), it silently overwrites the existing session's metadata. This could corrupt another session's state or cause the panel to display incorrect information. Combined with B-002 (predictable Math.random), an attacker could predict the PID and target a specific existing file.",
+        "confidence": 0.8,
+        "category": "security",
+        "rule_reference": "CWE-362: Race Condition / CWE-330: Insufficient Randomness"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.8,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.8,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var fakePid = Math.floor(Math.random() * 900000) + 100000;\nvar sessionMeta = { pid: fakePid, sessionId: sessionId, /* ... */ };\nfs.writeFileSync(path.join(sessionsDir, fakePid + \".json\"), JSON.stringify(sessionMeta, null, 2));",
+    "code_snippet_good": "// Use sessionId as filename — already unique (if using crypto.randomUUID per B-002)\nvar metaFilename = sessionId + '.json';\nvar sessionMeta = { pid: process.pid, sessionId: sessionId, /* ... */ };\nfs.writeFileSync(path.join(sessionsDir, metaFilename), JSON.stringify(sessionMeta, null, 2));",
+    "suggestion": "Use crypto.randomInt() for PID generation, or better yet, use a UUID-based filename instead of a numeric PID:\n```javascript\nvar metaFilename = sessionId + '.json'; // reuse the already-generated UUID\nfs.writeFileSync(path.join(sessionsDir, metaFilename), JSON.stringify(sessionMeta));\n```"
+  },
+  {
+    "merged_id": "M-019",
+    "canonical_title": "Error responses leak internal file paths",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "When the source session file is not found, the error response includes the full server path: `{ ok: false, error: 'Source session not found: ' + sourceFile }`. This exposes the internal directory structure to the caller. Similarly, console.error calls throughout the codebase log full paths which could appear in log files accessible to other processes.",
+    "category": "security",
+    "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+    "line_range": [
+      156,
+      165
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-009",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "Error responses leak internal file paths",
+        "description": "When the source session file is not found, the error response includes the full server path: `{ ok: false, error: 'Source session not found: ' + sourceFile }`. This exposes the internal directory structure to the caller. Similarly, console.error calls throughout the codebase log full paths which could appear in log files accessible to other processes.",
+        "confidence": 0.8,
+        "category": "security",
+        "rule_reference": "CWE-209: Generation of Error Message Containing Sensitive Information"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.8,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.8,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "res.end(JSON.stringify({ ok: false, error: \"Source session not found: \" + sourceFile }));",
+    "code_snippet_good": "console.error('[create-and-open] Source not found:', sourceFile);\nres.end(JSON.stringify({ ok: false, error: \"Source session not found\" }));",
+    "suggestion": "Return generic error messages to clients; log details server-side only:\n```javascript\nres.end(JSON.stringify({ ok: false, error: 'Source session not found' }));\nconsole.error('[create-and-open] Source not found:', sourceFile);\n```"
+  },
+  {
+    "merged_id": "M-030",
+    "canonical_title": "open.js 模块使用函数工厂 + 静态属性的反模式导出",
+    "canonical_severity": "P3 MEDIUM",
+    "canonical_description": "open.js 使用 makeOpenRouter() 工厂函数创建路由处理器，但随后又在函数对象上附加静态方法（makeOpenRouter.launchSessionDirect、makeOpenRouter.swapSettingsJson）。这种混合模式（工厂 + 静态）使得模块的 API 表面不清晰——调用者需要知道哪些方法在返回的 handle 上，哪些在 makeOpenRouter 上。handle.launchSessionDirect 实际上只是 makeOpenRouter.launchSessionDirect 的引用，增加了不必要的间接层。",
+    "category": "maintainability",
+    "file": "routes\\open.js",
+    "line_range": [
+      1,
+      200
+    ],
+    "sources": [
+      {
+        "agent": "C",
+        "finding_id": "C-008",
+        "severity": "suggestion",
+        "unified_severity": "P3 MEDIUM",
+        "title": "open.js 模块使用函数工厂 + 静态属性的反模式导出",
+        "description": "open.js 使用 makeOpenRouter() 工厂函数创建路由处理器，但随后又在函数对象上附加静态方法（makeOpenRouter.launchSessionDirect、makeOpenRouter.swapSettingsJson）。这种混合模式（工厂 + 静态）使得模块的 API 表面不清晰——调用者需要知道哪些方法在返回的 handle 上，哪些在 makeOpenRouter 上。handle.launchSessionDirect 实际上只是 makeOpenRouter.launchSessionDirect 的引用，增加了不必要的间接层。",
+        "confidence": 0.8,
+        "category": "maintainability",
+        "rule_reference": "KISS 原则 — 工厂函数在此场景没有提供额外价值，反而增加了认知负担。"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.8,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.8,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "suggestion": "统一为普通模块导出模式，不需要工厂函数：\n```js\nmodule.exports = { handle: function(req, res) { ... }, launchSessionDirect: function(...) { ... }, swapSettingsJson: function(...) { ... } };\n```\n或者如果需要工厂模式，将所有方法统一挂载到返回的 handle 对象上。"
+  },
+  {
+    "merged_id": "M-018",
+    "canonical_title": "No size limit on JSONL file reading — potential memory exhaustion",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "The buildSessionDetailResponse function reads session JSONL files either via a tail-based approach (limited by `limit * 1200 + 32768` bytes) or fully (`fs.readFileSync(fpath, 'utf-8')` when limit=0 via `?full=1`). The full-read path has no size cap — a corrupted or adversarially large JSONL file (e.g., a file filled with repeated 'A' characters) could exhaust server memory. Similarly, parseSubAgent in agents.js reads entire subagent JSONL files without size limits.",
+    "category": "security",
+    "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\session.js",
+    "line_range": [
+      53,
+      66
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-008",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "No size limit on JSONL file reading — potential memory exhaustion",
+        "description": "The buildSessionDetailResponse function reads session JSONL files either via a tail-based approach (limited by `limit * 1200 + 32768` bytes) or fully (`fs.readFileSync(fpath, 'utf-8')` when limit=0 via `?full=1`). The full-read path has no size cap — a corrupted or adversarially large JSONL file (e.g., a file filled with repeated 'A' characters) could exhaust server memory. Similarly, parseSubAgent in agents.js reads entire subagent JSONL files without size limits.",
+        "confidence": 0.78,
+        "category": "security",
+        "rule_reference": "CWE-400: Uncontrolled Resource Consumption"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.78,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.78,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "if (limit > 0) {\n  // tail-based read with size calc\n} else {\n  var raw = fs.readFileSync(fpath, \"utf-8\").trim().split(\"\\n\"); // no size check\n}",
+    "code_snippet_good": "var MAX_FULL_READ = 50 * 1024 * 1024;\nvar fsize = fs.statSync(fpath).size;\nif (limit <= 0 && fsize > MAX_FULL_READ) {\n  limit = 500; // auto-downgrade to tail mode\n}\nif (limit > 0) {\n  // tail-based read\n} else {\n  var raw = fs.readFileSync(fpath, \"utf-8\").trim().split(\"\\n\");\n}",
+    "suggestion": "Add a maximum file size check before reading:\n```javascript\nvar MAX_READ_SIZE = 50 * 1024 * 1024; // 50MB\nvar fsize = fs.statSync(fpath).size;\nif (fsize > MAX_READ_SIZE && limit === 0) {\n  limit = 500; // force tail mode for large files\n}\n```"
+  },
+  {
+    "merged_id": "M-022",
+    "canonical_title": "Terminal bat endpoint lacks UUID validation — accepts arbitrary input as --resume argument",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "The /api/terminal-bat/{id} endpoint decodes the URL segment but does NOT validate it against the UUID format before passing it to `claude --resume {batId}`. While spawn() uses array arguments (preventing shell injection), a non-UUID value like `--settings` or an empty string would be passed directly to the claude CLI, potentially causing unexpected behavior. Unlike /api/session/{id} and /api/open-session/{id} which validate UUID format, this endpoint accepts any string.",
+    "category": "security",
+    "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\open.js",
+    "line_range": [
+      80,
+      95
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-012",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "Terminal bat endpoint lacks UUID validation — accepts arbitrary input as --resume argument",
+        "description": "The /api/terminal-bat/{id} endpoint decodes the URL segment but does NOT validate it against the UUID format before passing it to `claude --resume {batId}`. While spawn() uses array arguments (preventing shell injection), a non-UUID value like `--settings` or an empty string would be passed directly to the claude CLI, potentially causing unexpected behavior. Unlike /api/session/{id} and /api/open-session/{id} which validate UUID format, this endpoint accepts any string.",
+        "confidence": 0.78,
+        "category": "security",
+        "rule_reference": "CWE-20: Improper Input Validation"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.78,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.78,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var batId = decodeURI(req.url.split(\"/api/terminal-bat/\")[1]);\nvar batCached = shared.sessionCache.get(batId);\n// batId not validated — could be anything",
+    "code_snippet_good": "var batId = decodeURI(req.url.split(\"/api/terminal-bat/\")[1]);\nif (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(batId)) {\n  res.writeHead(400); res.end(JSON.stringify({ error: 'invalid session id format' }));\n  return true;\n}",
+    "suggestion": "Add UUID validation consistent with other endpoints:\n```javascript\nif (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(batId)) {\n  res.writeHead(400); res.end(JSON.stringify({ error: 'invalid session id' }));\n  return true;\n}\n```"
+  },
+  {
+    "merged_id": "M-008",
+    "canonical_title": "QR 码图片每次请求都同步读取磁盘，未使用缓存",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "/qr-wechat.png 和 /qr-alipay.jpg 路由每次 HTTP 请求都执行 fs.existsSync + fs.readFileSync，将整个图片文件读入内存后返回。对于静态不变的图片文件，这是不必要的磁盘 I/O。在高并发场景下（虽然面板不太可能承受高并发），这会增加不必要的延迟。",
+    "category": "performance",
+    "file": "server/index.js",
+    "line_range": [
+      130,
+      135
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-008",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "QR 码图片每次请求都同步读取磁盘，未使用缓存",
+        "description": "/qr-wechat.png 和 /qr-alipay.jpg 路由每次 HTTP 请求都执行 fs.existsSync + fs.readFileSync，将整个图片文件读入内存后返回。对于静态不变的图片文件，这是不必要的磁盘 I/O。在高并发场景下（虽然面板不太可能承受高并发），这会增加不必要的延迟。",
+        "confidence": 0.75,
+        "category": "performance",
+        "rule_reference": "Performance: Cache static assets"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.75,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.75,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "performance"
+      ]
+    },
+    "suggestion": "在启动时将 QR 码图片预加载到 Buffer 中缓存，请求时直接返回缓存的 Buffer。添加 `var qrWxCache = null;` 在模块顶层，在 server.listen 之前预加载。"
+  },
+  {
+    "merged_id": "M-010",
+    "canonical_title": "mergeSessionData 中 _seenPromptIds 合并无去重上限，可能无限增长",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "mergeSessionData 在合并增量数据时，将 delta._seenPromptIds 中的所有 promptId 复制到 cached._seenPromptIds 中，没有任何大小限制。promptId 是用户消息的唯一标识符，随着会话对话轮数增加，这个集合会无限增长。对于一个有数千轮对话的长会话，_seenPromptIds 可能包含数千个条目，占用可观内存。",
+    "category": "maintainability",
+    "file": "server/scanner.js",
+    "line_range": [
+      156,
+      178
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-010",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "mergeSessionData 中 _seenPromptIds 合并无去重上限，可能无限增长",
+        "description": "mergeSessionData 在合并增量数据时，将 delta._seenPromptIds 中的所有 promptId 复制到 cached._seenPromptIds 中，没有任何大小限制。promptId 是用户消息的唯一标识符，随着会话对话轮数增加，这个集合会无限增长。对于一个有数千轮对话的长会话，_seenPromptIds 可能包含数千个条目，占用可观内存。",
+        "confidence": 0.75,
+        "category": "maintainability",
+        "rule_reference": "Performance: Bounded data structures"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.75,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.75,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "suggestion": "添加上限检查，当 _seenPromptIds 超过一定大小（如 10000）时，使用 LRU 策略淘汰最旧的条目，或改用布隆过滤器来近似去重。"
+  },
+  {
+    "merged_id": "M-021",
+    "canonical_title": "Snapshot data includes truncated tool inputs that may contain secrets",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "The saveSnapshot function includes `keyDecisions` (truncated to 200 chars) in snapshots. These key decisions contain serialized tool inputs (e.g., file contents being written, API calls being made) which may include API keys, passwords, tokens, or other secrets. While truncated to 200 chars, a 200-char prefix of a secret is often enough for an attacker to reconstruct or brute-force the full value. Snapshots are stored as plain JSON files on disk with no access control beyond filesystem permissions.",
+    "category": "security",
+    "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\snapshot.js",
+    "line_range": [
+      20,
+      28
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-011",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "Snapshot data includes truncated tool inputs that may contain secrets",
+        "description": "The saveSnapshot function includes `keyDecisions` (truncated to 200 chars) in snapshots. These key decisions contain serialized tool inputs (e.g., file contents being written, API calls being made) which may include API keys, passwords, tokens, or other secrets. While truncated to 200 chars, a 200-char prefix of a secret is often enough for an attacker to reconstruct or brute-force the full value. Snapshots are stored as plain JSON files on disk with no access control beyond filesystem permissions.",
+        "confidence": 0.75,
+        "category": "security",
+        "rule_reference": "CWE-200: Exposure of Sensitive Information"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.75,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.75,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "keyDecisions: (s.keyDecisions || []).slice(-20),\n// These contain: { tool: 'Write', input: '{\"path\":\"/secret\",\"content\":\"API_KEY=sk-...\"}'.slice(0,200) }",
+    "code_snippet_good": "keyDecisions: (s.keyDecisions || []).slice(-20).map(function(d) {\n  return { timestamp: d.timestamp, tool: d.tool, type: d.type, input: '[redacted]' };\n}),",
+    "suggestion": "Redact or hash sensitive fields in keyDecisions before saving to snapshots. At minimum, strip inputs for tools known to handle secrets (e.g., Write, Edit, shell commands)."
+  },
+  {
+    "merged_id": "M-020",
+    "canonical_title": "Environment variable injection via config file — ANTHROPIC_* and CLAUDE_* vars forwarded to child process",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "The spawnDirect function reads a config file and injects any environment variables starting with ANTHROPIC_ or CLAUDE_ into the child process environment. If an attacker can modify a config file (e.g., setting-evil.json), they could inject ANTHROPIC_BASE_URL to redirect API calls to a malicious proxy, or ANTHROPIC_API_KEY to steal credentials. The config file path is validated against a regex pattern (setting-[a-zA-Z0-9_-]+.json), but the content is not sanitized — only the filename is checked, not the env var values.",
+    "category": "security",
+    "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\open.js",
+    "line_range": [
+      100,
+      115
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-010",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "Environment variable injection via config file — ANTHROPIC_* and CLAUDE_* vars forwarded to child process",
+        "description": "The spawnDirect function reads a config file and injects any environment variables starting with ANTHROPIC_ or CLAUDE_ into the child process environment. If an attacker can modify a config file (e.g., setting-evil.json), they could inject ANTHROPIC_BASE_URL to redirect API calls to a malicious proxy, or ANTHROPIC_API_KEY to steal credentials. The config file path is validated against a regex pattern (setting-[a-zA-Z0-9_-]+.json), but the content is not sanitized — only the filename is checked, not the env var values.",
+        "confidence": 0.72,
+        "category": "security",
+        "rule_reference": "CWE-74: Injection (Environment Variable)"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.72,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.72,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "if (cfg.env) {\n  var envKeys = Object.keys(cfg.env);\n  for (var i = 0; i < envKeys.length; i++) {\n    var k = envKeys[i];\n    if (k.startsWith(\"ANTHROPIC_\") || k.startsWith(\"CLAUDE_\")) {\n      env[k] = cfg.env[k]; // no value validation\n    }\n  }\n}",
+    "code_snippet_good": "var SAFE_ENV_VARS = ['ANTHROPIC_MODEL', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_ENTRYPOINT'];\nif (cfg.env) {\n  for (var i = 0; i < SAFE_ENV_VARS.length; i++) {\n    var k = SAFE_ENV_VARS[i];\n    if (cfg.env[k]) {\n      // Optional: validate URL format for ANTHROPIC_BASE_URL\n      if (k === 'ANTHROPIC_BASE_URL' && !/^https:\\/\\//.test(cfg.env[k])) continue;\n      env[k] = cfg.env[k];\n    }\n  }\n}",
+    "suggestion": "Validate that injected env var values are within expected bounds (e.g., ANTHROPIC_BASE_URL must be a valid HTTPS URL). Alternatively, maintain an allowlist of specific env vars that can be overridden rather than forwarding all ANTHROPIC_* and CLAUDE_* prefixed vars."
+  }
+]

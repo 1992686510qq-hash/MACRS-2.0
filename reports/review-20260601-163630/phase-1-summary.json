@@ -1,0 +1,34 @@
+{
+  "status": "FAILED",
+  "agents": {
+    "A": {
+      "name": "Agent A",
+      "status": "FAILED",
+      "elapsed_seconds": 137.0,
+      "findings_count": 0,
+      "validation_errors": [],
+      "error": "Exit code 1: "
+    },
+    "B": {
+      "name": "Agent B",
+      "status": "TIMEOUT",
+      "elapsed_seconds": 191.5,
+      "findings_count": 0,
+      "validation_errors": [],
+      "error": "Agent timed out after 180s"
+    },
+    "C": {
+      "name": "Agent C",
+      "status": "FAILED",
+      "elapsed_seconds": 58.3,
+      "findings_count": 0,
+      "validation_errors": [],
+      "error": "Exit code 1: "
+    }
+  },
+  "total_findings": 0,
+  "total_praise": 0,
+  "output_files": [],
+  "summary_file": "D:\\MACRS\\reports\\review-20260601-163630\\phase-1-summary.json",
+  "total_elapsed_seconds": 548.6
+}

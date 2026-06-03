@@ -1,0 +1,36 @@
+{
+  "status": "PARTIAL",
+  "agents": {
+    "A": {
+      "name": "Agent A",
+      "status": "FAILED",
+      "elapsed_seconds": 311.2,
+      "findings_count": 0,
+      "validation_errors": [],
+      "error": "Exit code 1: "
+    },
+    "B": {
+      "name": "Agent B",
+      "status": "OK",
+      "elapsed_seconds": 133.1,
+      "findings_count": 10,
+      "validation_errors": [],
+      "praise_count": 3
+    },
+    "C": {
+      "name": "Agent C",
+      "status": "FAILED",
+      "elapsed_seconds": 517.6,
+      "findings_count": 0,
+      "validation_errors": [],
+      "error": "Could not extract valid JSON from agent output"
+    }
+  },
+  "total_findings": 10,
+  "total_praise": 3,
+  "output_files": [
+    "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\MACRS\\reports\\review-20260602-185045\\review-b.json"
+  ],
+  "summary_file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\MACRS\\reports\\review-20260602-185045\\phase-1-summary.json",
+  "total_elapsed_seconds": 1291.9
+}

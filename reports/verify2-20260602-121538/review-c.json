@@ -1,0 +1,209 @@
+{
+  "agent_id": "C",
+  "skill": "pragmatic-clean-code-reviewer",
+  "philosophy": "你是'架构防腐'的代码审查专家。你不只关心单行代码的对错，更关心这段代码在整个系统架构中的位置和长期影响。你的核心理念来自：The Pragmatic Programmer、Clean Code、Clean Architecture。你审查时的核心问题是：'这段代码会加速还是延缓系统的技术债务累积？'",
+  "review_scope": {
+    "files": [
+      "agents.js",
+      "index.js",
+      "pricing.js",
+      "routes\\open.js",
+      "routes\\session.js",
+      "routes\\sessions.js",
+      "routes\\snapshots.js",
+      "scanner.js",
+      "shared.js",
+      "snapshot.js",
+      "sse.js",
+      "watcher.js"
+    ],
+    "lines_total": 1955
+  },
+  "findings": [
+    {
+      "id": "C-001",
+      "file": "shared.js",
+      "line": 95,
+      "line_range": [
+        95,
+        129
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "shared.js 充当全局可变状态中心（God Object 反模式）",
+      "description": "shared.js 导出了 15+ 个可变状态变量（Map、数组、标量），被所有其他模块直接读写。这是典型的 God Object 反模式：状态变更无法追踪、模块间隐式耦合严重、无法隔离测试任何模块。sessionCache、subAgentCache、fileOffsets、sessionConfigMap、sseClients、watchers、snapshotList、pendingChanges 等全局可变状态散布在 module.exports 中，任何模块都能在任何时刻修改任何状态，导致竞态条件和不可预测行为。",
+      "suggestion": "将 shared.js 拆分为独立的状态管理模块，每个模块封装自己的状态并提供明确的 API：1) SessionStore 封装 sessionCache + fileOffsets；2) AgentStore 封装 subAgentCache；3) ConfigStore 封装 sessionConfigMap + cclProjectMap；4) SSEManager 封装 sseClients。每个 Store 通过方法暴露读写操作，禁止外部直接操作内部 Map。示例：\n```js\n// session-store.js\nclass SessionStore {\n  constructor() { this._cache = new Map(); this._offsets = new Map(); }\n  get(id) { return this._cache.get(id); }\n  set(id, data) { this._cache.set(id, data); }\n  getAll() { return Array.from(this._cache.values()); }\n}\nmodule.exports = new SessionStore();\n```",
+      "rule_reference": "Clean Architecture — 依赖规则：内部层不应知道外部层的实现细节。shared.js 打破了所有层的边界。",
+      "confidence": 0.95
+    },
+    {
+      "id": "C-002",
+      "file": "routes\\session.js",
+      "line": 142,
+      "line_range": [
+        142,
+        200
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "session.js 与 agents.js 存在大量重复的 JSONL 解析逻辑",
+      "description": "session.js 的 buildRelationsResponse() 中（行142-200）自行实现了子Agent文件的 JSONL 解析逻辑（读取文件、解析行、提取 token/model/tool_use），与 agents.js 的 parseSubAgent() 功能几乎完全相同。同样的模式也出现在 agents.js 的 parseSubAgent() 和 scanner.js 的 parseSessionChunk() 中——三处代码都在做 JSONL 行解析、token 统计、model 提取、tool_use 计数。违反 DRY 原则，任何解析逻辑的修改需要同步更新三处代码，极易遗漏导致不一致。",
+      "suggestion": "抽取统一的 JSONL 解析核心函数，所有模块复用：\n```js\n// jsonl-parser.js\nfunction parseJsonlStats(filePath) {\n  // 统一的 JSONL 解析逻辑：token统计、model提取、tool_use计数、状态推断\n  return { tokens, model, toolCallCount, status, ... };\n}\n```\n然后 session.js、agents.js、scanner.js 都调用此函数，各自只负责自己的业务逻辑（如关系图构建、子Agent扫描、会话缓存）。",
+      "rule_reference": "DRY 原则 — Don't Repeat Yourself。The Pragmatic Programmer: 'Every piece of knowledge must have a single, unambiguous, authoritative representation within a system.'",
+      "confidence": 0.92
+    },
+    {
+      "id": "C-003",
+      "file": "index.js",
+      "line": 1,
+      "line_range": [
+        1,
+        220
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "index.js 主处理函数是 220 行的单体（God Function）",
+      "description": "HTTP server 的回调函数直接内联了所有非路由逻辑：CORS 处理、HTML 服务、/import-localstorage 的完整 HTML 生成、/migrate 的完整 HTML 生成、静态文件服务、/api/create-and-open 的完整业务逻辑（UUID 生成、JSONL 文件 fork、时间戳替换、元数据创建、进程启动）。这个函数违反了单一职责原则，混合了路由、业务逻辑、文件 I/O、进程管理等职责。/api/create-and-open 路由尤其严重——约 80 行代码包含了会话 fork 的完整实现。",
+      "suggestion": "将 /api/create-and-open 的逻辑提取到 routes/create-and-open.js；将 /import-localstorage 和 /migrate 的 HTML 模板提取到独立的 .html 文件或 templates 模块；将静态文件服务提取到 routes/static.js。最终 index.js 应只保留 < 30 行的路由分发逻辑。",
+      "rule_reference": "SRP（单一职责原则）— 每个模块应该只有一个变更理由。index.js 目前有至少 6 个变更理由。",
+      "confidence": 0.93
+    },
+    {
+      "id": "C-004",
+      "file": "shared.js",
+      "line": 59,
+      "line_range": [
+        56,
+        93
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "watchCclSessions 是职责过多的 God Function，且错误被静默吞没",
+      "description": "watchCclSessions() 函数（56-93行）同时承担了：文件监控设置、JSON 文件解析、目录递归扫描、基于时间戳的文件匹配、配置持久化、日志记录——至少 6 个职责。更严重的是，内部有 3 个空 catch 块（行59、88、90），错误被完全吞没。如果 CCL 文件损坏、磁盘满、权限问题等，系统会静默失败，用户完全无法感知问题。行59的 catch 甚至没有花括号（`try { ... } catch {}`），是不完整的错误处理。",
+      "suggestion": "1) 拆分为独立函数：parseCclFile()、scanRecentJsonlFiles()、autoMapSession()；2) 空 catch 块至少添加 console.error 日志；3) 对关键错误（如文件损坏）通过 SSE 广播通知前端。示例：\n```js\nfunction parseCclFile() {\n  try {\n    return JSON.parse(fs.readFileSync(CCL_SESSIONS_FILE, 'utf-8'));\n  } catch (e) {\n    console.error('[shared] CCL 文件解析失败:', e.message);\n    return null;\n  }\n}\n```",
+      "rule_reference": "The Pragmatic Programmer: 'Dead Programs Tell No Lies' — 静默吞没错误比程序崩溃更危险，因为问题被隐藏了。",
+      "confidence": 0.94
+    },
+    {
+      "id": "C-005",
+      "file": "scanner.js",
+      "line": 110,
+      "line_range": [
+        110,
+        150
+      ],
+      "severity": "important",
+      "category": "performance",
+      "title": "同步文件 I/O 在请求热路径中阻塞事件循环",
+      "description": "parseSessionChunk() 使用 fs.openSync + fs.readSync 读取整个 JSONL 文件，在 scanSessions 的每次调用中执行。当会话数量增长时（例如 100+ 个会话），每次 API 请求（/api/sessions、/api/session/:id）都会触发全量或增量扫描，同步 I/O 阻塞 Node.js 事件循环。agents.js 的 parseSubAgent() 同样使用 readFileSync。对于本地工具来说，当会话文件变大（单个 JSONL 可达数 MB）或会话数量增多时，会导致 SSE 推送延迟和 API 响应变慢。",
+      "suggestion": "1) 将 parseSessionChunk 改为异步版本（使用 fs.promises.open + read），配合现有的 async scanSessions；2) 对增量扫描路径（startOffset > 0），使用流式读取而非一次性读取剩余部分；3) 考虑对 agent 文件解析添加缓存——agent 文件解析结果在同一次 scanSessions 调用中不会变化。",
+      "rule_reference": "Clean Code: 'Performance is an architectural concern.' 同步 I/O 在事件循环架构中是结构性缺陷，不是优化点。",
+      "confidence": 0.85
+    },
+    {
+      "id": "C-006",
+      "file": "index.js",
+      "line": 125,
+      "line_range": [
+        114,
+        145
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "/api/create-and-open 使用 Math.random() 生成 UUID，存在碰撞风险",
+      "description": "行125-129的 UUID 生成使用 Math.random()：`'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) { var r = Math.random() * 16 | 0; ... })'。Math.random() 不是密码学安全的，且在同一进程中快速连续调用时可能产生重复值。此外，同一函数中两次使用相同的 UUID 生成模式（行125的 sessionId 和行133的 genUuid），进一步增加了碰撞概率。虽然这是本地工具，但 UUID 碰撞会导致会话文件被覆盖。",
+      "suggestion": "使用 Node.js 内置的 crypto.randomUUID()（Node 14.17+）：\n```js\nvar sessionId = require('crypto').randomUUID();\n```",
+      "rule_reference": "The Pragmatic Programmer: 'Don't Use Random Numbers as Keys' — 随机数生成器的输出空间远小于 UUID 的理论空间。",
+      "confidence": 0.88
+    },
+    {
+      "id": "C-007",
+      "file": "index.js",
+      "line": 60,
+      "line_range": [
+        55,
+        100
+      ],
+      "severity": "suggestion",
+      "category": "maintainability",
+      "title": "路由处理器内嵌大段 HTML 字符串，降低可维护性",
+      "description": "/import-localstorage（行60-70）和 /migrate（行80-100）两个路由各自内嵌了完整的 HTML 页面（含 CSS 和 JavaScript），单个 HTML 字符串超过 30 行。这些 HTML 模板与服务器逻辑混合在一起，无法被前端工具链处理（如压缩、lint），修改 HTML 需要在 JavaScript 字符串中操作，容易引入语法错误。",
+      "suggestion": "将 HTML 模板提取到独立的 .html 文件（如 templates/import.html、templates/migrate.html），服务器端用 fs.readFileSync 读取后发送。这还允许未来添加模板变量替换（如动态端口号）。",
+      "rule_reference": "SRP — 模板渲染不是 HTTP 路由处理器的职责。",
+      "confidence": 0.85
+    },
+    {
+      "id": "C-008",
+      "file": "routes\\open.js",
+      "line": 1,
+      "line_range": [
+        1,
+        200
+      ],
+      "severity": "suggestion",
+      "category": "maintainability",
+      "title": "open.js 模块使用函数工厂 + 静态属性的反模式导出",
+      "description": "open.js 使用 makeOpenRouter() 工厂函数创建路由处理器，但随后又在函数对象上附加静态方法（makeOpenRouter.launchSessionDirect、makeOpenRouter.swapSettingsJson）。这种混合模式（工厂 + 静态）使得模块的 API 表面不清晰——调用者需要知道哪些方法在返回的 handle 上，哪些在 makeOpenRouter 上。handle.launchSessionDirect 实际上只是 makeOpenRouter.launchSessionDirect 的引用，增加了不必要的间接层。",
+      "suggestion": "统一为普通模块导出模式，不需要工厂函数：\n```js\nmodule.exports = { handle: function(req, res) { ... }, launchSessionDirect: function(...) { ... }, swapSettingsJson: function(...) { ... } };\n```\n或者如果需要工厂模式，将所有方法统一挂载到返回的 handle 对象上。",
+      "rule_reference": "KISS 原则 — 工厂函数在此场景没有提供额外价值，反而增加了认知负担。",
+      "confidence": 0.8
+    },
+    {
+      "id": "C-009",
+      "file": "routes\\session.js",
+      "line": 205,
+      "line_range": [
+        200,
+        280
+      ],
+      "severity": "suggestion",
+      "category": "correctness",
+      "title": "buildRelationsResponse 中 pLines 变量在 try 块外被引用但可能未定义",
+      "description": "在 buildRelationsResponse 函数中，pLines 在行123的 try 块内声明并赋值，但在行205的 phase detection 代码中被直接引用（`for (var pi2 = 0; pi2 < pLines.length; pi2++)`）。如果 try 块中的文件读取失败（catch 块为空），pLines 将是未定义的，导致运行时 TypeError。虽然 catch 块为空会隐藏原始错误，但后续的 pLines.length 访问会抛出异常，可能导致整个 API 请求返回 500。",
+      "suggestion": "在 try 块前初始化 `var pLines = [];`，或在 catch 块中设置默认值。更好的做法是将整个函数改为 async，使用 try-catch 正确处理文件读取错误并向客户端返回有意义的错误响应。",
+      "rule_reference": "Clean Code: 'Prefer Exceptions to Returning Error Codes' — 空 catch 块 + 后续未定义变量访问 = 隐藏错误后崩溃。",
+      "confidence": 0.9
+    }
+  ],
+  "metrics": {
+    "total_findings": 9,
+    "by_severity": {
+      "important": 5,
+      "suggestion": 4
+    },
+    "by_category": {
+      "maintainability": 5,
+      "bug": 2,
+      "performance": 1,
+      "correctness": 1
+    },
+    "review_duration_seconds": 0
+  },
+  "praise": [
+    {
+      "file": "routes\\open.js",
+      "line": 15,
+      "comment": "P0-003 路径遍历防护：isValidConfigName() 使用正则白名单验证 configName 格式（/^setting-[a-zA-Z0-9_-]+\\.json$/），在所有使用 configName 的入口点都调用了验证。这是正确的安全实践，防止了路径遍历攻击。"
+    },
+    {
+      "file": "scanner.js",
+      "line": 175,
+      "comment": "增量扫描设计良好：parseSessionChunk 支持 startOffset 参数实现增量解析，mergeSessionData 正确合并增量数据到缓存，避免了每次请求全量扫描。fileOffsets Map 跟踪每个文件的读取偏移量，这是一个合理的优化策略。"
+    },
+    {
+      "file": "index.js",
+      "line": 10,
+      "comment": "模块化路由拆分做得不错：将 sessions、session、snapshots、open 四个路由拆分到 routes/ 目录下的独立文件，主服务器文件只做路由分发。这是一个好的架构方向，只是需要继续推进（将剩余的内联路由也提取出去）。"
+    },
+    {
+      "file": "watcher.js",
+      "line": 30,
+      "comment": "防抖设计合理：使用 pendingChanges Map + setTimeout 实现文件变更防抖（800ms），避免了高频文件写入触发大量重复扫描。processChanges 的互斥锁（_processing）防止了并发扫描。"
+    },
+    {
+      "file": "routes\\open.js",
+      "line": 85,
+      "comment": "spawnDirect 函数的配置注入设计合理：通过 --settings CLI 参数和环境变量注入 API 配置，而不是修改默认 settings.json 文件。这避免了并发会话之间的配置冲突，是一个正确的架构决策。"
+    }
+  ]
+}

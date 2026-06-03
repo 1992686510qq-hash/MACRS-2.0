@@ -1,0 +1,39 @@
+{
+  "phase": 2,
+  "timestamp": "2026-06-02T11:18:24.206903+00:00",
+  "input_reviews": {
+    "B": 10
+  },
+  "agents_loaded": [
+    "B"
+  ],
+  "total_findings_before_dedup": 10,
+  "total_findings_after_dedup": 10,
+  "merged_away": 0,
+  "merge_rate": 0.0,
+  "consensus_findings": 0,
+  "single_source_findings": 10,
+  "total_conflicts": 0,
+  "conflicts_by_type": {
+    "severity": 0,
+    "existence": 0,
+    "category": 0
+  },
+  "needs_human_resolution": 0,
+  "severity_distribution": {
+    "P0 BLOCKING": 3,
+    "P1 CRITICAL": 6,
+    "P2 HIGH": 1
+  },
+  "category_distribution": {
+    "security": 10
+  },
+  "agent_contributions": {
+    "B": 10
+  },
+  "quality_metrics": {
+    "consensus_rate": 0.0,
+    "conflict_rate": 0.0,
+    "dedup_merge_rate": 0.0
+  }
+}

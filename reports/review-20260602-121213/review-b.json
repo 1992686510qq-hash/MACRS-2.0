@@ -1,0 +1,259 @@
+{
+  "agent_id": "B",
+  "skill": "Claude-BugHunter",
+  "philosophy": "你是'攻击者思维'的安全审计专家。你审查代码时的默认假设是：有恶意攻击者会仔细阅读这段代码，寻找任何可能的突破口。你不是在找'不优雅'的代码——你是在找'可利用'的代码。你的核心理念来自 574+ 个真实 HackerOne 漏洞报告的模式提炼。",
+  "review_scope": {
+    "files": [
+      "scripts/pw-multi.js",
+      "scripts/quick-test.sh",
+      "shared-scripts/bilibili/extract-links.js",
+      "shared-scripts/douyin/extract-links.js",
+      "shared-scripts/quark/download-file.js",
+      "shared-scripts/tools/fsearch.sh",
+      "shared-scripts/utils/playwright-helpers.js",
+      "shared-scripts/zlib/download-book.js",
+      "shared-scripts/zsxq/delete-article.js",
+      "shared-scripts/zsxq/publish-article.js",
+      "skills/scrapling/examples/01_fetcher_session.py",
+      "skills/scrapling/examples/02_dynamic_session.py",
+      "skills/scrapling/examples/03_stealthy_session.py",
+      "skills/scrapling/examples/04_spider.py",
+      "tools/browser/helpers/node-helpers.js",
+      "tools/browser/helpers/playwright-helpers.js",
+      "tools/browser/proxy/pw-multi.js",
+      "tools/browser/proxy/start-proxy.sh",
+      "tools/fetch/smart-fetch.sh",
+      "tools/platform/bilibili/extract-links.js",
+      "tools/platform/douyin/extract-links.js",
+      "tools/platform/quark/download-file.js",
+      "tools/platform/zlib/download-book.js",
+      "tools/platform/zsxq/delete-article.js",
+      "tools/platform/zsxq/publish-article.js",
+      "tools/search/fsearch/fsearch.sh",
+      "tools/vision/describe-image.py",
+      "tools/vision/glm-vision-mcp.py"
+    ],
+    "lines_total": 3674
+  },
+  "findings": [
+    {
+      "id": "B-001",
+      "file": "tools/search/fsearch/fsearch.sh",
+      "line": 24,
+      "line_range": [
+        22,
+        24
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "python3 -c 代码注入：用户输入通过三引号字符串插值导致 RCE",
+      "description": "KEYWORD 来自命令行参数 $*，未经任何转义直接嵌入 python3 -c 的三引号字符串（'''$KEYWORD'''）。攻击者可通过闭合三引号注入任意 Python 代码，实现远程命令执行。shared-scripts/tools/fsearch.sh 存在相同漏洞。",
+      "suggestion": "使用 sys.argv 传参替代字符串插值：ENCODED=$(python3 -c \"import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1]))\" \"$KEYWORD\")",
+      "code_snippet_bad": "KEYWORD=\"$*\"\nENCODED=$(python3 -c \"import urllib.parse; print(urllib.parse.quote('''$KEYWORD'''))\")",
+      "code_snippet_good": "KEYWORD=\"$*\"\nENCODED=$(python3 -c \"import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1]))\" \"$KEYWORD\")",
+      "rule_reference": "CWE-78 OS Command Injection / CWE-94 Code Injection",
+      "confidence": 0.98
+    },
+    {
+      "id": "B-002",
+      "file": "tools/vision/glm-vision-mcp.py",
+      "line": 78,
+      "line_range": [
+        75,
+        85
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "MCP Server 任意文件读取：image_path 参数无路径校验",
+      "description": "analyze_image 函数直接将用户传入的 image_path 传给 Path(path).read_bytes()，无路径白名单、目录限制或符号链接检查。MCP 工具调用者可读取服务器上任意文件（如 C:\\Windows\\System32\\config\\SAM、/etc/shadow）。虽然后续有 Path(image_path).exists() 检查，但这仅阻止不存在的文件，不阻止合法路径的越权访问。",
+      "suggestion": "1) 添加允许的目录白名单（如用户桌面、下载目录）；2) 使用 os.path.realpath() 解析符号链接后检查路径前缀；3) 拒绝包含 .. 的路径；4) 限制文件大小（如 50MB）防止内存耗尽。",
+      "code_snippet_bad": "def analyze_image(image_path: str, question: str = \"请详细描述这张图片的内容\") -> str:\n    ...\n    data = Path(path).read_bytes()",
+      "code_snippet_good": "ALLOWED_DIRS = [Path.home() / 'Desktop', Path.home() / 'Downloads', Path.home() / 'Pictures']\nMAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB\n\ndef validate_image_path(image_path: str) -> Path:\n    p = Path(image_path).resolve()\n    if not any(str(p).startswith(str(d.resolve())) for d in ALLOWED_DIRS):\n        raise ValueError(f\"Path not in allowed directories: {p}\")\n    if p.stat().st_size > MAX_FILE_SIZE:\n        raise ValueError(\"File too large\")\n    return p",
+      "rule_reference": "CWE-22 Path Traversal / CWE-73 External Control of File Name or Path",
+      "confidence": 0.95
+    },
+    {
+      "id": "B-003",
+      "file": "tools/vision/describe-image.py",
+      "line": 36,
+      "line_range": [
+        33,
+        42
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "任意文件读取：image_path 参数无路径校验（CLI 版本）",
+      "description": "preprocess 函数直接 Path(path).read_bytes() 读取任意路径的文件。CLI 版本虽然通常由用户自行调用风险较低，但如果被其他脚本包装或在自动化流水线中使用，同样存在任意文件读取风险。与 B-002 同源，属于同一漏洞在不同入口点的体现。",
+      "suggestion": "添加路径规范化和目录白名单校验，限制文件大小。",
+      "code_snippet_bad": "def preprocess(path):\n    data = Path(path).read_bytes()",
+      "code_snippet_good": "def preprocess(path):\n    p = Path(path).resolve()\n    if not p.exists():\n        raise FileNotFoundError(f\"Image not found: {p}\")\n    if p.stat().st_size > 50 * 1024 * 1024:\n        raise ValueError(\"Image file too large (max 50MB)\")\n    data = p.read_bytes()",
+      "rule_reference": "CWE-22 Path Traversal",
+      "confidence": 0.85
+    },
+    {
+      "id": "B-004",
+      "file": "scripts/quick-test.sh",
+      "line": 68,
+      "line_range": [
+        12,
+        68
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "SSRF：TARGET_URL 未校验直接传入 curl 和 cdp-proxy",
+      "description": "TARGET_URL 来自命令行参数 $1，未经任何 URL 校验（协议白名单、域名黑名单）直接传给 curl 和 cdp-proxy。攻击者可利用此脚本探测内网服务（如 http://169.254.169.254/ 获取云实例元数据、http://127.0.0.1:6379/ 探测 Redis 等）。",
+      "suggestion": "1) 校验 URL 协议只允许 http/https；2) 使用 Python/Node 解析 URL 后检查 host 不是私有 IP（10.x, 172.16-31.x, 192.168.x, 127.x, 169.254.x）；3) 至少在日志中警告内网目标。",
+      "code_snippet_bad": "TARGET_URL=\"$1\"\n...\nHTTP_CODE=$(curl \"${CURL_ARGS[@]}\" \"$TARGET_URL\" 2>/dev/null || echo \"000\")",
+      "code_snippet_good": "TARGET_URL=\"$1\"\n# Validate URL scheme\nif ! echo \"$TARGET_URL\" | grep -qE '^https?://'; then\n    echo \"Only http/https URLs allowed\" >&2; exit 1\nfi\n# Block private IP ranges\nBLOCKED=$(node -e \"try{const u=new URL(process.argv[1]);const h=u.hostname;if(h==='127.0.0.1'||h==='localhost'||h==='0.0.0.0'||h.startsWith('10.')||h.startsWith('192.168.')||h.startsWith('172.16.')||h.startsWith('169.254.'))process.stdout.write('1')}catch{}\" \"$TARGET_URL\")\nif [ \"$BLOCKED\" = '1' ]; then\n    echo \"Private/internal URLs blocked\" >&2; exit 1\nfi",
+      "rule_reference": "CWE-918 Server-Side Request Forgery",
+      "confidence": 0.9
+    },
+    {
+      "id": "B-005",
+      "file": "tools/fetch/smart-fetch.sh",
+      "line": 130,
+      "line_range": [
+        120,
+        140
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "SSRF：smart-fetch.sh 允许 curl 请求任意内网地址",
+      "description": "与 B-004 同类问题。smart-fetch.sh 作为智能抓取工具，接受任意 URL 并通过 curl 直连或 cdp-proxy 渲染。无任何 SSRF 防护。当在云服务器或 CI/CD 环境中运行时，攻击者可借此读取实例元数据（AWS/GCP/Azure 的 IMDS）。",
+      "suggestion": "在 main() 函数入口添加 URL 协议和目标 IP 校验，阻断私有地址段。",
+      "code_snippet_bad": "TARGET_URL=\"$arg\"\n...\nmain() {\n    ...  \n    if try_curl \"$proxy\"; then\n        return 0\n    fi",
+      "code_snippet_good": "TARGET_URL=\"$arg\"\n# SSRF guard\nVALID=$(node -e \"try{const u=new URL(process.argv[1]);const h=u.hostname;if(!['http:','https:'].includes(u.protocol)||h==='127.0.0.1'||h==='localhost'||/^10\\.|^192\\.168\\.|^172\\.(1[6-9]|2[0-9]|3[01])\\.|^169\\.254\\./.test(h))process.stdout.write('0');else process.stdout.write('1')}catch{process.stdout.write('0')}\" \"$TARGET_URL\")\nif [ \"$VALID\" != '1' ]; then\n    echo \"[smart-fetch] URL blocked (SSRF guard)\" >&2; return 1\nfi",
+      "rule_reference": "CWE-918 Server-Side Request Forgery",
+      "confidence": 0.88
+    },
+    {
+      "id": "B-006",
+      "file": "tools/vision/glm-vision-mcp.py",
+      "line": 35,
+      "line_range": [
+        30,
+        40
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "拒绝服务：无文件大小限制可导致内存耗尽",
+      "description": "preprocess 函数在压缩前先用 Path(path).read_bytes() 将整个文件读入内存。对于超大图片（如 2GB 的 TIFF），这将导致 Python 进程 OOM 崩溃。虽然有 MAX_DIM 缩放逻辑，但缩放发生在 Image.open() 之后，此时完整文件已加载到内存。describe-image.py 存在同样问题。",
+      "suggestion": "在 read_bytes() 之前先检查文件大小，超过阈值（如 50MB）直接拒绝。",
+      "code_snippet_bad": "def preprocess(path: str) -> str:\n    from PIL import Image\n    data = Path(path).read_bytes()",
+      "code_snippet_good": "MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB\n\ndef preprocess(path: str) -> str:\n    from PIL import Image\n    file_size = Path(path).stat().st_size\n    if file_size > MAX_FILE_SIZE:\n        raise ValueError(f\"Image too large: {file_size} bytes (max {MAX_FILE_SIZE})\")\n    data = Path(path).read_bytes()",
+      "rule_reference": "CWE-400 Uncontrolled Resource Consumption",
+      "confidence": 0.88
+    },
+    {
+      "id": "B-007",
+      "file": "tools/platform/zlib/download-book.js",
+      "line": 130,
+      "line_range": [
+        120,
+        135
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "URL 注入：从不可信 DOM 构造完整 URL 可能触发 javascript: 协议",
+      "description": "step3_parseResults 中 new URL(href, location.origin).href 将 DOM 中提取的 href 直接构造完整 URL。如果恶意页面注入 javascript:alert(1) 或 data:text/html,... 形式的 href，后续 page.goto() 将执行该 URL。虽然 Z-Library 本身不太可能被 XSS，但作为通用模式存在风险。shared-scripts/zlib/download-book.js 存在同样问题。",
+      "suggestion": "在构造 URL 前验证 href 以 / 或 http 开头，拒绝 javascript:、data:、vbscript: 等协议。",
+      "code_snippet_bad": "books.push({\n  title: text,\n  href,\n  fullUrl: new URL(href, location.origin).href\n});",
+      "code_snippet_good": "if (!href.startsWith('/') && !href.startsWith('http')) continue;  // skip non-HTTP links\nbooks.push({\n  title: text,\n  href,\n  fullUrl: new URL(href, location.origin).href\n});",
+      "rule_reference": "CWE-939 Improper Authorization in Handler with Custom URL Scheme",
+      "confidence": 0.8
+    },
+    {
+      "id": "B-008",
+      "file": "tools/platform/zsxq/delete-article.js",
+      "line": 46,
+      "line_range": [
+        43,
+        50
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "CSS 选择器注入：articleId 未转义直接拼入 querySelector",
+      "description": "step2_clickDetail 中 articleId 直接嵌入 CSS 选择器字符串 a.link-of-topic[href*=\"${articleId}\"]。如果 articleId 包含 ] 或 \" 字符，会破坏选择器语法，可能导致意外的 DOM 匹配或选择器解析错误。虽然利用难度较高，但在自动化流程中 articleId 可能来自不可信的 API 响应。shared-scripts/zsxq/delete-article.js 存在同样问题。",
+      "suggestion": "使用 CSS.escape() 转义 articleId，或改用 Array.from(document.querySelectorAll('a.link-of-topic')).filter(a => a.href.includes(articleId))。",
+      "code_snippet_bad": "function step2_clickDetail(articleId) {\n  const link = document.querySelector(`a.link-of-topic[href*=\"${articleId}\"]`);",
+      "code_snippet_good": "function step2_clickDetail(articleId) {\n  const safeId = CSS.escape(articleId);\n  const link = document.querySelector(`a.link-of-topic[href*=\"${safeId}\"]`);",
+      "rule_reference": "CWE-79 Improper Neutralization of Input During Web Page Generation",
+      "confidence": 0.75
+    },
+    {
+      "id": "B-009",
+      "file": "scripts/pw-multi.js",
+      "line": 25,
+      "line_range": [
+        20,
+        30
+      ],
+      "severity": "nit",
+      "category": "security",
+      "title": "竞态条件：临时目录清理与创建之间存在 TOCTOU 窗口",
+      "description": "清理 24h+ 残留目录时，先 readdirSync 再逐个 statSync 检查 mtimeMs，最后 rmSync。在高并发场景下，两个进程可能同时尝试清理同一目录，导致 rmSync 报错（已被另一进程删除）。虽然 catch {} 吞掉了错误，但这掩盖了潜在的文件系统不一致。tools/browser/proxy/pw-multi.js 存在同样问题。",
+      "suggestion": "这是低风险的代码质量问题。可考虑使用 try/catch 包裹 rmSync 调用（已做到），或在创建 instanceDir 时使用 exclusive flag 检测冲突。",
+      "code_snippet_bad": "for (const name of fs.readdirSync(tempRoot)) {\n    const p = path.join(tempRoot, name);\n    try { if (fs.statSync(p).isDirectory() && (now - fs.statSync(p).mtimeMs > 86400000)) fs.rmSync(p, { recursive: true, force: true }); } catch {}\n}",
+      "code_snippet_good": "for (const name of fs.readdirSync(tempRoot)) {\n    const p = path.join(tempRoot, name);\n    try {\n        const stat = fs.statSync(p);\n        if (stat.isDirectory() && (now - stat.mtimeMs > 86400000)) {\n            fs.rmSync(p, { recursive: true, force: true });\n        }\n    } catch (e) {\n        if (e.code !== 'ENOENT') process.stderr.write(`[pw-multi] cleanup warn: ${e.message}\\n`);\n    }\n}",
+      "rule_reference": "CWE-367 Time-of-check Time-of-use (TOCTOU) Race Condition",
+      "confidence": 0.72
+    },
+    {
+      "id": "B-010",
+      "file": "tools/search/fsearch/fsearch.sh",
+      "line": 40,
+      "line_range": [
+        38,
+        43
+      ],
+      "severity": "nit",
+      "category": "security",
+      "title": "代理注入：CLASH_PROXY 环境变量可被篡改实现 MITM",
+      "description": "CLASH_PROXY 默认 http://127.0.0.1:7897，但可通过环境变量覆盖。在共享环境或容器中，攻击者可能设置 CLASH_PROXY 指向恶意代理服务器，拦截所有 Startpage 搜索请求的响应内容。shared-scripts/tools/fsearch.sh 存在同样问题。",
+      "suggestion": "对代理 URL 进行基本校验（只允许 127.0.0.1 或 localhost），或在文档中明确提示此环境变量的安全影响。",
+      "code_snippet_bad": "CLASH_PROXY=\"${CLASH_PROXY:-http://127.0.0.1:7897}\"\ncurl -sL --max-time 10 --proxy \"$CLASH_PROXY\"",
+      "code_snippet_good": "CLASH_PROXY=\"${CLASH_PROXY:-http://127.0.0.1:7897}\"\n# Validate proxy is local\nif ! echo \"$CLASH_PROXY\" | grep -qE '://(127\\.0\\.0\\.1|localhost)'; then\n    echo \"WARNING: CLASH_PROXY is not localhost, skipping proxy\" >&2\n    CLASH_PROXY=\"\"\nfi",
+      "rule_reference": "CWE-300 Channel Accessible by Non-Endpoint",
+      "confidence": 0.72
+    }
+  ],
+  "metrics": {
+    "total_findings": 10,
+    "by_severity": {
+      "blocking": 3,
+      "important": 4,
+      "nit": 3
+    },
+    "by_category": {
+      "security": 10
+    },
+    "review_duration_seconds": 180
+  },
+  "praise": [
+    {
+      "file": "scripts/pw-multi.js",
+      "line": 5,
+      "comment": "使用 crypto.randomBytes(4) 生成会话 ID，避免了可预测的临时目录名冲突，比 PID 命名更安全。"
+    },
+    {
+      "file": "tools/fetch/smart-fetch.sh",
+      "line": 95,
+      "comment": "try_curl 函数中对 CAPTCHA 关键词的检测（captcha/verify you are human/滑块验证）是良好的防御性编程实践，避免了将验证码页面误判为成功抓取。"
+    },
+    {
+      "file": "tools/browser/helpers/node-helpers.js",
+      "line": 25,
+      "comment": "screenshotOnError 高阶函数设计优雅——在异常路径中自动截图保存调试信息，同时不吞掉原始错误，是生产级错误处理的好模式。"
+    },
+    {
+      "file": "shared-scripts/douyin/extract-links.js",
+      "line": 60,
+      "comment": "API 拦截模式（监听 response 事件而非轮询 DOM）是绕过 Lynx 框架渲染的聪明方案，体现了对目标站点架构的深入理解。"
+    },
+    {
+      "file": "tools/vision/glm-vision-mcp.py",
+      "line": 40,
+      "comment": "MCP Server 的 handle() 函数正确处理了 notifications（无 id 的请求返回 None），符合 JSON-RPC 2.0 规范，说明作者阅读了 MCP 协议规范。"
+    }
+  ]
+}

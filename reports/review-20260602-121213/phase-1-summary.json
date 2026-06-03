@@ -1,0 +1,37 @@
+{
+  "status": "PARTIAL",
+  "agents": {
+    "A": {
+      "name": "Agent A",
+      "status": "FAILED",
+      "elapsed_seconds": 0,
+      "findings_count": 0,
+      "validation_errors": [],
+      "error": "'gbk' codec can't encode character '\\U0001f4ca' in position 114: illegal multibyte sequence"
+    },
+    "B": {
+      "name": "Agent B",
+      "status": "OK",
+      "elapsed_seconds": 370.4,
+      "findings_count": 10,
+      "validation_errors": [],
+      "praise_count": 5
+    },
+    "C": {
+      "name": "Agent C",
+      "status": "OK",
+      "elapsed_seconds": 97.1,
+      "findings_count": 10,
+      "validation_errors": [],
+      "praise_count": 4
+    }
+  },
+  "total_findings": 20,
+  "total_praise": 9,
+  "output_files": [
+    "D:\\MACRS\\reports\\review-20260602-121213\\review-b.json",
+    "D:\\MACRS\\reports\\review-20260602-121213\\review-c.json"
+  ],
+  "summary_file": "D:\\MACRS\\reports\\review-20260602-121213\\phase-1-summary.json",
+  "total_elapsed_seconds": 717.0
+}

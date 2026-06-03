@@ -1,0 +1,116 @@
+{
+  "verifications": [
+    {
+      "merged_id": "M-011",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "Neither shared-scripts/ nor tools/ directories exist under D:/MACRS/coordinator/. The entire finding is based on non-existent files. Cannot verify duplication of files that don't exist.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-012",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "Neither scripts/pw-multi.js nor tools/browser/proxy/pw-multi.js exist. The directories scripts/ and tools/ are absent from the codebase entirely.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-001",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "File tools/search/fsearch/fsearch.sh does not exist. The tools/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-002",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "File tools/vision/glm-vision-mcp.py does not exist. The tools/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-013",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "File tools/vision/describe-image.py does not exist. The tools/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-014",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "File shared-scripts/utils/playwright-helpers.js does not exist. The shared-scripts/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-004",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "File scripts/quick-test.sh does not exist. The scripts/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-015",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "File shared-scripts/zsxq/delete-article.js does not exist. The shared-scripts/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-017",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "File shared-scripts/tools/fsearch.sh does not exist. The shared-scripts/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-005",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "File tools/fetch/smart-fetch.sh does not exist. The tools/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-006",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "File tools/vision/glm-vision-mcp.py does not exist (duplicate target of M-002). The tools/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-003",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "File tools/vision/describe-image.py does not exist (duplicate target of M-013). The tools/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-016",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "File shared-scripts/douyin/extract-links.js does not exist. The shared-scripts/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-007",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "File tools/platform/zlib/download-book.js does not exist. The tools/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    },
+    {
+      "merged_id": "M-008",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "File tools/platform/zsxq/delete-article.js does not exist. The tools/ directory does not exist under D:/MACRS/coordinator/.",
+      "confidence_after_verification": 0.99
+    }
+  ],
+  "summary": {
+    "total_verified": 15,
+    "confirmed": 0,
+    "refuted": 15,
+    "downgraded": 0,
+    "needs_human": 0
+  }
+}

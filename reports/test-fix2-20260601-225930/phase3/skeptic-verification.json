@@ -1,0 +1,193 @@
+{
+  "verifications": [
+    {
+      "merged_id": "M-001",
+      "verdict": "DOWNGRADE",
+      "adjusted_severity": "P2 IMPORTANT",
+      "rationale": "buildRelationsResponse 在 session.js 第 101-367 行确实是一个 267 行的巨型函数，包含了 dispatch 解析、子 Agent 解析、时间匹配、阶段检测、瀑布流追踪五个不相关的关注点。P0 BLOCKING 过高——这是代码质量问题而非安全漏洞，且该函数内部有 try/catch 保护不会导致崩溃。应降为 P2。",
+      "confidence_after_verification": 0.95
+    },
+    {
+      "merged_id": "M-014",
+      "verdict": "CONFIRM",
+      "adjusted_severity": null,
+      "rationale": "index.js 第 35-36 行确实将 importData（文件原始内容）直接拼接进 HTML 的 script 标签中：`var d=' + importData + '`。import-data.json 虽然当前只包含 UUID 和 JSON 字符串等良性数据，但若该文件被篡改或包含 `';alert(1);//` 等 payload，即可触发 XSS。不过该路由仅用于一次性 localStorage 导入，攻击面有限。P0 BLOCKING 合理。",
+      "confidence_after_verification": 0.9
+    },
+    {
+      "merged_id": "M-026",
+      "verdict": "DOWNGRADE",
+      "adjusted_severity": "P2 IMPORTANT",
+      "rationale": "shared.js 确实导出了可变的 Map 和数组（sessionCache、subAgentCache、sseClients 等），任何模块都可以直接修改。但该面板是单进程 Node.js 服务，不存在多进程并发写入问题。且 v5.22 版 shared.js 仅 38 行，比发现中声称的 53 行更小，状态规模有限。作为本地开发工具，全局可变状态是可接受的设计选择。严重等级从 P1 CRITICAL 降为 P2 IMPORTANT。",
+      "confidence_after_verification": 0.85
+    },
+    {
+      "merged_id": "M-017",
+      "verdict": "CONFIRM",
+      "adjusted_severity": null,
+      "rationale": "index.js 第 22 行确实设置了 `res.setHeader('Access-Control-Allow-Origin', '*')`。server.listen 默认绑定 0.0.0.0（所有接口），意味着局域网内任何设备都可访问 API。CORS 通配符 + 监听所有接口 = 任何同网络的网页可通过 JavaScript 读取该面板的所有 API 数据。P1 CRITICAL 合理。",
+      "confidence_after_verification": 0.95
+    },
+    {
+      "merged_id": "M-028",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "与 M-001 完全重复。M-028 描述 buildRelationsResponse 为 170 行的 God Function（第 115-280 行），但实际函数是第 101-367 行共 267 行。两个发现指向同一函数，M-001 已确认，M-028 应作为重复项驳斥。",
+      "confidence_after_verification": 0.95
+    },
+    {
+      "merged_id": "M-009",
+      "verdict": "DOWNGRADE",
+      "adjusted_severity": "P3 SUGGESTION",
+      "rationale": "session.js 第 209 行在 sortedCalls 的循环内调用 `agentsMod.loadAgentNames()`，该函数每次都同步读取磁盘文件 agent-names.json。当有 N 个 dispatch 调用时，会读取 N 次文件。在典型会话中 N 可能为 10-50，造成不必要的 I/O。P1 CRITICAL 过高——这是性能问题而非安全漏洞，降为 P3 SUGGESTION。",
+      "confidence_after_verification": 0.95
+    },
+    {
+      "merged_id": "M-002",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "与 M-014 完全重复。M-002 引用 'server/index.js lines [35, 38]'，M-014 引用 'index.js lines [18, 26]'，但两者描述的是同一个 XSS 漏洞（import-data.json 拼接进 HTML）。M-014 已确认，M-002 作为重复项驳斥。",
+      "confidence_after_verification": 0.95
+    },
+    {
+      "merged_id": "M-015",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "发现描述的是 routes/open.js 中 bat 文件生成时 env 变量值未转义的命令注入漏洞，并引用了 spawnWithBat 函数。但在 v5.22 版本中，open.js 已完全重写——不再有 spawnWithBat 函数、不再生成 bat 文件、不再有 settings.json 替换。v5.22 的 open.js 仅 98 行，使用 child_process.spawn 配合参数数组（非字符串拼接），注释明确标注 'FIXED: no shell injection via string concat'。此发现针对的是旧版代码，v5.22 已修复。",
+      "confidence_after_verification": 0.95
+    },
+    {
+      "merged_id": "M-003",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "发现描述 configName 查询参数未校验导致路径遍历和 bat 文件命令注入，引用 server/index.js 第 94-198 行。在 v5.22 中，index.js 仅 149 行，不存在 configName 参数、不存在 /api/create-and-open 路由、不存在 spawnWithBat 函数。grep 确认整个 server 目录无 configName/configFile/swapSettings 引用。此发现针对的是旧版代码。",
+      "confidence_after_verification": 0.95
+    },
+    {
+      "merged_id": "M-004",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "发现描述 Math.random() 生成会话 ID，引用 server/index.js 第 107-111 行。grep 确认 v5.22 整个 server 目录不存在 Math.random() 调用。会话 ID 来自 Claude Code 生成的 JSONL 文件名（UUID 格式），不由本服务器生成。此发现针对的是旧版代码。",
+      "confidence_after_verification": 0.95
+    },
+    {
+      "merged_id": "M-008",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "发现描述 sessions.js 第 43-48 行 delete 操作修改共享缓存对象。v5.22 的 routes/sessions.js 仅 86 行，第 43-48 行是空行和注释。虽然 sessions.js 确实在第 23-25 行对 session 对象执行了 delete s._file 等操作，但这些操作发生在 scanSessions() 返回的新鲜结果数组上（每次 API 调用都会重新扫描），而非直接修改 shared.sessionCache 中的对象。scanSessions 在 scanner.js 中每次创建新的 info 对象。",
+      "confidence_after_verification": 0.85
+    },
+    {
+      "merged_id": "M-016",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "发现描述 routes/open.js 第 130-160 行 settings.json TOCTOU 竞态。v5.22 的 open.js 仅 98 行，不存在 settings.json 替换逻辑。v5.22 已重构为使用 spawn 参数数组传递配置，不再修改全局文件。此发现针对的是旧版代码。",
+      "confidence_after_verification": 0.95
+    },
+    {
+      "merged_id": "M-021",
+      "verdict": "CONFIRM",
+      "adjusted_severity": "P2 IMPORTANT",
+      "rationale": "index.js 第 101-103 行的 catch 块确实泄露了服务器内部错误信息：`res.writeHead(500); res.end('Server Error: ' + err.message)`。err.message 可能包含文件路径等内部信息。但降级为 P2——该面板是本地开发工具，错误信息泄露对本地用户影响有限，且攻击者需要触发服务器异常才能获取信息。",
+      "confidence_after_verification": 0.9
+    },
+    {
+      "merged_id": "M-007",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "与 M-021 重复。M-007 引用 server/index.js 第 117-119 行，M-021 引用 index.js 第 125-140 行，两者描述同一问题。M-021 已确认并降级，M-007 作为重复项驳斥。",
+      "confidence_after_verification": 0.95
+    },
+    {
+      "merged_id": "M-005",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "发现描述 server/routes/open.js 第 82-114 行 settings.json 竞态条件。v5.22 的 open.js 仅 98 行，无 settings.json 读写操作。此发现针对的是旧版代码中已移除的功能。",
+      "confidence_after_verification": 0.95
+    },
+    {
+      "merged_id": "M-006",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "发现描述 server/index.js 第 153-159 行时间戳替换过于激进。v5.22 的 index.js 仅 149 行，不存在时间戳替换逻辑。此发现针对的是旧版代码中已移除的 /api/create-and-open 路由功能。",
+      "confidence_after_verification": 0.95
+    },
+    {
+      "merged_id": "M-018",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "发现描述 index.js 第 83-120 行 /api/create-and-open 中 config 参数路径遍历。v5.22 的 index.js 不存在 /api/create-and-open 路由。grep 确认整个 server 目录无 create-and-open 引用。此发现针对的是旧版代码。",
+      "confidence_after_verification": 0.95
+    },
+    {
+      "merged_id": "M-022",
+      "verdict": "CONFIRM",
+      "adjusted_severity": "P2 IMPORTANT",
+      "rationale": "snapshots.js 第 21-22 行：`var snapId = decodeURI(req.url.split('/api/snapshot/')[1]); var snapFile = path.join(shared.SNAPSHOTS_DIR, snapId + '.json')`。snapId 来自 URL 未经验证，path.join 不会阻止 ../ 序列。攻击者可通过 `/api/snapshot/../../etc/passwd` 读取任意文件。但降级为 P2——该面板监听 localhost，远程利用需要结合 CORS 通配符和网络访问，且 .json 后缀限制了读取范围。",
+      "confidence_after_verification": 0.9
+    },
+    {
+      "merged_id": "M-019",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "发现描述 index.js 第 105-125 行会话文件操作使用未经验证的 sessionId。v5.22 的 index.js 第 105-125 行是启动日志输出代码，不涉及会话文件操作。会话文件访问在 routes/session.js 中，使用 cached._file（来自 scanner 的缓存路径），不直接由用户输入构造文件路径。此发现引用了错误的文件和行号。",
+      "confidence_after_verification": 0.9
+    },
+    {
+      "merged_id": "M-020",
+      "verdict": "DOWNGRADE",
+      "adjusted_severity": "P3 SUGGESTION",
+      "rationale": "index.js 第 55-58 行的 /migrate 路由确实硬编码了 `ifr.src='http://localhost:3100/'`。但这是一次性迁移工具，iframe 读取的是同源 localhost 数据，不存在用户可控输入。发现建议验证 iframe 数据结构是过度防御。降级为 P3 SUGGESTION。",
+      "confidence_after_verification": 0.85
+    },
+    {
+      "merged_id": "M-023",
+      "verdict": "CONFIRM",
+      "adjusted_severity": "P2 IMPORTANT",
+      "rationale": "session.js 第 26-30 行从 URL 提取 session ID 未经 UUID 格式验证。但 session ID 用作 Map 查找键（sessionCache.get(sid)），不直接用于文件路径构造。文件路径来自 cached._file（scanner 设置的安全路径）。唯一的风险是 scanner.scanSessions 的 fallback 路径——但它遍历目录而非用 ID 构造路径。降级为 P2——实际攻击向量不明确。",
+      "confidence_after_verification": 0.85
+    },
+    {
+      "merged_id": "M-027",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "发现描述 index.js 第 47-145 行 /api/create-and-open 路由内联 100 行业务逻辑。v5.22 的 index.js 不存在此路由，整个文件仅 149 行且路由已模块化到 routes/ 目录。此发现针对的是旧版代码。",
+      "confidence_after_verification": 0.95
+    },
+    {
+      "merged_id": "M-029",
+      "verdict": "CONFIRM",
+      "adjusted_severity": "P2 IMPORTANT",
+      "rationale": "agents.js 的 parseSubAgent 函数（第 34-128 行，95 行）和 session.js 的 buildRelationsResponse 中子 Agent 解析逻辑（第 140-192 行，53 行）确实大量重复：两者都读取 JSONL 文件、解析 user 消息提取标题、累加 token、提取 toolCallCount。但降级为 P2——这是代码维护问题，不影响功能或安全。",
+      "confidence_after_verification": 0.9
+    },
+    {
+      "merged_id": "M-030",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "与 M-016 重复，且针对旧版代码。v5.22 的 open.js 不再修改 settings.json。此发现驳斥。",
+      "confidence_after_verification": 0.95
+    },
+    {
+      "merged_id": "M-031",
+      "verdict": "DOWNGRADE",
+      "adjusted_severity": "P3 SUGGESTION",
+      "rationale": "scanner.js 的 parseSessionChunk 确实是 135 行（第 65-199 行），混合了文件 I/O、JSON 解析和业务逻辑。但该函数是增量解析的核心，已有清晰的结构（stat → read → parse → aggregate）。拆分虽好但收益有限。降级为 P3 SUGGESTION。",
+      "confidence_after_verification": 0.85
+    },
+    {
+      "merged_id": "M-032",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "与 M-014/M-002 完全重复。M-014 已确认，M-032 作为第三份重复项驳斥。",
+      "confidence_after_verification": 0.95
+    }
+  ],
+  "summary": {
+    "total_verified": 26,
+    "confirmed": 6,
+    "refuted": 15,
+    "downgraded": 5,
+    "needs_human": 0
+  }
+}

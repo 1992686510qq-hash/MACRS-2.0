@@ -1,0 +1,232 @@
+{
+  "agent_id": "C",
+  "skill": "pragmatic-clean-code-reviewer",
+  "philosophy": "你是'架构防腐'的代码审查专家。你不只关心单行代码的对错，更关心这段代码在整个系统架构中的位置和长期影响。你的核心理念来自 The Pragmatic Programmer、Clean Code、Clean Architecture。你审查时的核心问题是：'这段代码会加速还是延缓系统的技术债务累积？'",
+  "review_scope": {
+    "files": [
+      "agents.js",
+      "index.js",
+      "pricing.js",
+      "routes/open.js",
+      "routes/session.js",
+      "routes/sessions.js",
+      "routes/snapshots.js",
+      "scanner.js",
+      "shared.js",
+      "snapshot.js",
+      "sse.js",
+      "watcher.js"
+    ],
+    "lines_total": 1821
+  },
+  "findings": [
+    {
+      "id": "C-001",
+      "file": "shared.js",
+      "line": 1,
+      "line_range": [
+        1,
+        53
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "shared.js 作为全局可变状态中心，缺乏封装，是架构腐化的核心风险点",
+      "description": "shared.js 导出 13 个可变状态（sessionCache, subAgentCache, fileOffsets, sseClients, watchers, pendingChanges, snapshotList 等），所有模块直接 import 后读写，没有任何访问控制或不变量保护。这是典型的 'Global Mutable State' 反模式——任何模块都可以在任何时刻破坏状态一致性，且无法追踪是谁、在何时修改了什么。随着模块增多，这种架构会以超线性速度积累技术债务。",
+      "suggestion": "将 shared.js 重构为状态管理模块，对关键状态提供受控的读写方法而非裸导出。例如：\n1. sessionCache → 提供 getSession(id) / setSession(id, data) / getAllSessions()，内部可加入校验逻辑\n2. sseClients → 提供 addClient(res) / removeClient(res) / broadcast(data)，由 sse.js 独占管理\n3. 将不相关的状态分组到不同模块（SSE 相关 → sse.js, 快照相关 → snapshot.js），避免一个文件承载所有全局状态",
+      "code_snippet_bad": "module.exports = {\n  sessionCache: new Map(),\n  subAgentCache: new Map(),\n  fileOffsets: new Map(),\n  sseClients: [],\n  watchers: [],\n  pendingChanges: new Map(),\n  snapshotList: [],\n  // ... 13 个可变字段\n};",
+      "code_snippet_good": "// session-store.js\nvar _cache = new Map();\nmodule.exports = {\n  get: function(id) { return _cache.get(id); },\n  set: function(id, data) { /* 校验 */ _cache.set(id, data); },\n  getAll: function() { return Array.from(_cache.values()); },\n  has: function(id) { return _cache.has(id); }\n};",
+      "rule_reference": "Clean Architecture — 依赖规则：内部层不应知道外部层的实现细节。共享可变状态打破了所有模块之间的边界。",
+      "confidence": 0.95
+    },
+    {
+      "id": "C-002",
+      "file": "index.js",
+      "line": 47,
+      "line_range": [
+        47,
+        145
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "/api/create-and-open 路由内联 100 行业务逻辑，违反单一职责和路由模块化原则",
+      "description": "index.js 中的 HTTP server 处理函数已经将大部分路由委托给了 routes/ 下的模块，但 /api/create-and-open 的处理逻辑（UUID 生成、JSONL 文件克隆、时间戳替换、session metadata 创建、VSCode 启动）全部内联在 server 回调中，超过 100 行。这导致：1) index.js 变成了 God Object，承担了路由分发+业务逻辑的双重职责；2) 这段逻辑无法独立测试；3) 与 open.js 中的 launchSessionDirect 功能重叠。",
+      "suggestion": "将 /api/create-and-open 提取到 routes/create-and-open.js 或合并到 routes/open.js 中，index.js 只保留路由分发。具体步骤：\n1. 创建 makeCreateOpenRouter() 工厂函数\n2. 将 UUID 生成、JSONL 克隆、时间戳替换封装为独立函数\n3. index.js 中只保留 `if (req.url.startsWith('/api/create-and-open')) { createOpenRouter(req, res); return; }`",
+      "rule_reference": "SRP (Single Responsibility Principle) — 每个模块只有一个变化的理由。index.js 的变化理由至少有：路由分发、会话克隆、文件系统操作、进程启动。",
+      "confidence": 0.92
+    },
+    {
+      "id": "C-003",
+      "file": "routes/session.js",
+      "line": 115,
+      "line_range": [
+        115,
+        280
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "buildRelationsResponse 是 God Function（170 行），耦合了 5 个不相关的关注点",
+      "description": "buildRelationsResponse 函数承担了：1) 解析父会话的 dispatch 事件、2) 解析所有子 Agent 的 JSONL 文件、3) 时间邻近度匹配 dispatch→agent、4) 阶段（phase）检测算法、5) 瀑布图（waterfall）数据生成。这 5 个关注点各自独立变化，但被压缩在一个函数中，导致函数体超过 170 行，局部变量 30+ 个，可读性和可维护性极差。",
+      "suggestion": "拆分为 5 个独立函数：\n- parseDispatchEvents(jsonlContent) → dispatchCalls[]\n- parseSubAgentNodes(subDirs) → nodes[]\n- matchDispatchToAgents(dispatchCalls, agents, sessionName) → edges[]\n- detectPhases(matchedEdges, userMessages) → phases[]\n- buildWaterfallTrace(jsonlLines) → waterfallSpans[]\n\nbuildRelationsResponse 只负责协调调用和组装最终响应。",
+      "rule_reference": "Clean Code Ch.3 Functions — 函数应该做一件事，做好一件事，只做一件事。",
+      "confidence": 0.93
+    },
+    {
+      "id": "C-004",
+      "file": "agents.js",
+      "line": 37,
+      "line_range": [
+        37,
+        105
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "parseSubAgent 与 buildRelationsResponse 中的子 Agent 解析逻辑大量重复",
+      "description": "agents.js 的 parseSubAgent（70 行）和 session.js buildRelationsResponse 中的子 Agent 解析块（约 50 行）执行几乎相同的逻辑：读取 JSONL、提取 firstUserMsg、累加 token、计算 toolCallCount、确定 status。两者仅在输出字段和 status 判定细节上略有不同。这违反了 DRY 原则，且未来修改解析逻辑时需要同步两处，容易遗漏。",
+      "suggestion": "统一为 agents.js 中的 parseSubAgent，并在 session.js 中复用。如果 relations 接口需要额外字段（如 startTime），扩展 parseSubAgent 的返回值即可。status 判定逻辑应统一到一个 getStatusForAgent(agentInfo) 函数中。",
+      "code_snippet_bad": "// session.js 中重复的解析逻辑\nvar saContent = fs.readFileSync(saPath, \"utf-8\");\nvar saLines = saContent.trim().split(\"\\n\");\nfor (var sl = 0; sl < saLines.length; sl++) {\n  var saObj = scanner.parseLine(saLines[sl]);\n  // ... 与 parseSubAgent 几乎相同的逻辑\n}",
+      "code_snippet_good": "// session.js 中复用 agents 模块\nvar agentFiles = agents.findSubAgentFiles(subDir);\nvar agentNodes = agentFiles.map(function(f) {\n  return agents.parseSubAgent(f.filePath, f.agentId, relId);\n});",
+      "rule_reference": "DRY (Don't Repeat Yourself) — The Pragmatic Programmer, Tip 11",
+      "confidence": 0.9
+    },
+    {
+      "id": "C-005",
+      "file": "routes/open.js",
+      "line": 78,
+      "line_range": [
+        78,
+        110
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "settings.json 全局文件替换存在并发竞态条件，多会话同时启动会互相覆盖",
+      "description": "swapSettingsJson 直接覆写 ~/.claude/settings.json 这个全局文件。当用户在面板上快速点击两个不同配置的会话时：会话 A 的 swap 还未被 VSCode 读取，就被会话 B 的 swap 覆盖了。launchSessionDirect 中的 5 秒延迟恢复也加剧了这个问题——如果在 5 秒内启动第二个会话，第一个会话的恢复会覆盖第二个会话的配置。这是一个真实可触发的竞态条件。",
+      "suggestion": "根本解决方案：不修改全局 settings.json，而是通过 --settings 参数传递配置文件路径（launchSession 中已有此逻辑）。如果 VSCode 扩展不支持 --settings，则应使用文件锁（proper-lockfile）或队列机制确保串行化。至少应添加一个互斥锁：\n\nvar settingsLock = false;\nfunction swapSettingsJson(configFile, callback) {\n  if (settingsLock) { /* 等待或拒绝 */ return; }\n  settingsLock = true;\n  // ... 执行 swap\n  // callback 中释放锁\n}",
+      "rule_reference": "The Pragmatic Programmer — Tip 48: The Essence of Good Design（消除意外耦合）",
+      "confidence": 0.88
+    },
+    {
+      "id": "C-006",
+      "file": "scanner.js",
+      "line": 68,
+      "line_range": [
+        68,
+        175
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "parseSessionChunk 函数 110 行，混合了文件 I/O、JSON 解析、业务逻辑和数据聚合",
+      "description": "parseSessionChunk 同时负责：1) 文件 stat 和 seek 读取（I/O 层）、2) 逐行 JSON 解析（解析层）、3) 用户消息/助手消息的分类计数（业务层）、4) token 累加和 keyDecisions 收集（聚合层）。这些关注点应该分离，否则任何一层的变化都会影响整个函数。此外，该函数在循环内对每个 JSONL 行执行 JSON.stringify(block.input).slice(0, 200)，对于大文件会产生大量临时字符串。",
+      "suggestion": "分为 3 层：\n1. readJsonlTail(filePath, offset) → string（纯 I/O）\n2. parseJsonlLines(content) → object[]（纯解析）\n3. aggregateSessionInfo(lines, existingPromptIds) → SessionInfo（纯业务）\n\n这使得每层都可以独立测试和复用。",
+      "rule_reference": "Clean Architecture — 分层架构：I/O、解析、业务逻辑应在不同层中。",
+      "confidence": 0.85
+    },
+    {
+      "id": "C-007",
+      "file": "index.js",
+      "line": 30,
+      "line_range": [
+        30,
+        44
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "/import-localstorage 路由存在 XSS 风险，importData 直接嵌入 HTML 未转义",
+      "description": "import-data.json 的内容通过字符串拼接直接嵌入到 HTML 的 `<script>` 标签中：`var d=' + importData + ';`。如果 import-data.json 中包含 `</script><script>alert(1)</script>` 等恶意内容，将导致 XSS 注入。虽然这是一个本地工具（localhost），但如果 import-data.json 被恶意篡改（例如通过供应链攻击或共享目录），风险是真实的。",
+      "suggestion": "对 importData 进行 JSON 转义后再嵌入 HTML，或改用 API 返回 JSON + 前端 fetch 的方式：\n1. `/import-localstorage` 只返回 import-data.json 的原始内容（Content-Type: application/json）\n2. 前端页面通过 fetch 获取数据并写入 localStorage\n3. 如果必须内联，使用 `JSON.stringify(importData)` 而非直接拼接",
+      "code_snippet_bad": "var html = '...var d=' + importData + ';...';",
+      "code_snippet_good": "var html = '...var d=' + JSON.stringify(JSON.parse(importData)) + ';...';\n// 或更好的方案：分离数据和模板",
+      "rule_reference": "OWASP — Injection Prevention: 永远不要将未转义的数据嵌入 HTML/JS 上下文",
+      "confidence": 0.82
+    },
+    {
+      "id": "C-008",
+      "file": "scanner.js",
+      "line": 193,
+      "line_range": [
+        193,
+        255
+      ],
+      "severity": "nit",
+      "category": "performance",
+      "title": "scanSessions 使用 fs.statSync 在 async 函数中，可能阻塞事件循环",
+      "description": "scanSessions 是 async 函数，内部使用了 `fsp.readdir` 和 `fsp.access`（异步版本），但在增量更新路径中调用了 `parseSessionChunk`，而 parseSessionChunk 内部全部是同步 I/O（fs.statSync, fs.openSync, fs.readSync）。对于大量会话文件（每个文件可能数 MB），这些同步调用会阻塞事件循环，影响 SSE 推送和 HTTP 请求的响应性。",
+      "suggestion": "将 parseSessionChunk 改为异步版本（使用 fs.promises），或在 scanSessions 的增量路径中使用 `await new Promise(resolve => setImmediate(resolve))` 让出事件循环。短期方案：至少将 fs.statSync 替换为 fsp.stat。",
+      "rule_reference": "Node.js Best Practices — 避免在 async 函数中使用同步 I/O",
+      "confidence": 0.78
+    },
+    {
+      "id": "C-009",
+      "file": "routes/open.js",
+      "line": 1,
+      "line_range": [
+        1,
+        15
+      ],
+      "severity": "nit",
+      "category": "maintainability",
+      "title": "ORIGINAL_SETTINGS 快照在模块加载时执行，但依赖文件系统状态，时机不可控",
+      "description": "open.js 在模块加载时（IIFE）立即读取 settings.json 作为原始快照。但模块加载顺序由 require 链决定，如果 shared.js 或其他模块在 open.js 之前修改了 settings.json，快照就不是真正的'原始'值。此外，如果 settings.json 在服务器启动后被外部进程修改，快照也不会更新。",
+      "suggestion": "将快照时机推迟到服务器 listen 回调中（明确的'启动完成'时机），或通过配置参数显式传入。至少应在 IIFE 中添加日志，记录快照内容的 hash，便于排查问题。",
+      "rule_reference": "The Pragmatic Programmer — Tip 43: The Requirements Pit（明确依赖的时序假设）",
+      "confidence": 0.75
+    },
+    {
+      "id": "C-010",
+      "file": "routes/session.js",
+      "line": 220,
+      "line_range": [
+        220,
+        245
+      ],
+      "severity": "nit",
+      "category": "correctness",
+      "title": "阶段检测（Phase Detection）使用硬编码时间窗口，且未处理边界情况",
+      "description": "PHASE_GAP_MS = 10分钟 和 PARALLEL_WIN_MS = 4分钟 是硬编码的魔法数字，没有文档说明为什么选择这些值。更关键的是，当 matchedEdges 为空或只有一个元素时，phase 检测逻辑仍然会执行（虽然结果为空），这增加了理解成本。此外，phaseLabel 的查找使用反向遍历 userMessages，但如果 userMessages 为空，phaseLabel 会是空字符串，导致 UI 显示'阶段1'而不是有意义的标签。",
+      "suggestion": "1. 将 PHASE_GAP_MS 和 PARALLEL_WIN_MS 提取为 shared.js 中的配置常量，附带注释说明选择依据\n2. 添加 early return：if (matchedEdges.length === 0) return { phases: [] }\n3. phaseLabel 为空时使用 fallback：\"阶段 \" + phases.length + 1",
+      "rule_reference": "Clean Code Ch.17 — Smell: Magic Numbers",
+      "confidence": 0.8
+    }
+  ],
+  "metrics": {
+    "total_findings": 10,
+    "by_severity": {
+      "important": 6,
+      "nit": 4
+    },
+    "by_category": {
+      "maintainability": 5,
+      "bug": 1,
+      "security": 1,
+      "performance": 1,
+      "correctness": 1
+    },
+    "review_duration_seconds": 0
+  },
+  "praise": [
+    {
+      "file": "scanner.js",
+      "line": 14,
+      "comment": "getStatus 函数的状态机设计清晰——基于 lastMeaningfulStopReason 和时间衰减的状态转换逻辑（running → completed → idle → 休眠 → 归档）是一个好的领域建模实践，每个状态的语义明确。"
+    },
+    {
+      "file": "scanner.js",
+      "line": 145,
+      "comment": "增量解析（parseSessionChunk with offset + mergeSessionData）是一个精心设计的性能优化——避免每次全量扫描大文件，只读取新增内容并合并到缓存。文件截断检测（_truncated）的 fallback 也考虑了日志轮转的场景。"
+    },
+    {
+      "file": "watcher.js",
+      "line": 1,
+      "comment": "watcher 模块的职责边界清晰——只负责文件系统监控和变更检测，将具体处理委托给 scanner 和 agents，符合单一职责原则。防抖（debounce）机制和互斥锁（_processing）的实现简洁有效。"
+    },
+    {
+      "file": "sse.js",
+      "line": 1,
+      "comment": "SSE 模块是整个代码库中封装最好的模块——所有 sseClients 的操作都通过 sse.js 的函数进行，外部模块只能通过 broadcastSSE 发送消息，不能直接操作客户端列表。这是 shared.js 中其他状态应该学习的封装模式。"
+    },
+    {
+      "file": "pricing.js",
+      "line": 1,
+      "comment": "pricing 模块是良好的'策略模式'实现——默认定价 + 外部 pricing.json 覆盖，calcCost 函数纯函数化（无副作用，只依赖输入参数和已加载的定价表），可独立测试。"
+    }
+  ]
+}

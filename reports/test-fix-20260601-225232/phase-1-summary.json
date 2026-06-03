@@ -1,0 +1,37 @@
+{
+  "status": "PARTIAL",
+  "agents": {
+    "A": {
+      "name": "Agent A",
+      "status": "OK",
+      "elapsed_seconds": 183.3,
+      "findings_count": 11,
+      "validation_errors": [],
+      "praise_count": 4
+    },
+    "B": {
+      "name": "Agent B",
+      "status": "FAILED",
+      "elapsed_seconds": null,
+      "findings_count": 0,
+      "validation_errors": [],
+      "error": "'gbk' codec can't encode character '\\U0001f534' in position 187: illegal multibyte sequence"
+    },
+    "C": {
+      "name": "Agent C",
+      "status": "OK",
+      "elapsed_seconds": 155.8,
+      "findings_count": 15,
+      "validation_errors": [],
+      "praise_count": 5
+    }
+  },
+  "total_findings": 26,
+  "total_praise": 9,
+  "output_files": [
+    "D:\\MACRS\\reports\\test-fix-20260601-225232\\review-a.json",
+    "D:\\MACRS\\reports\\test-fix-20260601-225232\\review-c.json"
+  ],
+  "summary_file": "D:\\MACRS\\reports\\test-fix-20260601-225232\\phase-1-summary.json",
+  "total_elapsed_seconds": 397.5
+}

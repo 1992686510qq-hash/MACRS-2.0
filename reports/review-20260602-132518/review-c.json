@@ -1,0 +1,299 @@
+{
+  "agent_id": "C",
+  "skill": "pragmatic-clean-code-reviewer",
+  "philosophy": "你是'架构防腐'的代码审查专家。你不只关心单行代码的对错，更关心这段代码在整个系统架构中的位置和长期影响。核心理念来自 The Pragmatic Programmer、Clean Code、Clean Architecture。审查核心问题：'这段代码会加速还是延缓系统的技术债务累积？'",
+  "review_scope": {
+    "files": [
+      "agents.js",
+      "index.js",
+      "pricing.js",
+      "routes/open.js",
+      "routes/session.js",
+      "routes/sessions.js",
+      "routes/snapshots.js",
+      "scanner.js",
+      "shared.js",
+      "snapshot.js",
+      "sse.js",
+      "watcher.js"
+    ],
+    "lines_total": 2026
+  },
+  "findings": [
+    {
+      "id": "C-001",
+      "file": "scanner.js",
+      "line": 77,
+      "line_range": [
+        77,
+        130
+      ],
+      "severity": "blocking",
+      "category": "performance",
+      "title": "parseSessionChunk 使用同步 I/O 阻塞事件循环",
+      "description": "parseSessionChunk 在每次调用时使用 fs.statSync、fs.openSync、fs.readSync 读取整个 JSONL 文件。对于一个实时 SSE 推送的仪表盘服务，同步 I/O 会阻塞事件循环，导致所有 SSE 客户端心跳中断、新请求排队。当会话文件较大（数 MB）或并发请求较多时，服务响应将严重退化。同样的问题存在于 agents.js:45（fs.readFileSync）、snapshot.js:7-18（fs.readFileSync）、index.js 中多处 fs.readFileSync。整个代码库形成了一条同步 I/O 链：watcher → scanSessions → parseSessionChunk → readFileSync，任何一个大文件都会阻塞整个服务。",
+      "suggestion": "将 parseSessionChunk 改为 async 函数，使用 fs.promises.readFile 或 fs.promises.open + read。关键路径（watcher.processChanges）应完全异步化。对于增量解析场景，可使用 fs.promises.open + Buffer.alloc + fs.promises.read 保持偏移量读取的语义，但用异步 API 替代。建议统一为 async/await 风格，消除所有 *Sync 调用。",
+      "code_snippet_bad": "var stat = fs.statSync(filePath);\nvar fd = fs.openSync(filePath, \"r\");\nvar bytesRead = fs.readSync(fd, buf, 0, buf.length, startOffset);",
+      "code_snippet_good": "var stat = await fsp.stat(filePath);\nvar fh = await fsp.open(filePath, 'r');\ntry {\n  var { bytesRead } = await fh.read(buf, 0, buf.length, startOffset);\n} finally { await fh.close(); }",
+      "rule_reference": "Clean Architecture - I/O 边界应隔离在最外层；Node.js 事件循环不应被同步 I/O 阻塞",
+      "confidence": 0.95
+    },
+    {
+      "id": "C-002",
+      "file": "shared.js",
+      "line": 40,
+      "line_range": [
+        40,
+        75
+      ],
+      "severity": "blocking",
+      "category": "maintainability",
+      "title": "shared.js 是 God Module：全局可变状态集中营",
+      "description": "shared.js 导出了 14 个可变状态容器（sessionCache、subAgentCache、fileOffsets、sessionConfigMap、cclProjectMap、sseClients、watchers、pendingChanges、snapshotList 等），被所有其他模块直接 import 并读写。这违反了单一职责原则，形成了一个'隐式全局变量'模块——任何模块都可以在任何时候修改任何状态，没有封装、没有边界、没有不变式保证。当系统出 bug 时，你无法确定是哪个模块在什么时候破坏了状态。",
+      "suggestion": "将状态按领域拆分：SessionStore（sessionCache + fileOffsets + sessionConfigMap）、AgentStore（subAgentCache）、SSEClients（sseClients + SSE_MAX_CLIENTS）、SnapshotStore（snapshotList + lastAutoSnapshot）。每个 Store 通过方法暴露操作（get/set/delete），不直接暴露 Map/Array。这使得状态变更可追踪、可测试、可加锁。",
+      "code_snippet_bad": "// shared.js — 所有模块直接读写\nmodule.exports = {\n  sessionCache: new Map(),\n  subAgentCache: new Map(),\n  sseClients: [],\n  watchers: [],\n  // ...14 个可变状态\n};",
+      "code_snippet_good": "// session-store.js\nclass SessionStore {\n  constructor() { this._cache = new Map(); this._offsets = new Map(); }\n  get(id) { return this._cache.get(id); }\n  set(id, data) { this._cache.set(id, data); }\n  all() { return Array.from(this._cache.values()); }\n}",
+      "rule_reference": "Clean Architecture - 依赖规则：内层不依赖外层；单一职责原则",
+      "confidence": 0.92
+    },
+    {
+      "id": "C-003",
+      "file": "index.js",
+      "line": 95,
+      "line_range": [
+        95,
+        100
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "Session ID 使用 Math.random() 生成，可预测",
+      "description": "index.js:95 和 index.js:120 中的 genUuid() 使用 Math.random() 生成 session ID。Math.random() 不是密码学安全的 PRNG，生成的 UUID 在理论上可预测。虽然这不是认证 token，但 session ID 用于标识和恢复会话（通过 --resume），如果攻击者能预测 ID，可能访问他人的会话内容。routes/open.js 中也有类似问题。",
+      "suggestion": "使用 crypto.randomUUID()（Node.js 14.17+）或 crypto.randomBytes(16) 生成 session ID。代码中已经引入了 crypto 模块，可直接使用。",
+      "code_snippet_bad": "\"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, function(c) {\n  var r = Math.random() * 16 | 0, v = c === \"x\" ? r : (r & 0x3 | 0x8);\n  return v.toString(16);\n});",
+      "code_snippet_good": "var sessionId = crypto.randomUUID();",
+      "rule_reference": "OWASP - 使用密码学安全的随机数生成器",
+      "confidence": 0.93
+    },
+    {
+      "id": "C-004",
+      "file": "routes/open.js",
+      "line": 178,
+      "line_range": [
+        178,
+        210
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "swapSettingsJson 的写入锁是假锁，无法防止并发竞态",
+      "description": "_settingsWriteLock 是一个普通布尔变量，不是真正的互斥锁。在 Node.js 单线程模型中，如果两个请求在同一事件循环 tick 中调用 swapSettingsJson，布尔锁可能不会生效（因为 fs.readFileSync 是同步的，锁在读取期间不会释放）。但更关键的是——代码注释说'通过 --settings CLI 参数注入配置，不修改默认 settings.json'，但 swapSettingsJson 仍然存在且会修改 settings.json，这是架构矛盾。如果有两个并发请求，一个在 swap 期间到达，它会跳过 swap（'跳过 swap'），导致该会话使用错误的配置。",
+      "suggestion": "既然所有启动路径都已通过 --settings 参数注入配置，swapSettingsJson 应该被完全移除。如果确实需要保留，应使用真正的异步互斥锁（如 async-mutex 库），而不是布尔标志。",
+      "code_snippet_bad": "var _settingsWriteLock = false;\nif (_settingsWriteLock) {\n  console.log(\"[open] settings.json 写入中，跳过 swap\");\n  return;\n}\n_settingsWriteLock = true;",
+      "code_snippet_good": "// 方案1：完全移除 swapSettingsJson，只用 --settings 参数\n// 方案2：使用 async-mutex\nconst mutex = new Mutex();\nawait mutex.runExclusive(() => { /* swap logic */ });",
+      "rule_reference": "The Pragmatic Programmer - 不存在的互斥锁是定时炸弹",
+      "confidence": 0.9
+    },
+    {
+      "id": "C-005",
+      "file": "routes/session.js",
+      "line": 95,
+      "line_range": [
+        95,
+        300
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "buildRelationsResponse 是 200+ 行的 God Function",
+      "description": "buildRelationsResponse 函数从第 95 行到文件末尾（约 200+ 行），混合了至少 5 个独立关注点：(1) 父会话 dispatch 解析、(2) 子 Agent 文件解析、(3) dispatch→agent 时间匹配、(4) 阶段检测、(5) 瀑布流追踪。这违反了单一职责原则，使得任何一个关注点的修改都需要理解整个函数。同时，子 Agent 解析逻辑（session.js:140-190）与 agents.js:parseSubAgent 高度重复——两者都在解析同一个 JSONL 格式，提取 title、model、token 等信息。",
+      "suggestion": "拆分为 5 个独立函数：parseDispatchCalls(parentLines)、buildSubAgentNodes(subDirs)、matchDispatchToAgents(dispatches, agents)、detectPhases(matchedEdges, userMessages)、buildWaterfallTrace(parentLines)。子 Agent 解析复用 agents.parseSubAgent。",
+      "code_snippet_bad": "function buildRelationsResponse(relTarget, relId, res) {\n  // 200+ 行，5 个独立关注点混在一起\n  var dispatchCalls = [];\n  // ... 解析 dispatch\n  var subAgentMap = {};\n  // ... 解析子 Agent（与 agents.js 重复）\n  // ... 时间匹配\n  // ... 阶段检测\n  // ... 瀑布流\n}",
+      "code_snippet_good": "function buildRelationsResponse(relTarget, relId, res) {\n  var parentLines = readParentLines(relTarget._file);\n  var dispatches = parseDispatchCalls(parentLines);\n  var subNodes = buildSubAgentNodes(path.dirname(relTarget._file), relId);\n  var edges = matchDispatchToAgents(dispatches, subNodes, relId);\n  var phases = detectPhases(edges, extractUserMessages(parentLines));\n  var waterfall = buildWaterfallTrace(parentLines);\n  res.writeHead(200, { 'Content-Type': 'application/json' });\n  res.end(JSON.stringify({ sessionId: relId, nodes: [mainNode, ...subNodes], edges, phases, waterfall }));\n}",
+      "rule_reference": "Clean Code - 函数应该只做一件事",
+      "confidence": 0.91
+    },
+    {
+      "id": "C-006",
+      "file": "agents.js",
+      "line": 43,
+      "line_range": [
+        43,
+        48
+      ],
+      "severity": "important",
+      "category": "performance",
+      "title": "parseSubAgent 对每个子 Agent 读取完整文件到内存",
+      "description": "parseSubAgent 使用 fs.readFileSync 将整个 JSONL 文件读入内存，然后 split('\\n')。对于活跃的子 Agent，JSONL 文件可能增长到数 MB。在 scanSubAgents 循环中，如果一个会话有 10 个子 Agent，就会同步读取 10 个文件。结合 scanner.js 的同步读取，一次 watcher 触发可能导致数十次同步文件 I/O。",
+      "suggestion": "与 scanner.js 统一处理：(1) 使用异步 I/O；(2) 对于只需要最后几行的场景（如 status 判断），从文件末尾反向读取；(3) 复用 scanner.parseSessionChunk 的增量解析逻辑，避免重复实现。",
+      "code_snippet_bad": "var content;\ntry { content = fs.readFileSync(filePath, \"utf-8\"); } catch (e) { return info; }\nvar lines = content.trim().split(\"\\n\");",
+      "code_snippet_good": "// 使用增量解析，只读取新增部分\nvar delta = scanner.parseSessionChunk(filePath, cachedOffset);",
+      "rule_reference": "Clean Architecture - 不要重复自己（DRY）",
+      "confidence": 0.88
+    },
+    {
+      "id": "C-007",
+      "file": "index.js",
+      "line": 72,
+      "line_range": [
+        72,
+        80
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "认证逻辑中 token 比较未使用时间安全函数",
+      "description": "authenticateRequest 使用 === 比较 token 字符串。JavaScript 的 === 在发现第一个不匹配字符时就返回 false，这使得比较操作的耗时与匹配前缀长度成正比，理论上可被时序攻击利用。虽然在 localhost 场景下风险较低，但作为认证逻辑的最佳实践，应使用时间安全比较。",
+      "suggestion": "使用 crypto.timingSafeEqual 进行 token 比较。需要先确保两个 buffer 长度相同。",
+      "code_snippet_bad": "if (authHeader && authHeader.startsWith(\"Bearer \")) {\n  return authHeader.substring(7) === PANEL_TOKEN;\n}",
+      "code_snippet_good": "if (authHeader && authHeader.startsWith(\"Bearer \")) {\n  var provided = Buffer.from(authHeader.substring(7));\n  var expected = Buffer.from(PANEL_TOKEN);\n  return provided.length === expected.length && crypto.timingSafeEqual(provided, expected);\n}",
+      "rule_reference": "OWASP - 使用时间安全的字符串比较",
+      "confidence": 0.78
+    },
+    {
+      "id": "C-008",
+      "file": "index.js",
+      "line": 55,
+      "line_range": [
+        55,
+        60
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "Panel token 以明文写入文件系统",
+      "description": "PANEL_TOKEN 以明文形式写入 ~/.claude/panel-token 文件。如果攻击者获得文件系统读取权限（通过路径遍历、共享目录、备份泄露等），就能直接获取认证 token，完全绕过认证。虽然 token 文件权限在 Linux 上默认是 644（world-readable），在 Windows 上更是缺乏限制。",
+      "suggestion": "方案1：设置严格的文件权限（chmod 600 / icacls 仅当前用户）。方案2：不在文件系统存储 token，改为环境变量传入。方案3：如果必须存储，使用加密存储（如 Windows DPAPI）。",
+      "code_snippet_bad": "PANEL_TOKEN = crypto.randomBytes(32).toString(\"hex\");\nfs.writeFileSync(TOKEN_PATH, PANEL_TOKEN);",
+      "code_snippet_good": "PANEL_TOKEN = crypto.randomBytes(32).toString(\"hex\");\nfs.writeFileSync(TOKEN_PATH, PANEL_TOKEN, { mode: 0o600 });",
+      "rule_reference": "OWASP - 敏感数据存储",
+      "confidence": 0.82
+    },
+    {
+      "id": "C-009",
+      "file": "shared.js",
+      "line": 72,
+      "line_range": [
+        72,
+        85
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "watchCclSessions 在 fs.watch 回调中使用同步 I/O",
+      "description": "fs.watch 的回调中调用了 fs.readFileSync、fs.readdirSync、fs.statSync。fs.watch 回调在事件循环的 I/O 阶段执行，同步 I/O 会阻塞后续的 I/O 事件处理。当 .ccl-sessions.json 频繁更新且 projects 目录包含大量文件时，这会造成显著的事件循环延迟。此外，该函数内部还调用了 saveSessionConfigMap（fs.writeFileSync），形成了一条同步写入链。",
+      "suggestion": "将 fs.watch 回调中的逻辑改为异步：使用 fs.promises.readFile、fs.promises.readdir、fs.promises.stat。或者使用 chokidar 等库提供更可靠的文件监控。",
+      "code_snippet_bad": "fs.watch(CCL_SESSIONS_FILE, function() {\n  var data = JSON.parse(fs.readFileSync(CCL_SESSIONS_FILE, \"utf-8\"));\n  var subdirs = fs.readdirSync(projectsDir);\n  var st = fs.statSync(fp);\n});",
+      "code_snippet_good": "fs.watch(CCL_SESSIONS_FILE, debounce(async function() {\n  var data = JSON.parse(await fsp.readFile(CCL_SESSIONS_FILE, \"utf-8\"));\n  var subdirs = await fsp.readdir(projectsDir, { withFileTypes: true });\n  var st = await fsp.stat(fp);\n}, 500));",
+      "rule_reference": "Node.js Best Practices - 不要在回调中使用同步 I/O",
+      "confidence": 0.89
+    },
+    {
+      "id": "C-010",
+      "file": "scanner.js",
+      "line": 18,
+      "line_range": [
+        18,
+        48
+      ],
+      "severity": "nit",
+      "category": "maintainability",
+      "title": "getStatus 使用魔法数字，缺乏可配置性",
+      "description": "getStatus 函数中硬编码了多个时间阈值：1小时、6小时、7天、10分钟。这些阈值没有命名常量，也没有提供配置接口。当需要调整这些阈值时（例如，将'异常'判断从10分钟改为15分钟），需要直接修改源代码。",
+      "suggestion": "提取为命名常量或配置对象：var STATUS_THRESHOLDS = { COMPLETED_MAX_AGE: 3600000, IDLE_MAX_AGE: 21600000, DORMANT_MAX_AGE: 604800000, FILE_STALE_MS: 600000 };。可进一步从配置文件加载。",
+      "code_snippet_bad": "if (msgAge < 1 * 60 * 60 * 1000) return \"completed\";\nif (msgAge < 6 * 60 * 60 * 1000) return \"idle\";\nif (msgAge < 7 * 24 * 60 * 60 * 1000) return \"休眠\";",
+      "code_snippet_good": "var THRESHOLDS = {\n  COMPLETED_MAX_AGE_MS: 1 * 60 * 60 * 1000,\n  IDLE_MAX_AGE_MS: 6 * 60 * 60 * 1000,\n  DORMANT_MAX_AGE_MS: 7 * 24 * 60 * 60 * 1000,\n  FILE_STALE_MS: 10 * 60 * 1000\n};",
+      "rule_reference": "Clean Code - 魔法数字应该被命名常量替代",
+      "confidence": 0.85
+    },
+    {
+      "id": "C-011",
+      "file": "index.js",
+      "line": 107,
+      "line_range": [
+        107,
+        135
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "UUID 全局替换策略过于激进，可能误伤数据内容",
+      "description": "create-and-open 端点使用正则 /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi 匹配源 JSONL 中的所有 UUID 并替换。但 UUID 可能出现在消息内容、工具输出、文件路径等非会话标识的上下文中。例如，用户消息中提到'请检查 commit a67f1853-fcfb-4226...'，这个 UUID 也会被替换，导致消息内容失真。此外，替换后再进行大写替换（split(oldUuids[oi].toUpperCase()).join(...)）可能导致已经替换过的 UUID 被二次替换。",
+      "suggestion": "只替换已知的结构性字段中的 UUID（如 sessionId、parentSessionId），而不是全局正则替换。可以逐行 JSON.parse，只修改特定字段，然后 JSON.stringify 回去。这样更安全，也避免了二次替换问题。",
+      "code_snippet_bad": "var uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;\nvar foundUuids = sourceContent.match(uuidRegex);\n// ... 全局替换所有 UUID\nnewContent = newContent.split(oldUuids[oi]).join(uuidMap[oldUuids[oi]]);\nnewContent = newContent.split(oldUuids[oi].toUpperCase()).join(uuidMap[oldUuids[oi]]);",
+      "code_snippet_good": "// 逐行处理，只替换结构字段\nvar lines = sourceContent.split('\\n');\nvar newLines = lines.map(line => {\n  var obj = JSON.parse(line);\n  if (obj.sessionId) obj.sessionId = newSessionId;\n  if (obj.parentSessionId) obj.parentSessionId = uuidMap[obj.parentSessionId] || obj.parentSessionId;\n  return JSON.stringify(obj);\n});",
+      "rule_reference": "The Pragmatic Programmer - 全局替换是核弹，精确替换是手术刀",
+      "confidence": 0.87
+    },
+    {
+      "id": "C-012",
+      "file": "watcher.js",
+      "line": 43,
+      "line_range": [
+        43,
+        55
+      ],
+      "severity": "nit",
+      "category": "bug",
+      "title": "processChanges 使用函数级 _processing 标志而非模块级 shared._processing",
+      "description": "watcher.js 定义了函数级的 var _processing = false，但 shared.js 也导出了 _processing: false 属性。两处独立的标志可能导致逻辑不一致——shared.js 的 _processing 永远不会被更新，而 watcher.js 的 _processing 是模块私有的。虽然当前代码只使用 watcher.js 内部的标志，但 shared.js 中的同名属性是死代码，造成混淆。",
+      "suggestion": "删除 shared.js 中的 _processing 导出，或者统一使用 shared._processing 作为唯一标志。建议前者——processChanges 的处理状态是 watcher 模块的内部实现细节，不应暴露。",
+      "code_snippet_bad": "// watcher.js\nvar _processing = false;\n\n// shared.js\nmodule.exports = { _processing: false, ... };",
+      "code_snippet_good": "// watcher.js — 仅使用模块私有标志\nvar _processing = false;\n\n// shared.js — 删除 _processing",
+      "rule_reference": "Clean Code - 死代码应该被删除",
+      "confidence": 0.82
+    },
+    {
+      "id": "C-013",
+      "file": "index.js",
+      "line": 50,
+      "line_range": [
+        50,
+        55
+      ],
+      "severity": "nit",
+      "category": "security",
+      "title": "CORS 仅检查 localhost，但未限制端口",
+      "description": "CORS 检查使用正则 /^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/ 允许任何端口的 localhost 请求。虽然在开发场景下合理，但如果用户在同一台机器上运行了其他恶意 Web 应用，该应用可以通过 JavaScript 向 CC Panel 发送带认证的请求（token 从 query param 或 localStorage 获取）。端口限制可以缩小攻击面。",
+      "suggestion": "如果面板只服务于自身前端，可以完全移除 CORS header（同源请求不需要）。如果需要跨端口访问，限制为已知端口列表。",
+      "code_snippet_bad": "if (origin && /^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/.test(origin)) {\n  res.setHeader(\"Access-Control-Allow-Origin\", origin);\n}",
+      "code_snippet_good": "// 同源请求不需要 CORS\n// 如果确实需要跨端口，限制为面板自身端口\nvar allowedOrigins = ['http://localhost:' + shared.PORT, 'http://127.0.0.1:' + shared.PORT];\nif (origin && allowedOrigins.includes(origin)) {\n  res.setHeader('Access-Control-Allow-Origin', origin);\n}",
+      "confidence": 0.75
+    }
+  ],
+  "metrics": {
+    "total_findings": 13,
+    "by_severity": {
+      "blocking": 3,
+      "important": 7,
+      "nit": 3
+    },
+    "by_category": {
+      "performance": 2,
+      "maintainability": 4,
+      "security": 4,
+      "bug": 3
+    },
+    "review_duration_seconds": 0
+  },
+  "praise": [
+    {
+      "file": "routes/open.js",
+      "line": 84,
+      "comment": "P0-003 路径遍历防护：isValidConfigName 使用严格的正则 /^setting-[a-zA-Z0-9_-]+\\.json$/ 验证配置文件名，在所有使用 configName 的路径上都进行了调用。这是正确的纵深防御实践。"
+    },
+    {
+      "file": "routes/session.js",
+      "line": 12,
+      "comment": "Session ID 格式验证：所有接收 session ID 的端点都使用 UUID 正则验证格式（/^[0-9a-f]{8}-...$/i），防止了注入攻击和无效输入。"
+    },
+    {
+      "file": "scanner.js",
+      "line": 70,
+      "comment": "增量解析架构：parseSessionChunk 支持 startOffset 参数实现增量读取，配合 fileOffsets 缓存避免重复解析整个文件。这是一个务实的性能优化设计。"
+    },
+    {
+      "file": "index.js",
+      "line": 170,
+      "comment": "优雅关闭：shutdown 函数正确处理 SIGINT/SIGTERM，清理 watchers 和 SSE 连接，并设置了 5 秒超时防止清理挂起。这是生产级服务的标准实践。"
+    },
+    {
+      "file": "sse.js",
+      "line": 1,
+      "comment": "SSE 实现简洁有效：heartbeat 保活、dead client 自动清理、客户端数量限制（SSE_MAX_CLIENTS=50），这三个关键特性都已实现。"
+    }
+  ]
+}

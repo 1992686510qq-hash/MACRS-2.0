@@ -1,0 +1,252 @@
+{
+  "agent_id": "C",
+  "skill": "pragmatic-clean-code-reviewer",
+  "philosophy": "你是'架构防腐'的代码审查专家。你不只关心单行代码的对错，更关心这段代码在整个系统架构中的位置和长期影响。你的核心理念来自：The Pragmatic Programmer、Clean Code、Clean Architecture。你审查时的核心问题是：'这段代码会加速还是延缓系统的技术债务累积？'",
+  "review_scope": {
+    "files": [
+      "D:\\CC项目\\00\\ccl-launcher.js"
+    ],
+    "lines_total": 1464
+  },
+  "findings": [
+    {
+      "id": "C-001",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 1,
+      "line_range": [
+        1,
+        1464
+      ],
+      "severity": "blocking",
+      "category": "maintainability",
+      "title": "1464行巨石单文件：零模块边界，所有关注点混合在一个文件中",
+      "description": "整个应用（依赖安装、配置管理、TUI渲染、屏幕导航、HTTP请求、会话管理、项目管理、模型管理）全部压缩在一个文件中，没有任何模块边界。每一次修改任何一个功能都需要理解整个文件。技术债务累积速度将随功能增加呈指数增长。根据 Clean Architecture，至少应分离为：config（配置层）、tui（UI层）、screens（屏幕定义）、flows（业务流程）、services（HTTP/文件服务）等模块。",
+      "suggestion": "将文件拆分为独立模块：\n1. `config.js` — Le(), a(), _(), G(), q(), je(), ie() 配置管理\n2. `nav.js` — R(), xe(), pe(), $e(), Re(), oe(), N(), O() 导航状态\n3. `tui.js` — Be(), Ke(), we(), ve(), H(), E(), se() TUI渲染\n4. `screens/` — at, lt, dt, mt, sessions_screen 等屏幕定义\n5. `flows/` — vt() 新建项目, Mt() 新建配置\n6. `services/http.js` — ot(), Ut() HTTP请求\n7. `services/fs.js` — Dt(), Ht(), Zt() 文件操作\n8. `main.js` — Jt() 入口，仅做组装",
+      "code_snippet_bad": "// 当前：所有代码在 ccl-launcher.js 一个文件中\n(function() { /* 依赖安装 */ })();\n\"use strict\";\n// ... 配置管理 ...\n// ... TUI ...\n// ... HTTP ...\n// ... 屏幕定义 ...\n// ... 业务流程 ...\n// ... 1464 行，无任何模块边界",
+      "code_snippet_good": "// 建议：按关注点分离\n// config.js\nexports.loadConfig = Le;\nexports.saveConfig = _;\n// tui.js\nexports.initTUI = Be;\n// screens/main.js\nexports.mainScreen = at;\n// main.js\nconst { loadConfig } = require('./config');\nconst { initTUI } = require('./tui');\nconst { mainScreen } = require('./screens/main');",
+      "rule_reference": "Clean Architecture — Component Principles / Common Closure Principle",
+      "confidence": 0.98
+    },
+    {
+      "id": "C-002",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 111,
+      "line_range": [
+        111,
+        145
+      ],
+      "severity": "blocking",
+      "category": "correctness",
+      "title": "全局可变导航状态无封装：ce/ae/ne/Ae 被任意函数直接修改",
+      "description": "导航状态（ce 栈、ae 当前屏幕、ne 当前选项、Ae 临时数据）全部是模块级可变变量。任何函数都可以通过 pe()、$e()、Re()、N()、O() 等修改这些状态，没有不变性保证，没有状态转换验证。这导致：(1) 难以追踪状态变化来源；(2) 屏幕间数据通过全局 N()/O() 传递，形成隐式耦合；(3) 异步流程中可能出现竞态条件。这是典型的 '全局可变状态' 反模式。",
+      "suggestion": "封装为 Navigator 类或闭包模块，只暴露受控的 API：\n```javascript\n// nav.js\nconst state = { stack: [], current: 'main', option: 0, data: {} };\nmodule.exports = {\n  push(screen, option) { /* 验证屏幕存在 */ state.stack.push({screen: state.current, option: state.option}); state.current = screen; state.option = option ?? 0; },\n  pop() { /* 验证栈非空 */ const prev = state.stack.pop(); state.current = prev.screen; state.option = prev.option; },\n  getScreen() { return state.current; },\n  getOption() { return state.option; },\n  setData(key, value) { state.data[key] = value; },\n  getData(key) { return state.data[key]; },\n  reset() { state.stack = []; state.current = 'main'; state.option = 0; state.data = {}; }\n};\n```",
+      "code_snippet_bad": "var ce = [], ae = \"\", ne = 0, Ae = {};\nfunction R() { return ae }           // 直接读取全局\nfunction pe(e, t = 0) { ae = e, ne = t }  // 直接写入全局\nfunction N(e, t) { Ae[e] = t }        // 直接写入全局字典\nfunction O(e) { return Ae[e] || \"\" }   // 直接读取全局字典",
+      "code_snippet_good": "// 封装为模块，暴露受控 API\nconst navigator = require('./nav');\nnavigator.push('model', 0);\nnavigator.setData('launch_model_id', modelId);\nconst path = navigator.getData('project_path');",
+      "rule_reference": "Clean Code Ch.6 — Objects and Data Structures / Law of Demeter",
+      "confidence": 0.95
+    },
+    {
+      "id": "C-003",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 15,
+      "line_range": [
+        15,
+        19
+      ],
+      "severity": "blocking",
+      "category": "performance",
+      "title": "IIFE中 execSync 同步阻塞 npm install：启动时完全卡死主线程",
+      "description": "文件开头的 IIFE 在启动时调用 `c.execSync(\"npm install blessed --no-package-lock\", { timeout: 6e4 })`，这是一个同步阻塞调用。在首次运行时，npm install 可能需要 30-60 秒，期间整个进程完全无响应——TUI 无法渲染、用户看不到任何进度提示。更严重的是，npm install 本身可能因网络问题超时或失败，但除了退出进程外没有降级策略（如提示用户手动安装、使用离线缓存等）。这是启动路径中的架构缺陷。",
+      "suggestion": "1. 将依赖检查移到单独的安装脚本或预安装步骤（如 package.json 的 preinstall hook）\n2. 或者使用异步 spawn + 进度提示：\n```javascript\nif (!f.existsSync(b)) {\n  console.log('正在安装依赖，请稍候...');\n  const child = c.spawn('npm', ['install', 'blessed', '--no-package-lock'], { cwd: h });\n  child.stdout.pipe(process.stdout);\n  child.stderr.pipe(process.stderr);\n  child.on('close', (code) => {\n    if (code !== 0) { console.error('安装失败'); process.exit(1); }\n    startApp();  // 安装完成后才启动 TUI\n  });\n  return;  // 不继续执行后续代码\n}\nstartApp();\n```",
+      "code_snippet_bad": "try {\n  c.execSync(\"npm install blessed --no-package-lock\", {\n    cwd: h, stdio: \"pipe\", timeout: 6e4\n  })\n} catch (e) {\n  console.error(\"\\x1b[31m依赖安装失败，请检查网络连接: \" + e.message + \"\\x1b[0m\");\n  process.exit(1)\n}",
+      "code_snippet_good": "// 在 package.json 中声明依赖，用户 npm install 时自动安装\n// 或在单独的 install.js 中处理，或使用异步 spawn\nif (!f.existsSync(b)) {\n  const child = c.spawn('npm', ['install', 'blessed', '--no-package-lock'], { cwd: h, stdio: 'inherit' });\n  child.on('exit', (code) => code === 0 ? startApp() : process.exit(1));\n  return;\n}",
+      "rule_reference": "The Pragmatic Programmer — Tip 34: Don't Program by Coincidence (sync I/O in startup)",
+      "confidence": 0.97
+    },
+    {
+      "id": "C-004",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 77,
+      "line_range": [
+        77,
+        77
+      ],
+      "severity": "important",
+      "category": "correctness",
+      "title": "空 catch 块无处不在：8+处 catch {} 静默吞掉所有错误信息",
+      "description": "代码中存在至少 8 处 `catch {}` 空块（_trace 函数、Zt 函数、Dt 函数、ot 函数、se 函数、vt 函数中的 try-catch 等）。这些静默吞错使运行时故障完全不可见：文件写入失败、JSON 解析失败、目录读取失败等都不会产生任何日志或用户提示。在生产环境中，这意味着关键操作可能静默失败，用户却以为一切正常。根据 Clean Code，永远不要让 catch 块为空——至少记录日志。",
+      "suggestion": "为每个 catch 块至少添加错误日志或用户提示：\n```javascript\n// 最低限度\ncatch (e) { _trace('ERROR', `file_op_failed: ${e.message}`) }\n\n// 更好的做法：区分可恢复错误和致命错误\ncatch (e) {\n  if (e.code === 'ENOENT') { /* 文件不存在，正常情况 */ }\n  else if (e.code === 'EACCES') { console.error('权限不足:', e.message); }\n  else { _trace('ERROR', `unexpected: ${e.message}`); throw e; }\n}\n```",
+      "code_snippet_bad": "try {\n  n.appendFileSync(r, `[${s}] #${_traceStep} [${e}] ${t}\\n`)\n} catch {}   // ← 静默吞错：磁盘满？权限？路径错误？全部不可见",
+      "code_snippet_good": "try {\n  n.appendFileSync(r, `[${s}] #${_traceStep} [${e}] ${t}\\n`)\n} catch (err) {\n  // 追踪日志写入失败不应崩溃应用，但应记录\n  // 可选：若连续失败 N 次则禁用追踪\n}",
+      "rule_reference": "Clean Code Ch.7 — Error Handling: Don't Return Null / Don't Pass Null; Write Your Try-Catch-Finally First",
+      "confidence": 0.96
+    },
+    {
+      "id": "C-005",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 850,
+      "line_range": [
+        850,
+        851
+      ],
+      "severity": "blocking",
+      "category": "correctness",
+      "title": "硬编码 Windows 绝对路径 'D:\\CC项目'：零跨平台兼容性",
+      "description": "`vt()` 函数中 `sProjectBase = \"D:\\\\CC项目\"` 硬编码了一个 Windows 绝对路径，且假定 D: 盘存在。这意味着：(1) 在 Linux/macOS 上代码会崩溃；(2) 即使 Windows 用户没有 D: 盘也会失败；(3) 用户无法自定义项目存放位置。作为架构防腐，所有路径应该是可配置的。更严重的是，这个路径在异步函数 `vt()` 中被使用，如果新建项目时才发现路径不存在，用户之前的输入（项目名）将全部白费。",
+      "suggestion": "1. 将项目基础路径移到配置文件中：\n```javascript\n// 在 claude-launcher-config.json 中添加 projectsBase 字段\nvar sProjectBase = a().projectsBase || p.join(o.homedir(), 'CC项目');\n```\n2. 在 vt() 函数开始时先验证路径可用性，无效则提示用户配置。\n3. 使用 `path.join(os.homedir(), ...)` 作为默认值，确保跨平台兼容。",
+      "code_snippet_bad": "var sProjectBase = \"D:\\\\CC项目\";  // ❌ 硬编码、仅 Windows、假定 D: 盘存在",
+      "code_snippet_good": "var sProjectBase = a().projectsBase || p.join(o.homedir(), 'CC项目');\n// 使用前验证\nif (!f.existsSync(path.dirname(sProjectBase))) {\n  await E('错误', `项目基础目录不存在: ${sProjectBase}，请在配置中设置 projectsBase`, e);\n  return;\n}",
+      "rule_reference": "The Pragmatic Programmer — Tip 19: Put Abstractions in Code, Details in Metadata / 12-Factor App Config",
+      "confidence": 0.98
+    },
+    {
+      "id": "C-006",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 82,
+      "line_range": [
+        82,
+        87
+      ],
+      "severity": "important",
+      "category": "correctness",
+      "title": "配置保存的原子写入存在竞态条件：无文件锁保护",
+      "description": "`_()` 函数和其他配置写入操作使用 temp-file-then-rename 模式（写 .tmp 文件后 rename），这在单个进程内是正确的原子写入模式。但该应用的用户可能同时运行多个实例（每次开新终端），多个进程可能同时写入同一个配置文件和 sessions 日志文件，导致数据丢失或损坏。`_()` 使用 `process.pid` 作为临时文件名后缀，能避免同进程内冲突，但无法防止跨进程竞态。",
+      "suggestion": "使用 proper-lockfile 或类似库实现跨进程文件锁：\n```javascript\nconst lockfile = require('proper-lockfile');\nasync function saveConfig(data) {\n  const release = await lockfile.lock(te, { retries: 5 });\n  try {\n    const tmp = te + '.tmp.' + process.pid;\n    await fs.promises.writeFile(tmp, JSON.stringify(data, null, 2));\n    await fs.promises.rename(tmp, te);\n  } finally {\n    await release();\n  }\n}\n```\n或者至少使用原子化的 JSON 文件数据库（如 lowdb 的原子写入模式），将配置和会话日志的读写统一到一个模块中管理。",
+      "code_snippet_bad": "function _() {\n  try {\n    let e = te + \".tmp.\" + process.pid;\n    T.writeFileSync(e, JSON.stringify(u, null, 2)),\n    T.renameSync(e, te)  // ← 多实例同时调用 → 最后一个 rename 胜出，中间写入丢失\n  } catch (e) {\n    console.error(\"配置保存失败:\", e.message)\n  }\n}",
+      "code_snippet_good": "// 方案A：文件锁\nconst release = await lockfile.lock(configPath);\ntry { /* atomic write */ } finally { await release(); }\n// 方案B：单实例设计 — 检测已有实例，拒绝启动第二个\n// 方案C：使用 SQLite 替代 JSON 文件，获得 ACID 保证",
+      "rule_reference": "Clean Architecture Ch.17 — Boundaries: Crossing Boundaries / The Pragmatic Programmer — Tip 21: Design with Contracts",
+      "confidence": 0.85
+    },
+    {
+      "id": "C-007",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 870,
+      "line_range": [
+        870,
+        895
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "用户输入零验证：路径/API Key/URL 直接使用，可导致命令注入",
+      "description": "`vt()` 接收用户输入的项目名称后直接用 `path.join()` 拼接路径，`Mt()` 接收 API 地址和密钥后直接写入配置文件，`ct()` 将用户输入的项目路径直接传给子进程的 `cwd` 选项。没有任何输入消毒、长度限制、特殊字符过滤。特别是：(1) 项目名称可能包含 `..` 导致路径遍历；(2) API 地址若被恶意输入可能指向钓鱼服务器；(3) `ct()` 中项目路径直接作为 shell 工作目录，未做转义。虽然 TUI 输入框提供了一定程度的限制，但不应依赖 UI 层的安全。",
+      "suggestion": "添加输入验证层：\n```javascript\nfunction validateProjectName(name) {\n  if (!name || name.length > 64) return '名称长度 1-64 字符';\n  if (!/^[a-zA-Z0-9\\u4e00-\\u9fff_-]+$/.test(name)) return '名称只能包含字母、数字、中文、下划线和连字符';\n  if (name === '.' || name === '..') return '无效的项目名称';\n  return null;  // 无错误\n}\nfunction validateURL(url) {\n  try { const u = new URL(url); return ['https:', 'http:'].includes(u.protocol) ? null : '仅支持 http/https'; }\n  catch { return '无效的 URL 格式'; }\n}\n```",
+      "code_snippet_bad": "let oName = await H(\"新建项目\", \"{cyan-fg}请输入项目名称（如 myproject）:{/cyan-fg}\", e);\nif (oName === null || !oName.trim()) return;\nlet sName = oName.trim();\nlet sPath = ue.join(sProjectBase, sName);  // ← 未验证 sName 是否包含 ../ 等危险字符",
+      "code_snippet_good": "let oName = await H(\"新建项目\", \"...\", e);\nif (oName === null || !oName.trim()) return;\nlet sName = oName.trim();\nlet err = validateProjectName(sName);\nif (err) { await E('错误', err, e); return; }\nlet sPath = ue.resolve(ue.join(sProjectBase, sName));\nif (!sPath.startsWith(ue.resolve(sProjectBase))) {\n  await E('错误', '项目路径越界', e); return;  // 防止 ../ 遍历\n}",
+      "rule_reference": "OWASP Top 10 — A03:2021 Injection; CWE-22: Path Traversal; CWE-20: Improper Input Validation",
+      "confidence": 0.92
+    },
+    {
+      "id": "C-008",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 34,
+      "line_range": [
+        34,
+        37
+      ],
+      "severity": "important",
+      "category": "performance",
+      "title": "同步 I/O 贯穿全文件：readFileSync/writeFileSync/execSync 阻塞事件循环",
+      "description": "整个应用大量使用 Node.js 同步文件 API：(1) `Le()` 中的 `readFileSync`；(2) `_()` 中的 `writeFileSync` + `renameSync`；(3) `Zt()` 中的 `readdirSync` + `statSync`；(4) `vt()` 中的 `mkdirSync` + `writeFileSync`；(5) `ct()` 中的 `spawnSync`。在 TUI 应用中，这些同步调用会阻塞 blessed 的渲染循环，导致界面卡顿。特别是 `ct()` 中的 `spawnSync`——启动 Claude Code 子进程本应是异步的，却用了同步方法。虽然这是在退出 TUI 之后执行的，但 `Zt()` 在退出前的同步文件扫描仍会造成用户可感知的延迟。",
+      "suggestion": "将 I/O 操作迁移到异步 API：\n1. 配置加载/保存使用 `fs.promises.readFile` / `writeFile`\n2. 文件扫描使用 `fs.promises.readdir` + `Promise.all`\n3. 子进程使用 `child_process.spawn` (非 sync)\n4. 在 TUI 渲染循环中执行异步 I/O 时使用 `setImmediate` 或 `process.nextTick` 避免阻塞渲染\n部分关键路径（如应用启动时的配置加载）可以保留同步 I/O，但应明确注释理由。",
+      "code_snippet_bad": "// 全文件散落的同步 I/O\nT.readFileSync(te, \"utf-8\")       // Le()\nT.writeFileSync(e, JSON.stringify(...))  // _()\nT.readdirSync(b())                 // Dt()\nT.statSync(l)                      // Zt()\nme.spawnSync(t, e, o)              // ct() — 最严重的阻塞",
+      "code_snippet_good": "// 异步替代\nasync function Le() {\n  await fs.promises.mkdir(_e, { recursive: true });\n  try {\n    const raw = await fs.promises.readFile(te, 'utf-8');\n    u = JSON.parse(raw.replace(/^\\uFEFF/, ''));\n    // ... normalize\n  } catch { /* 文件不存在，使用默认值 */ }\n}\n// ct() 中：\nconst child = me.spawn(t, e, { stdio: 'inherit', shell: true });\nchild.on('exit', (code) => process.exit(code ?? 1));",
+      "rule_reference": "Node.js Best Practices — Don't Block the Event Loop; The Pragmatic Programmer — Tip 38: Don't Program by Coincidence",
+      "confidence": 0.9
+    },
+    {
+      "id": "C-009",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 396,
+      "line_range": [
+        396,
+        440
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "require() 内嵌在函数中：违反模块加载约定，使依赖关系不可见",
+      "description": "多个函数（Dt、Ht、Zt、ct、_trace 等）在函数体内调用 `m(require('fs'))`、`m(require('path'))` 等。这违反了 Node.js 模块加载的约定：(1) 依赖关系不可从文件顶部一目了然；(2) 每次调用都需要重新 require，虽有模块缓存但增加了不必要的开销；(3) 变量名在每个函数中重新声明（如 K、Q 每次可能指向不同变量），极易混淆。特别是 Dt() 和 Ht() 中重复 require 了 fs 和 path，但文件顶部已经有了 `T = m(require('fs'))` 和 `ye = m(require('path'))`。",
+      "suggestion": "将文件顶部已有的 require 变量（T, ye, Ie 等）在需要的地方复用，而不是在每个函数内重新 require。如果某些模块仅在特定函数中使用，将 require 保留在文件顶部并用注释标注使用位置，或使用延迟加载模式统一管理。",
+      "code_snippet_bad": "function Dt(e) {\n  var K = m(require(\"fs\")), Q = m(require(\"path\"));  // ← 与文件顶部的 T, ye 重复\n  ...\n}\nfunction Ht() {\n  var K = m(require(\"fs\")), Q = m(require(\"path\"));  // ← 又重复！K/Q 指向不同内容\n  ...\n}",
+      "code_snippet_good": "// 文件顶部已声明，函数内直接复用\nvar T = m(require(\"fs\")), ye = m(require(\"path\"));\n\nfunction Dt(e) {\n  // 直接使用 T 和 ye，无需重新 require\n  let files = T.readdirSync(b());\n  let configPath = ye.join(b(), e);\n}",
+      "rule_reference": "Node.js Best Practices — Always declare dependencies at the top of the module; Clean Code Ch.12 — Emergence: Minimal Classes and Methods",
+      "confidence": 0.88
+    },
+    {
+      "id": "C-010",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 1201,
+      "line_range": [
+        1201,
+        1240
+      ],
+      "severity": "suggestion",
+      "category": "maintainability",
+      "title": "屏幕定义使用松散对象字面量：无接口契约，添加屏幕易出错",
+      "description": "he（屏幕注册表）中的每个屏幕定义是一个具有 def 属性的普通对象。每个屏幕需要实现 getOptions()、onSelect()、onCancel() 等方法，但这些方法签名没有类型约束，缺少任何方法都会在运行时才暴露为 undefined 调用错误。添加新屏幕时，开发者需要手动确保实现了所有必需方法。随着屏幕数量增长（已有 10 个），这个风险在累积。",
+      "suggestion": "定义 Screen 接口（使用 JSDoc 类型注解或 TypeScript）：\n```javascript\n/**\n * @typedef {Object} Screen\n * @property {string} title\n * @property {() => string[]} getOptions\n * @property {(index: number) => NavAction} onSelect\n * @property {() => NavAction} onCancel\n * @property {string} [footer]\n * @property {string} [emptyMsg]\n * @property {boolean} [showSummary]\n * @property {boolean} [showTip]\n * @property {() => number} [getDefault]\n */\n```\n或者引入一个 `createScreen()` 工厂函数，自动校验必需方法的存在。",
+      "code_snippet_bad": "var he = {\n  main: { def: at },\n  project: { def: lt },\n  permission: { def: dt, getDefault: ft },\n  model: { def: mt },\n  // ... 添加新屏幕时无任何约束\n};",
+      "code_snippet_good": "function registerScreen(def) {\n  if (!def.title) throw new Error('Screen must have title');\n  if (typeof def.getOptions !== 'function') throw new Error('Screen must have getOptions');\n  if (typeof def.onSelect !== 'function') throw new Error('Screen must have onSelect');\n  if (typeof def.onCancel !== 'function') throw new Error('Screen must have onCancel');\n  return { def };\n}\nvar he = {\n  main: registerScreen(at),\n  project: registerScreen(lt),\n  // ... 运行时验证\n};",
+      "rule_reference": "Clean Code Ch.6 — Objects and Data Structures; The Pragmatic Programmer — Tip 21: Design with Contracts",
+      "confidence": 0.82
+    },
+    {
+      "id": "C-011",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 600,
+      "line_range": [
+        600,
+        670
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "会话管理中跨模块直接读写 JSON 文件：绕过了配置和数据访问层",
+      "description": "`sessions_screen` 和 `session_action_screen` 中的 `getOptions()` 和 `onSelect()` 直接使用 `Qt.readFileSync(logPath)` 读写 `.ccl-sessions.json`。这与配置管理模块（`Le()`、`_()`、`G()` 等）形成了两套独立的数据访问路径——配置用 `a()` / `_()` API，会话用直接文件读写。这导致：(1) 同样的原子写入模式（tmp → rename）被复制多次；(2) 文件路径硬编码在每个使用点；(3) 数据格式变更需要修改多处代码。是一个典型的 SRP 违规。",
+      "suggestion": "创建统一的数据访问层（SessionStore）：\n```javascript\n// stores/session-store.js\nconst path = require('path');\nconst { readJSON, writeJSON } = require('./json-store');  // 统一原子读写\n\nconst SESSIONS_FILE = 'ccl-sessions.json';\n\nfunction loadSessions() { return readJSON(path.join(b(), SESSIONS_FILE)) || []; }\nfunction saveSessions(sessions) { writeJSON(path.join(b(), SESSIONS_FILE), sessions); }\nfunction updateSession(index, updates) {\n  const sessions = loadSessions();\n  Object.assign(sessions[index], updates);\n  saveSessions(sessions);\n}\n\nmodule.exports = { loadSessions, saveSessions, updateSession };\n```",
+      "code_snippet_bad": "// sessions_screen.getOptions() — 直接读文件\nvar logPath = Wt.join(b(), \".ccl-sessions.json\");\nvar sessions = [];\ntry { sessions = JSON.parse(Qt.readFileSync(logPath, \"utf-8\")) } catch {}\n\n// session_action_screen.onSelect() — 再次直接读+写\nvar sessions = [];\ntry { sessions = JSON.parse(Qt.readFileSync(logPath, \"utf-8\")) } catch {}\nsessions.splice(idx, 1);\nQt.writeFileSync(tmpPath, JSON.stringify(sessions, null, 2));\nQt.renameSync(tmpPath, logPath);",
+      "code_snippet_good": "// 统一通过 SessionStore\nconst { loadSessions, saveSessions, updateSession } = require('./stores/session-store');\nconst sessions = loadSessions();\nupdateSession(idx, { modelId: newModel.id, modelName: newModel.name });",
+      "rule_reference": "Clean Architecture Ch.22 — The Clean Architecture: Interface Adapters; Single Responsibility Principle",
+      "confidence": 0.87
+    }
+  ],
+  "metrics": {
+    "total_findings": 11,
+    "by_severity": {
+      "blocking": 4,
+      "important": 6,
+      "suggestion": 1,
+      "nit": 0,
+      "learning": 0,
+      "praise": 0
+    },
+    "by_category": {
+      "maintainability": 4,
+      "correctness": 4,
+      "performance": 2,
+      "security": 1,
+      "bug": 0
+    },
+    "review_duration_seconds": 0
+  },
+  "praise": [
+    {
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 82,
+      "comment": "原子写入模式（临时文件 + rename）是架构上的正确选择，能防止配置写入中途崩溃导致文件损坏。这一模式在 _()、Dt()、Mt() 等多处保持了一致性。"
+    },
+    {
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 111,
+      "comment": "屏幕导航采用栈式 push/pop 模式是 TUI 应用的正确架构选择。相比硬编码的屏幕跳转，栈模式天然支持返回上一屏幕、面包屑导航和历史回溯。"
+    },
+    {
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 67,
+      "comment": "_trace() 函数提供了结构化的调试日志，使用序号和时间戳，是良好的可观测性实践。在 TUI 应用中（无控制台输出），这种文件追踪对问题诊断至关重要。"
+    },
+    {
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 1201,
+      "comment": "屏幕注册表（he 对象）将屏幕定义与导航逻辑分离，让每个屏幕可以独立定义其标题、选项、回调，体现了关注点分离的意识——尽管缺乏接口约束，但这个架构方向是正确的。"
+    }
+  ]
+}

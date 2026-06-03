@@ -1,0 +1,317 @@
+{
+  "agent_id": "C",
+  "skill": "pragmatic-clean-code-reviewer",
+  "philosophy": "你是'架构防腐'的代码审查专家。你不只关心单行代码的对错，更关心这段代码在整个系统架构中的位置和长期影响。你的核心理念来自：The Pragmatic Programmer、Clean Code、Clean Architecture。审查核心问题：'这段代码会加速还是延缓系统的技术债务累积？'",
+  "review_scope": {
+    "files": [
+      "agents.js",
+      "index.js",
+      "pricing.js",
+      "routes\\open.js",
+      "routes\\session.js",
+      "routes\\sessions.js",
+      "routes\\snapshots.js",
+      "scanner.js",
+      "shared.js",
+      "snapshot.js",
+      "sse.js",
+      "watcher.js"
+    ],
+    "lines_total": 1956
+  },
+  "findings": [
+    {
+      "id": "C-001",
+      "file": "shared.js",
+      "line": 1,
+      "line_range": [
+        1,
+        76
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "shared.js 是 God Object，承载了所有模块的可变状态",
+      "description": "shared.js 同时导出了 sessionCache、subAgentCache、fileOffsets、sessionConfigMap、cclProjectMap、currentSettingsConfig、sseClients、watchers、pendingChanges、snapshotList、lastAutoSnapshot 等十几种不同职责的可变状态。每个模块都直接 require('./shared') 并读写这些状态，导致：1) 模块间的耦合完全隐式，无法从代码看出数据流向；2) 任何模块都可以随时修改任何状态，没有边界；3) 单元测试不可能在不共享整个 shared 对象的情况下独立测试任何模块。",
+      "suggestion": "将 shared.js 拆分为多个职责单一的状态容器：SessionStore（sessionCache + fileOffsets + sessionConfigMap）、AgentStore（subAgentCache）、SSEManager（sseClients + broadcast）、SnapshotStore（snapshotList + 操作方法）、WatcherState（watchers + pendingChanges）。每个 store 通过构造函数注入依赖，而非全局 require。",
+      "code_snippet_bad": "module.exports = {\n  sessionCache: new Map(),\n  subAgentCache: new Map(),\n  fileOffsets: new Map(),\n  sessionConfigMap: loadSessionConfigMap(),\n  cclProjectMap: loadCclSessions(),\n  currentSettingsConfig: null,\n  sseClients: [],\n  SSE_MAX_CLIENTS: 50,\n  watchers: [],\n  WATCH_DEBOUNCE_MS: 800,\n  pendingChanges: new Map(),\n  _processing: false,\n  snapshotList: [],\n  lastAutoSnapshot: 0,\n  AUTO_SNAPSHOT_INTERVAL: 5 * 60 * 1000,\n  PRICING: null\n};",
+      "code_snippet_good": "// 每个 store 独立模块，通过构造函数注入\nfunction createSessionStore() {\n  return { cache: new Map(), fileOffsets: new Map(), configMap: loadSessionConfigMap() };\n}\nfunction createSSEManager(maxClients) {\n  return { clients: [], maxClients, broadcast(data) { ... } };\n}",
+      "rule_reference": "Clean Architecture: SRP, Dependency Inversion",
+      "confidence": 0.95
+    },
+    {
+      "id": "C-002",
+      "file": "scanner.js",
+      "line": 100,
+      "line_range": [
+        80,
+        180
+      ],
+      "severity": "blocking",
+      "category": "performance",
+      "title": "JSONL 解析使用同步文件 I/O，在请求路径中阻塞事件循环",
+      "description": "parseSessionChunk() 内部使用 fs.statSync、fs.openSync、fs.readSync、fs.closeSync。这个函数在 scanSessions() 中被调用，而 scanSessions() 在 /api/sessions、/api/session/:id、/api/agents、/api/snapshots 等多个 HTTP 路由中被触发。当会话文件较多或文件较大时，同步 I/O 会完全阻塞 Node.js 事件循环，导致所有 SSE 推送、其他请求都被卡住。在 index.js 的启动路径中也使用了 scanSessions（.then()），虽然启动时影响较小，但 watcher.js 的 processChanges() 每 30 秒也会触发全量扫描。",
+      "suggestion": "将 parseSessionChunk 改为异步版本 parseSessionChunkAsync，使用 fs.promises.stat、fs.open（callback 版）配合 Buffer 的异步读取。保留同步版本仅用于启动时的一次性解析。在 scanSessions 中使用异步版本，确保请求处理路径不阻塞事件循环。",
+      "code_snippet_bad": "var stat = fs.statSync(filePath);\nvar fd = fs.openSync(filePath, \"r\");\nvar bytesRead = fs.readSync(fd, buf, 0, buf.length, startOffset);\nfs.closeSync(fd);",
+      "code_snippet_good": "var stat = await fsp.stat(filePath);\nvar fd = await fsp.open(filePath, \"r\");\ntry {\n  var { bytesRead } = await fd.read(buf, 0, buf.length, startOffset);\n} finally { await fd.close(); }",
+      "rule_reference": "Node.js Best Practices: Never block the event loop in request handlers",
+      "confidence": 0.95
+    },
+    {
+      "id": "C-003",
+      "file": "index.js",
+      "line": 72,
+      "line_range": [
+        72,
+        175
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "index.js 的 /api/create-and-open 路由内联了 ~100 行业务逻辑",
+      "description": "该路由处理器包含 UUID 生成、JSONL 文件内容替换（UUID 映射、时间戳替换）、文件写入、session metadata 创建、VSCode 启动等多种职责，全部内联在 HTTP 请求处理函数中。这违反了单一职责原则，使得：1) 这段逻辑无法独立测试；2) 如果其他入口也需要创建会话，必须复制整段代码；3) HTTP 处理逻辑和业务逻辑混在一起，增加理解成本。",
+      "suggestion": "提取 createSessionFromTemplate(sourceSessionId, configName, projectsDir, sessionsDir) 函数到独立模块（如 session-factory.js），返回 { sessionId, jsonlPath, metaPath }。index.js 的路由处理器只负责参数验证和调用该函数。",
+      "code_snippet_bad": "// 80+ 行内联在 HTTP handler 中\nvar sourceContent = fs.readFileSync(sourceFile, \"utf-8\");\nvar uuidMap = {};\nfunction genUuid() { ... }\nvar foundUuids = sourceContent.match(uuidRegex);\n// ... UUID 替换、时间戳替换、文件写入、metadata 创建",
+      "code_snippet_good": "// routes/index.js\nvar factory = require(\"../session-factory\");\nvar result = factory.createFromTemplate(sourceSessionId, configName, projectsDir);\nres.end(JSON.stringify({ ok: true, sessionId: result.sessionId }));",
+      "rule_reference": "Clean Code: Functions should do one thing; SRP",
+      "confidence": 0.92
+    },
+    {
+      "id": "C-004",
+      "file": "routes\\open.js",
+      "line": 30,
+      "line_range": [
+        30,
+        45
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "会话查找的 cache-then-scan 模式在 3 个路由文件中重复",
+      "description": "routes/open.js（terminal-bat、open-session）、routes/session.js（session detail、relations）、routes/sessions.js 中都有相同的模式：先查 shared.sessionCache.get(id)，如果 miss 则调用 scanner.scanSessions() 全量扫描再遍历查找。这段逻辑重复了 5 次以上，且每次都是先触发全量扫描再线性查找，效率低且维护成本高。",
+      "suggestion": "在 scanner 或 shared 中添加 findSessionById(id) 异步方法，内部处理 cache 命中和按需扫描。所有路由统一调用此方法。同时考虑在 scanSessions 中建立 id→session 的索引 Map，避免 O(n) 线性查找。",
+      "code_snippet_bad": "var cached = shared.sessionCache.get(sid);\nif (!cached || !cached._file) {\n  scanner.scanSessions(shared.PROJECTS_DIR, []).then(function(all) {\n    for (var j = 0; j < all.length; j++) { if (all[j].id === sid) { cached = all[j]; break; } }\n    buildSessionDetailResponse(cached, sid, limit, res);\n  });\n}",
+      "code_snippet_good": "// scanner.js\nasync function findSessionById(id) {\n  var cached = shared.sessionCache.get(id);\n  if (cached && cached._file) return cached;\n  var all = await scanSessions(shared.PROJECTS_DIR, []);\n  return all.find(s => s.id === id) || null;\n}",
+      "rule_reference": "DRY, Clean Code: Extract till you drop",
+      "confidence": 0.93
+    },
+    {
+      "id": "C-005",
+      "file": "index.js",
+      "line": 38,
+      "line_range": [
+        38,
+        55
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "/import-localstorage 端点的 XSS 防护不完整",
+      "description": "该端点读取 import-data.json 文件内容，嵌入到 HTML 页面中执行。虽然做了 `JSON.stringify(JSON.parse(importData)).replace(/<\\/script/gi, '<\\\\/script')` 的转义，但这只防了 `</script>` 闭合标签注入。如果 import-data.json 中包含精心构造的字符串（如包含 `');alert(1);//` 等），由于数据直接拼接到 JavaScript 代码中（`var d=' + safeData + '`），仍可能通过字符串逃逸实现 XSS。此外，文件内容直接来自磁盘，如果攻击者能控制该文件（如通过其他漏洞写入），就能执行任意 JS。",
+      "suggestion": "1) 将数据通过单独的 API 端点返回 JSON，前端通过 fetch() 获取，避免内联到 HTML；2) 如果必须内联，使用 `<script type=\"application/json\">` 标签存放数据，前端通过 JSON.parse 读取，而非直接拼接到 JS 代码中；3) 使用 CSP 头限制 inline script 执行。",
+      "code_snippet_bad": "var safeData = JSON.stringify(JSON.parse(importData)).replace(/<\\/script/gi, '<\\\\/script');\nvar html = '...var d=' + safeData + ';...';",
+      "code_snippet_good": "// 方案1: 分离数据和页面\n// GET /import-data.json → 返回 JSON\n// HTML 中: fetch('/import-data.json').then(r=>r.json()).then(d=>{...})\n\n// 方案2: 使用 JSON script 标签\nvar html = '...<script id=\"import-data\" type=\"application/json\">' +\n  JSON.stringify(JSON.parse(importData)) +\n  '</script>\\n<script>var d=JSON.parse(document.getElementById(\"import-data\").textContent);...</script>';",
+      "rule_reference": "OWASP: XSS Prevention, CWE-79",
+      "confidence": 0.85
+    },
+    {
+      "id": "C-006",
+      "file": "index.js",
+      "line": 88,
+      "line_range": [
+        88,
+        92
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "会话 ID 和 fakePid 使用 Math.random() 生成，不保证唯一性",
+      "description": "/api/create-and-open 路由中使用 `Math.random() * 16 | 0` 生成 UUID v4 格式的 sessionId，以及 `Math.random() * 900000 + 100000` 生成 fakePid。Math.random() 不是密码学安全的 PRNG，且在高并发场景下可能产生碰撞。虽然这是本地工具，风险较低，但如果两个会话意外获得相同 ID，会导致文件覆盖和数据丢失。",
+      "suggestion": "使用 Node.js 内置的 crypto.randomUUID()（Node 14.17+）或 crypto.randomBytes() 生成 sessionId。fakePid 可以用 crypto.randomInt(100000, 999999)。这消除了碰撞风险且语义更清晰。",
+      "code_snippet_bad": "var sessionId = \"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, function(c) {\n  var r = Math.random() * 16 | 0, v = c === \"x\" ? r : (r & 0x3 | 0x8);\n  return v.toString(16);\n});",
+      "code_snippet_good": "var crypto = require(\"crypto\");\nvar sessionId = crypto.randomUUID();",
+      "rule_reference": "CWE-330: Use of Insufficiently Random Values",
+      "confidence": 0.88
+    },
+    {
+      "id": "C-007",
+      "file": "routes\\session.js",
+      "line": 120,
+      "line_range": [
+        100,
+        160
+      ],
+      "severity": "important",
+      "category": "performance",
+      "title": "buildRelationsResponse 同步读取整个父会话文件和所有子 Agent 文件",
+      "description": "buildRelationsResponse() 对每个请求都：1) fs.readFileSync 读取主会话文件全文并逐行解析；2) 遍历 2 个可能的 subagents 目录；3) 对每个子 Agent 文件执行 fs.readFileSync 全文读取和逐行解析。当会话文件较大（几 MB）或子 Agent 较多时，这会在请求路径中产生显著的同步阻塞。而且这个端点每次请求都重新解析，没有任何缓存。",
+      "suggestion": "1) 将文件读取改为异步（fs.promises.readFile）；2) 利用 scanner 已有的 parseSessionChunk 增量解析能力，只解析新追加的内容；3) 对子 Agent 的关系数据做短期缓存（如 10 秒 TTL），避免频繁请求时重复解析。",
+      "code_snippet_bad": "var pContent = fs.readFileSync(relTarget._file, \"utf-8\");\n// ...\nvar saContent = fs.readFileSync(saPath, \"utf-8\");",
+      "code_snippet_good": "var pContent = await fsp.readFile(relTarget._file, \"utf-8\");\n// 对子 Agent 文件也使用异步读取\nvar saContent = await fsp.readFile(saPath, \"utf-8\");",
+      "rule_reference": "Node.js Best Practices: Never block the event loop",
+      "confidence": 0.92
+    },
+    {
+      "id": "C-008",
+      "file": "pricing.js",
+      "line": 1,
+      "line_range": [
+        1,
+        40
+      ],
+      "severity": "nit",
+      "category": "maintainability",
+      "title": "pricing.js 缺少模型未命中时的降级策略和日志",
+      "description": "calcCost() 中当 PRICING[info.model] 未命中时，静默回退到 defaultPricing()（input:1.0, cacheRead:0.2, output:2.0）。这意味着如果用户配置了新模型但忘记更新 pricing.json，所有费用计算都会使用默认价格，可能导致费用显示严重偏差而用户毫不知情。",
+      "suggestion": "1) 当模型未命中时，添加 console.warn 日志提示；2) 在 API 响应中标记 costEstimated: true，让前端知道这是估算值；3) 考虑添加一个 \"unknown\" 模型的 fallback 价格，而非使用 deepseek 的默认价格。",
+      "code_snippet_bad": "function calcCost(info) {\n  var p = (PRICING && PRICING[info.model]) || defaultPricing();\n  // 静默使用默认价格\n}",
+      "code_snippet_good": "function calcCost(info) {\n  var p = PRICING && PRICING[info.model];\n  if (!p) {\n    if (info.model) console.warn(\"[pricing] 未知模型 '\" + info.model + \"'，使用默认价格\");\n    p = defaultPricing();\n  }\n}",
+      "rule_reference": "The Pragmatic Programmer: Orthogonality, Fail Fast",
+      "confidence": 0.78
+    },
+    {
+      "id": "C-009",
+      "file": "index.js",
+      "line": 1,
+      "line_range": [
+        1,
+        220
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "index.js 既是 HTTP 路由分发器又包含内联路由逻辑，职责不一致",
+      "description": "index.js 同时做：1) HTTP 服务器创建和生命周期管理；2) CORS 处理；3) 5 个内联路由（/import-localstorage, /, /migrate, /sortable.min.js, /qr-*.png, /api/create-and-open）；4) 路由模块委派（openRouter, sessionsRouter 等）；5) 优雅关闭逻辑；6) 启动扫描和定时器设置。部分路由已模块化（routes/ 目录），但仍有大量路由内联在 index.js 中，形成'半模块化'的不一致状态。",
+      "suggestion": "将所有路由逻辑统一迁移到 routes/ 目录：routes/static.js（HTML、JS、图片、migrate、import-localstorage）、routes/create.js（create-and-open）。index.js 只保留：服务器创建、CORS 中间件、路由分发、生命周期管理。保持每个文件的单一职责。",
+      "code_snippet_bad": "if (req.url === \"/import-localstorage\") { ... 30行 ... }\nif (req.url === \"/\" || req.url === \"/index.html\") { ... }\nif (req.url === \"/migrate\") { ... 15行 ... }\nif (req.url === \"/sortable.min.js\") { ... }\nif (req.url === \"/qr-wechat.png\") { ... }\nif (req.url.startsWith(\"/api/create-and-open\")) { ... 80行 ... }",
+      "code_snippet_good": "// index.js — 只做分发\nvar staticRouter = require(\"./routes/static\")();\nvar createRouter = require(\"./routes/create\")();\nif (sse.handleSSE(req, res)) return;\nif (staticRouter(req, res)) return;\nif (createRouter(req, res)) return;\nif (openRouter(req, res)) return;\n// ...\nres.writeHead(404); res.end(\"404\");",
+      "rule_reference": "Clean Architecture: SRP, Separation of Concerns",
+      "confidence": 0.9
+    },
+    {
+      "id": "C-010",
+      "file": "snapshot.js",
+      "line": 28,
+      "line_range": [
+        28,
+        60
+      ],
+      "severity": "nit",
+      "category": "maintainability",
+      "title": "snapshot.js 直接操作 shared.snapshotList，无封装边界",
+      "description": "saveSnapshot() 和 deleteSnapshot() 直接 push/filter shared.snapshotList 数组，同时读写磁盘文件。这导致：1) snapshot 状态分散在 shared 模块和 snapshot 模块之间；2) 无法保证内存中的 snapshotList 和磁盘文件的一致性（如写入失败但已 push 到内存）；3) 并发调用时可能产生竞态（虽然 Node.js 单线程，但异步边界可能交错）。",
+      "suggestion": "将 snapshotList 的管理完全封装在 snapshot.js 内部，通过 loadSnapshotsFromDisk() 返回值或 getSnapshotList() 方法暴露，而非直接操作 shared 上的数组。saveSnapshot 应先写入磁盘成功后再更新内存状态。",
+      "code_snippet_bad": "shared.snapshotList.push({ id: id, ... });\n// 写入失败时内存已 push\ntry { fs.writeFileSync(...); } catch (e) { return null; }",
+      "code_snippet_good": "try {\n  fs.writeFileSync(filePath, JSON.stringify(snapshot, null, 2), \"utf-8\");\n} catch (e) { return null; }\n// 写入成功后才更新内存\nshared.snapshotList.push({ id: id, ... });",
+      "rule_reference": "Clean Code: Tell, Don't Ask; Law of Demeter",
+      "confidence": 0.82
+    },
+    {
+      "id": "C-011",
+      "file": "watcher.js",
+      "line": 37,
+      "line_range": [
+        37,
+        60
+      ],
+      "severity": "nit",
+      "category": "correctness",
+      "title": "watcher.js 的 processChanges 在 auto-snapshot 失败时静默继续",
+      "description": "processChanges() 中的自动快照逻辑（saveSnapshot）如果失败（返回 null），不会有任何日志或通知。长期运行时，用户可能以为快照在正常创建，但实际上可能因为磁盘满、权限问题等原因已经停止工作。",
+      "suggestion": "在 saveSnapshot 返回 null 时添加 console.warn 日志。同时考虑在 SSE 推送中包含快照状态信息，让前端能显示最近一次快照的时间。",
+      "code_snippet_bad": "if (now - shared.lastAutoSnapshot > shared.AUTO_SNAPSHOT_INTERVAL) {\n  shared.lastAutoSnapshot = now;\n  snapshot.saveSnapshot(\"auto-\" + ...);\n}",
+      "code_snippet_good": "if (now - shared.lastAutoSnapshot > shared.AUTO_SNAPSHOT_INTERVAL) {\n  shared.lastAutoSnapshot = now;\n  var snap = snapshot.saveSnapshot(\"auto-\" + ...);\n  if (!snap) console.warn(\"[watcher] 自动快照创建失败\");\n}",
+      "rule_reference": "The Pragmatic Programmer: Dead Programs Tell No Lies",
+      "confidence": 0.8
+    },
+    {
+      "id": "C-012",
+      "file": "scanner.js",
+      "line": 55,
+      "line_range": [
+        40,
+        75
+      ],
+      "severity": "suggestion",
+      "category": "maintainability",
+      "title": "getStatus 使用硬编码的魔法数字，时间阈值不可配置",
+      "description": "getStatus() 中定义了多个时间阈值：1小时（completed）、6小时（idle）、7天（休眠）、10分钟（running/异常）。这些值硬编码在函数内部，无法通过配置调整。如果用户的工作节奏不同（如每天只用一次 vs 持续使用），这些阈值可能不适合。同时，'异常' 状态的中文命名与代码其他部分的英文命名风格不一致。",
+      "suggestion": "将时间阈值提取为 shared.js 中的配置常量（STATUS_THRESHOLDS），允许通过环境变量或配置文件覆盖。统一状态命名语言（建议全部用英文：error 替代 '异常'，dormant 替代 '休眠'，archived 替代 '归档'）。",
+      "code_snippet_bad": "if (msgAge < 1 * 60 * 60 * 1000) return \"completed\";\nif (msgAge < 6 * 60 * 60 * 1000) return \"idle\";\nif (msgAge < 7 * 24 * 60 * 60 * 1000) return \"休眠\";\nreturn \"归档\";",
+      "code_snippet_good": "var THRESHOLDS = shared.STATUS_THRESHOLDS;\nif (msgAge < THRESHOLDS.completed) return \"completed\";\nif (msgAge < THRESHOLDS.idle) return \"idle\";\nif (msgAge < THRESHOLDS.dormant) return \"dormant\";\nreturn \"archived\";",
+      "rule_reference": "Clean Code: Constants over Magic Numbers",
+      "confidence": 0.85
+    },
+    {
+      "id": "C-013",
+      "file": "agents.js",
+      "line": 70,
+      "line_range": [
+        50,
+        120
+      ],
+      "severity": "suggestion",
+      "category": "performance",
+      "title": "parseSubAgent 对每个子 Agent 文件执行全文同步读取和逐行解析",
+      "description": "parseSubAgent() 使用 fs.readFileSync 读取整个子 Agent JSONL 文件，然后逐行解析所有内容。scanSubAgents() 对每个会话的每个子 Agent 都调用此函数。当子 Agent 文件较多时（如 20+ 个子 Agent，每个 1000+ 行），这会产生大量同步 I/O 和 JSON 解析开销。与 scanner.js 的主会话解析不同，子 Agent 没有增量解析支持，每次都是全量重读。",
+      "suggestion": "1) 为子 Agent 引入与主会话类似的增量解析机制（记录 fileOffset，只解析新增行）；2) 将 fs.readFileSync 改为异步读取；3) 缓存已解析的子 Agent 信息，只在 fileMtimeMs 变化时重新解析。",
+      "code_snippet_bad": "var content = fs.readFileSync(filePath, \"utf-8\");\nvar lines = content.trim().split(\"\\n\");\nfor (var i = 0; i < lines.length; i++) { ... 全量解析 ... }",
+      "code_snippet_good": "// 增量解析：只读取 offset 之后的内容\nvar cached = shared.subAgentCache.get(agentKey);\nif (cached && cached._fileOffset) {\n  var delta = await readNewLines(filePath, cached._fileOffset);\n  // 只解析新增行\n}",
+      "rule_reference": "Performance: Incremental processing, cache invalidation",
+      "confidence": 0.82
+    },
+    {
+      "id": "C-014",
+      "file": "routes\\session.js",
+      "line": 170,
+      "line_range": [
+        150,
+        200
+      ],
+      "severity": "nit",
+      "category": "correctness",
+      "title": "子 Agent 状态判断逻辑使用硬编码的 10 分钟阈值和中文'异常'字符串",
+      "description": "在 buildRelationsResponse 中，子 Agent 的状态判断使用了 `Date.now() - saStat.mtimeMs < 10 * 60 * 1000 ? \"running\" : \"异常\"` 的内联三元表达式。这与 scanner.js 中 getStatus() 的逻辑重复但不完全一致（getStatus 还考虑了 lastMeaningfulTimestamp 和 lastMeaningfulStopReason）。更重要的是，'异常' 是中文字符串，而其他状态（running、completed、idle）都是英文，前端需要同时处理两种语言的状态值。",
+      "suggestion": "复用 scanner.getStatus() 来判断子 Agent 状态，确保逻辑一致。如果子 Agent 的数据结构不完全兼容 getStatus 的参数，可以扩展 getStatus 或创建子 Agent 专用的 getSubAgentStatus()。统一状态值为英文。",
+      "code_snippet_bad": "saInfo.status = saInfo.lastStopReason === \"end_turn\" ? \"completed\" : saInfo.lastStopReason === \"tool_use\" ? (Date.now() - saStat.mtimeMs < 10 * 60 * 1000 ? \"running\" : \"异常\") : \"idle\";",
+      "code_snippet_good": "saInfo.status = scanner.getStatus(saStat.mtimeMs, saInfo.lastMeaningfulTimestamp, saInfo.lastStopReason);",
+      "rule_reference": "DRY, Single Source of Truth",
+      "confidence": 0.88
+    }
+  ],
+  "metrics": {
+    "total_findings": 14,
+    "by_severity": {
+      "blocking": 1,
+      "important": 6,
+      "nit": 4,
+      "suggestion": 3,
+      "learning": 0,
+      "praise": 0
+    },
+    "by_category": {
+      "maintainability": 6,
+      "performance": 3,
+      "security": 2,
+      "correctness": 2,
+      "bug": 0
+    },
+    "review_duration_seconds": 0
+  },
+  "praise": [
+    {
+      "file": "routes\\open.js",
+      "line": 60,
+      "comment": "P0-001/P0-003 安全修复已正确实现：configName 格式验证（/^setting-[a-zA-Z0-9_-]+\\.json$/）防止路径遍历，settings.json 写入锁防止并发竞态。这表明团队有安全意识并主动修复了已识别的漏洞。"
+    },
+    {
+      "file": "scanner.js",
+      "line": 130,
+      "comment": "增量解析机制设计合理：parseSessionChunk 支持 offset 参数，mergeSessionData 正确合并增量数据，fileOffsets 追踪文件读取位置。这避免了每次请求都全量解析大文件，是一个务实的性能优化。"
+    },
+    {
+      "file": "shared.js",
+      "line": 30,
+      "comment": "sessionConfigMap 和 cclProjectMap 的持久化/加载机制设计得当，有 try-catch 保护和文件存在性检查，确保服务重启后配置不丢失。watchCclSessions 的自动映射逻辑也很实用。"
+    },
+    {
+      "file": "watcher.js",
+      "line": 35,
+      "comment": "processChanges 的 debounce 和 _processing 互斥锁设计，配合 30 秒 fallback 轮询，形成了可靠的文件变更检测机制。在 fs.watch 不可靠的 Windows 环境下，这种双重保障是务实的工程选择。"
+    }
+  ]
+}

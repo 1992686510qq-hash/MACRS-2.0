@@ -1,0 +1,317 @@
+{
+  "agent_id": "A",
+  "skill": "code-review-skill",
+  "philosophy": "你是'可维护性优先'的代码审查专家。你的核心理念来自 The Pragmatic Programmer 和 Clean Code 传统：代码首先是写给人看的，其次才是给机器执行的。你关注：命名是否自解释？函数是否做且只做一件事？抽象层次是否一致？重复代码是否可以提取？注释是否解释了'为什么'而非'做了什么'？",
+  "review_scope": {
+    "files": [
+      "agents.js",
+      "index.js",
+      "pricing.js",
+      "routes\\open.js",
+      "routes\\session.js",
+      "routes\\sessions.js",
+      "routes\\snapshots.js",
+      "scanner.js",
+      "shared.js",
+      "snapshot.js",
+      "sse.js",
+      "watcher.js"
+    ],
+    "lines_total": 1838
+  },
+  "findings": [
+    {
+      "id": "A-001",
+      "file": "routes\\open.js",
+      "line": 204,
+      "line_range": [
+        204,
+        215
+      ],
+      "severity": "blocking",
+      "category": "bug",
+      "title": "settings.json 并发写入竞态条件，多会话启动会互相覆盖",
+      "description": "launchSessionDirect 先将 settings.json 替换为目标配置，然后用 setTimeout 5秒后恢复原始快照。如果两个请求间隔 <5秒，第一个请求的恢复操作会把第二个请求刚写入的配置覆盖掉，导致第二个 VSCode 会话使用错误的配置。",
+      "suggestion": "引入写入锁或引用计数机制。用一个 Map 记录当前活跃的配置写入请求，只有最后一个请求完成且无新请求时才恢复原始配置。或者改用 per-session settings 路径（通过 --settings 参数传递），避免修改全局 settings.json。",
+      "code_snippet_bad": "// 第一个请求写入 config-A，5秒后恢复\n// 第二个请求在2秒后写入 config-B\n// 5秒时第一个请求的恢复会覆盖 config-B\nsetTimeout(function() {\n  if (ORIGINAL_SETTINGS && currentSettings !== ORIGINAL_SETTINGS) {\n    fsModule.writeFileSync(defaultSettingsPath, ORIGINAL_SETTINGS, \"utf-8\");\n  }\n}, 5000);",
+      "code_snippet_good": "// 用引用计数保护\nvar pendingSwaps = 0;\nfunction swapSettingsJson(configFile) {\n  pendingSwaps++;\n  // ... write ...\n}\nfunction scheduleRestore() {\n  setTimeout(function() {\n    pendingSwaps--;\n    if (pendingSwaps <= 0) {\n      pendingSwaps = 0;\n      // restore original\n    }\n  }, 5000);\n}",
+      "rule_reference": "race-condition / shared-mutable-state",
+      "confidence": 0.95
+    },
+    {
+      "id": "A-002",
+      "file": "index.js",
+      "line": 113,
+      "line_range": [
+        110,
+        120
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "Math.random() 生成 session ID，可预测且存在碰撞风险",
+      "description": "generateUuid 使用 Math.random() 生成 UUID v4。Math.random() 不是密码学安全的 PRNG，生成的 ID 可被预测。在 /api/create-and-open 路由中，同一请求内调用两次 genUuid（一次生成 sessionId，一次在 uuidMap 替换中），如果多个请求并发，存在碰撞风险。",
+      "suggestion": "使用 crypto.randomUUID()（Node.js 14.17+）或 crypto.randomBytes() 替代 Math.random()。对于 sessionId 这种需要全局唯一的标识符，可预测性是安全隐患。",
+      "code_snippet_bad": "var sessionId = \"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, function(c) {\n  var r = Math.random() * 16 | 0, v = c === \"x\" ? r : (r & 0x3 | 0x8);\n  return v.toString(16);\n});",
+      "code_snippet_good": "var crypto = require(\"crypto\");\nvar sessionId = crypto.randomUUID();",
+      "rule_reference": "OWASP-Insecure-Randomness / CWE-330",
+      "confidence": 0.92
+    },
+    {
+      "id": "A-003",
+      "file": "index.js",
+      "line": 50,
+      "line_range": [
+        48,
+        70
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "/import-localstorage 路由通过字符串拼接注入用户数据到 HTML，存在 XSS 风险",
+      "description": "import-data.json 的内容通过 JSON.stringify 后直接拼接进 HTML 的 <script> 标签。虽然 JSON.stringify 会转义双引号，但如果文件内容包含 </script> 标签或特殊 Unicode 字符（如 U+2028/U+2029），可能突破字符串上下文执行任意 JavaScript。此外，该路由没有认证机制，任何能访问服务器的人都可以触发。",
+      "suggestion": "1. 将数据通过独立 API 端点返回 JSON，前端 fetch 获取后再写入 localStorage，避免将数据内嵌到 HTML。2. 添加至少 localhost 限制或简单的 token 认证。3. 如果必须内嵌，使用 CSP nonce 保护 script 标签。",
+      "code_snippet_bad": "var safeData = JSON.stringify(JSON.parse(importData));\n// ... 直接拼入 HTML\nvar html = '...var d=' + safeData + ';...';",
+      "code_snippet_good": "// 方案: 数据通过 API 返回，前端 fetch\nif (req.url === '/api/import-data') {\n  res.writeHead(200, {'Content-Type':'application/json'});\n  res.end(fs.readFileSync(importFile, 'utf8'));\n  return;\n}\n// 前端: fetch('/api/import-data').then(r=>r.json()).then(d=>{...})",
+      "rule_reference": "CWE-79 / XSS via HTML injection",
+      "confidence": 0.88
+    },
+    {
+      "id": "A-004",
+      "file": "routes\\sessions.js",
+      "line": 23,
+      "line_range": [
+        18,
+        30
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "delete s._file 污染 sessionCache，后续请求无法定位会话文件",
+      "description": "/api/sessions 路由中，对 sessions 数组里的对象执行 delete s._file 和 delete s._dirty。但这些对象来自 shared.sessionCache，是引用而非副本。删除 _file 后，其他路由（如 /api/session/:id、/api/open-session/:id）从 cache 取到的 session 对象将缺少 _file 属性，导致无法读取文件内容或启动会话，触发 fallback 到全量扫描。",
+      "suggestion": "在序列化响应前，创建 session 对象的浅拷贝再删除内部字段：var out = Object.assign({}, s); delete out._file; delete out._dirty; 或使用 map 创建新对象数组。",
+      "code_snippet_bad": "for (var i = 0; i < sessions.length; i++) {\n  var s = sessions[i];\n  // ... 修改 s 的属性 ...\n  delete s._file;\n  delete s._dirty;\n  shared.subAgentCache.forEach(function(agent, key) { ... });\n}",
+      "code_snippet_good": "var response = sessions.map(function(s) {\n  var out = Object.assign({}, s);\n  out.status = scanner.getStatus(...);\n  out.cost = pricing.calcCost(out);\n  out.type = 'main';\n  out.filePath = out._file;\n  delete out._file;\n  delete out._dirty;\n  delete out._seenPromptIds;\n  return out;\n});",
+      "rule_reference": "shared-mutable-state / cache-corruption",
+      "confidence": 0.93
+    },
+    {
+      "id": "A-005",
+      "file": "scanner.js",
+      "line": 90,
+      "line_range": [
+        90,
+        200
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "parseSessionChunk 函数 110+ 行，承担了 JSONL 解析、token 统计、消息提取等 5 项职责",
+      "description": "parseSessionChunk 是整个系统的核心函数，但它同时负责：(1) 文件 I/O 和偏移量管理，(2) JSONL 行解析，(3) token 使用量统计，(4) 用户消息和首条消息提取，(5) tool_use 决策记录。违反单一职责原则，难以单独测试任何一个逻辑分支。函数内部有 8 个嵌套的 for 循环和条件判断，认知复杂度极高。",
+      "suggestion": "拆分为：readFileChunk(offset) → parseLines(content) → extractMetadata(entries) → accumulateTokens(entries) → extractDecisions(entries)。每个函数可以独立测试，主函数变为管道式调用。",
+      "rule_reference": "SRP / Clean Code - Functions Should Do One Thing",
+      "confidence": 0.9
+    },
+    {
+      "id": "A-006",
+      "file": "routes\\session.js",
+      "line": 95,
+      "line_range": [
+        95,
+        320
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "buildRelationsResponse 函数 220+ 行，混合了图构建、阶段检测、瀑布流计算三个独立关注点",
+      "description": "buildRelationsResponse 同时构建节点/边的关系图、检测会话阶段（phase detection）、计算瀑布流时间线。这三个逻辑完全独立，但被揉在一个函数中。phase detection 使用了 PHASE_GAP_MS 和 PARALLEL_WIN_MS 两个魔法数字，没有注释解释为什么是 10 分钟和 4 分钟。waterfall 计算逻辑中重新读取并解析了父文件（pLines），但前面已经读取过一次。",
+      "suggestion": "拆分为三个独立函数：buildGraphNodes(target) → detectPhases(edges, userMessages) → buildWaterfall(pLines)。将魔法数字提取为命名常量并添加注释。避免重复读取文件——将 pLines 作为参数传递。",
+      "rule_reference": "SRP / Extract Method refactoring",
+      "confidence": 0.91
+    },
+    {
+      "id": "A-007",
+      "file": "routes\\session.js",
+      "line": 160,
+      "line_range": [
+        155,
+        175
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "pLines 变量在 try 块内定义，phase detection 代码在 try 块外引用可能 undefined",
+      "description": "在 buildRelationsResponse 中，var pLines 在第一个 try 块（解析父文件）内通过 pContent.trim().split 定义。但后续的 phase detection 和 waterfall 代码块在该 try 块之外引用 pLines。如果第一个 try 块因文件读取失败而跳过，pLines 将是 undefined，导致 .length 和索引访问抛出 TypeError。",
+      "suggestion": "将 pLines 的声明提升到 try 块之前（var pLines = []），或在后续使用前检查 pLines 是否已定义。更好的方案是将文件读取结果通过函数返回值传递，而非依赖闭包变量。",
+      "code_snippet_bad": "try {\n  var pContent = fs.readFileSync(relTarget._file, \"utf-8\");\n  var pLines = pContent.trim().split(\"\\n\");\n  // ... parse dispatch calls\n} catch (e) {}\n// 后面直接使用 pLines — 如果 try 失败，pLines 是 undefined\nfor (var pi2 = 0; pi2 < pLines.length; pi2++) { ... }",
+      "code_snippet_good": "var pLines = [];\ntry {\n  var pContent = fs.readFileSync(relTarget._file, \"utf-8\");\n  pLines = pContent.trim().split(\"\\n\");\n} catch (e) { /* pLines remains [] */ }",
+      "rule_reference": "variable-scope / hoisting-pitfall",
+      "confidence": 0.94
+    },
+    {
+      "id": "A-008",
+      "file": "routes\\sessions.js",
+      "line": 30,
+      "line_range": [
+        28,
+        40
+      ],
+      "severity": "important",
+      "category": "performance",
+      "title": "subAgentCache.forEach 遍历全部缓存只为筛选属于当前 session 的 agent，O(n×m) 复杂度",
+      "description": "/api/sessions 和 /api/agents 路由中，对每个 session 都遍历整个 subAgentCache（key.indexOf(s.id + '::') === 0）。如果缓存中有 1000 个 sub-agent 和 100 个 session，每次请求要执行 100,000 次字符串比较。这个模式在两个路由中重复出现。",
+      "suggestion": "改用嵌套 Map 结构：subAgentCache = Map<sessionId, Map<agentId, agentInfo>>，按 sessionId 直接索引，避免全量遍历。或者在 scanSubAgents 时建立 sessionId → agentIds 的反向索引。",
+      "code_snippet_bad": "shared.subAgentCache.forEach(function(agent, key) {\n  if (key.indexOf(s.id + \"::\") === 0) {\n    s.subAgents.push(agent);\n  }\n});",
+      "code_snippet_good": "// 在 shared.js 中: subAgentIndex: new Map() // sessionId → [agentInfo]\nvar agents = shared.subAgentIndex.get(s.id) || [];\ns.subAgents = agents;",
+      "rule_reference": "performance / algorithmic-complexity",
+      "confidence": 0.88
+    },
+    {
+      "id": "A-009",
+      "file": "index.js",
+      "line": 176,
+      "line_range": [
+        174,
+        182
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "fakePid 用 Math.random 生成 6 位数，碰撞概率不可忽略",
+      "description": "创建 session metadata 时用 Math.floor(Math.random() * 900000) + 100000 生成 PID，范围 100000-999999。根据生日悖论，约 1000 个并发 session 时碰撞概率超过 50%。如果两个 session 生成相同 PID，后写入的 JSON 会覆盖前一个，导致 VSCode 扩展无法找到正确的 session metadata。",
+      "suggestion": "使用递增计数器（从一个随机起始值开始）或直接用 sessionId 作为文件名而非 PID。如果必须用 PID，使用 crypto.randomInt() 并检查文件是否已存在。",
+      "code_snippet_bad": "var fakePid = Math.floor(Math.random() * 900000) + 100000;",
+      "code_snippet_good": "var crypto = require('crypto');\nvar fakePid = crypto.randomInt(100000, 999999);\n// 或使用自增 ID:\nvar fakePid = Date.now() % 900000 + 100000;",
+      "rule_reference": "birthday-attack / collision-risk",
+      "confidence": 0.85
+    },
+    {
+      "id": "A-010",
+      "file": "index.js",
+      "line": 99,
+      "line_range": [
+        99,
+        195
+      ],
+      "severity": "nit",
+      "category": "maintainability",
+      "title": "/api/create-and-open 路由 95 行内联在 HTTP handler 中，应提取为独立模块",
+      "description": "create-and-open 路由包含 UUID 生成、UUID 映射替换、时间戳替换、JSONL 文件写入、session metadata 创建、VSCode 启动等 6 个步骤，全部内联在 http.createServer 的回调函数中。与其他路由（open.js、session.js 等已独立为模块）风格不一致。",
+      "suggestion": "提取为 routes/create.js 模块，遵循现有的 makeXxxRouter() 工厂函数模式。UUID 生成函数应提升为 shared 或工具模块中的公共函数。",
+      "rule_reference": "consistency / extract-method",
+      "confidence": 0.87
+    },
+    {
+      "id": "A-011",
+      "file": "scanner.js",
+      "line": 55,
+      "line_range": [
+        55,
+        75
+      ],
+      "severity": "nit",
+      "category": "correctness",
+      "title": "getStatus 函数的中文状态值（'休眠'、'归档'、'异常'）与英文状态值混用",
+      "description": "getStatus 返回值混合使用英文（'running'、'completed'、'idle'、'interrupted'）和中文（'休眠'、'归档'、'异常'）。前端和 API 消费者需要处理两种语言的状态值，增加复杂度。'异常' 没有使用英文引号风格，与其他中文值不一致。",
+      "suggestion": "统一为英文状态值：'休眠' → 'dormant'，'归档' → 'archived'，'异常' → 'stale'。如果前端需要中文显示，应在前端做翻译映射。这也能避免编码问题（UTF-8 中文在 JSON 序列化中的潜在问题）。",
+      "rule_reference": "consistency / i18n-best-practice",
+      "confidence": 0.82
+    },
+    {
+      "id": "A-012",
+      "file": "routes\\session.js",
+      "line": 298,
+      "line_range": [
+        290,
+        308
+      ],
+      "severity": "nit",
+      "category": "correctness",
+      "title": "waterfallSpans 超过 200 条时截断并重新计算 relStart，可能丢失关键上下文",
+      "description": "当 waterfallSpans 超过 200 条时，代码用 slice(-200) 保留最后 200 条，然后减去新锚点重新计算 relStart。这会丢弃会话开头的用户消息和早期工具调用，使瀑布流图从中间开始，用户无法看到完整的会话时间线。截断阈值 200 是硬编码的魔法数字。",
+      "suggestion": "1. 改为保留首条 user 消息 + 最后 N 条，确保上下文完整。2. 将 200 提取为配置常量 WATERFALL_MAX_SPANS。3. 考虑在响应中标记 truncatedRoute = true，让前端知道数据被截断了。",
+      "rule_reference": "data-integrity / magic-number",
+      "confidence": 0.8
+    },
+    {
+      "id": "A-013",
+      "file": "index.js",
+      "line": 85,
+      "line_range": [
+        85,
+        95
+      ],
+      "severity": "nit",
+      "category": "maintainability",
+      "title": "/migrate 路由内嵌 80+ 行 HTML/JS 模板字符串，可读性极差",
+      "description": "index.js 中有三个路由（/import-localstorage、/migrate、/api/create-and-open）将完整的 HTML 页面内嵌为字符串常量。这些 HTML 包含内联 CSS 和 JavaScript，单个字符串长达 80+ 行。修改任何前端逻辑都需要在字符串中精确定位，极易引入语法错误。",
+      "suggestion": "将 HTML 模板提取为独立的 .html 文件（如 templates/migrate.html），用 fs.readFileSync 加载并用模板引擎（或简单的 String.replace）注入动态数据。遵循关注点分离原则。",
+      "rule_reference": "separation-of-concerns / template-extraction",
+      "confidence": 0.85
+    },
+    {
+      "id": "A-014",
+      "file": "routes\\open.js",
+      "line": 13,
+      "line_range": [
+        10,
+        20
+      ],
+      "severity": "nit",
+      "category": "maintainability",
+      "title": "ORIGINAL_SETTINGS 的 IIFE 在模块加载时同步读取文件，失败时静默吞掉错误",
+      "description": "open.js 顶部的 IIFE 在 require 时同步读取 settings.json 作为原始快照。如果此时文件不存在（如首次安装），ORIGINAL_SETTINGS 为 null，后续所有 restore 操作都会跳过，但没有任何日志提示。console.error 只在 catch 中输出，但不会阻止模块加载。",
+      "suggestion": "将快照延迟到首次 swapSettingsJson 调用时获取（lazy initialization），或在 restore 时检查 ORIGINAL_SETTINGS 是否为 null 并输出警告日志。这样即使 settings.json 后来被创建，也能正确工作。",
+      "rule_reference": "lazy-initialization / fail-safe",
+      "confidence": 0.78
+    },
+    {
+      "id": "A-015",
+      "file": "watcher.js",
+      "line": 47,
+      "line_range": [
+        44,
+        60
+      ],
+      "severity": "suggestion",
+      "category": "performance",
+      "title": "processChanges 每次触发都执行全量 scanSessions，无法利用增量解析",
+      "description": "watcher 检测到文件变化后调用 processChanges，而 processChanges 调用 scanner.scanSessions 做全量目录扫描。虽然 scanner 内部有 fileOffsets 增量解析机制，但 scanSessions 的递归目录遍历（readdir + stat）在会话文件很多时仍然开销不小。watcher 本身已经知道哪个目录变化了，但这个信息没有传递给 scanner。",
+      "suggestion": "让 fs.watch 的回调传递变化的 filename 和 dirPath 给 processChanges，processChanges 只对该目录下的文件做增量解析。全量扫描留给 30 秒的定时轮询作为兜底。",
+      "rule_reference": "incremental-processing / watch-optimization",
+      "confidence": 0.76
+    }
+  ],
+  "metrics": {
+    "total_findings": 15,
+    "by_severity": {
+      "blocking": 1,
+      "important": 8,
+      "nit": 5,
+      "suggestion": 1
+    },
+    "by_category": {
+      "bug": 4,
+      "security": 2,
+      "performance": 2,
+      "correctness": 2,
+      "maintainability": 5
+    },
+    "review_duration_seconds": 480
+  },
+  "praise": [
+    {
+      "file": "scanner.js",
+      "line": 170,
+      "comment": "mergeSessionData 的增量合并设计很好——通过 _seenPromptIds 避免重复计数用户消息，通过 fileOffsets 实现断点续读，避免了每次请求都全量解析大 JSONL 文件。这是一个务实的性能优化。"
+    },
+    {
+      "file": "scanner.js",
+      "line": 15,
+      "comment": "getStatus 的状态机设计清晰：根据 lastMeaningfulStopReason 和时间衰减两个维度判断状态，逻辑层次分明。end_turn 按时间降级（completed→idle→休眠→归档）的设计体现了对会话生命周期的深入理解。"
+    },
+    {
+      "file": "sse.js",
+      "line": 1,
+      "comment": "SSE 模块简洁干净——broadcastSSE 自动清理死连接，handleSSE 有 keepalive 心跳，cleanupSSE 优雅关闭。整个模块 50 行，职责单一，是整个项目中模块化做得最好的文件。"
+    },
+    {
+      "file": "shared.js",
+      "line": 1,
+      "comment": "将所有共享状态集中在一个模块中（sessionCache、subAgentCache、fileOffsets、sessionConfigMap），避免了循环依赖中的状态不一致问题。loadSessionConfigMap 的持久化/反序列化设计也很实用。"
+    }
+  ]
+}

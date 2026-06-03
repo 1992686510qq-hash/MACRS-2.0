@@ -1,0 +1,37 @@
+{
+  "status": "PARTIAL",
+  "agents": {
+    "A": {
+      "name": "Agent A",
+      "status": "OK",
+      "elapsed_seconds": 181.3,
+      "findings_count": 16,
+      "validation_errors": [],
+      "praise_count": 4
+    },
+    "B": {
+      "name": "Agent B",
+      "status": "FAILED",
+      "elapsed_seconds": 570.2,
+      "findings_count": 0,
+      "validation_errors": [],
+      "error": "Exit code 1: "
+    },
+    "C": {
+      "name": "Agent C",
+      "status": "OK",
+      "elapsed_seconds": 245.4,
+      "findings_count": 14,
+      "validation_errors": [],
+      "praise_count": 4
+    }
+  },
+  "total_findings": 30,
+  "total_praise": 8,
+  "output_files": [
+    "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\MACRS\\reports\\review-20260602-183835\\review-a.json",
+    "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\MACRS\\reports\\review-20260602-183835\\review-c.json"
+  ],
+  "summary_file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\MACRS\\reports\\review-20260602-183835\\phase-1-summary.json",
+  "total_elapsed_seconds": 2481.6
+}

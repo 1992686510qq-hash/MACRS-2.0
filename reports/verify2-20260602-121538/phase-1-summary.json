@@ -1,0 +1,38 @@
+{
+  "status": "OK",
+  "agents": {
+    "A": {
+      "name": "Agent A",
+      "status": "OK",
+      "elapsed_seconds": 187.1,
+      "findings_count": 11,
+      "validation_errors": [],
+      "praise_count": 4
+    },
+    "B": {
+      "name": "Agent B",
+      "status": "OK",
+      "elapsed_seconds": 295.1,
+      "findings_count": 12,
+      "validation_errors": [],
+      "praise_count": 5
+    },
+    "C": {
+      "name": "Agent C",
+      "status": "OK",
+      "elapsed_seconds": 145.3,
+      "findings_count": 9,
+      "validation_errors": [],
+      "praise_count": 5
+    }
+  },
+  "total_findings": 32,
+  "total_praise": 14,
+  "output_files": [
+    "D:\\MACRS\\reports\\verify2-20260602-121538\\review-a.json",
+    "D:\\MACRS\\reports\\verify2-20260602-121538\\review-b.json",
+    "D:\\MACRS\\reports\\verify2-20260602-121538\\review-c.json"
+  ],
+  "summary_file": "D:\\MACRS\\reports\\verify2-20260602-121538\\phase-1-summary.json",
+  "total_elapsed_seconds": 482.3
+}

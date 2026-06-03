@@ -1,0 +1,247 @@
+{
+  "agent_id": "A",
+  "skill": "code-review-skill",
+  "philosophy": "你是'可维护性优先'的代码审查专家。你的核心理念来自 The Pragmatic Programmer 和 Clean Code 传统：代码首先是写给人看的，其次才是给机器执行的。你关注：命名是否自解释？函数是否做且只做一件事？抽象层次是否一致？重复代码是否可以提取？注释是否解释了'为什么'而非'做了什么'？",
+  "review_scope": {
+    "files": [
+      "agents.js",
+      "index.js",
+      "pricing.js",
+      "routes\\open.js",
+      "routes\\session.js",
+      "routes\\sessions.js",
+      "routes\\snapshots.js",
+      "scanner.js",
+      "shared.js",
+      "snapshot.js",
+      "sse.js",
+      "watcher.js"
+    ],
+    "lines_total": 1821
+  },
+  "findings": [
+    {
+      "id": "A-001",
+      "file": "routes\\session.js",
+      "line": 236,
+      "line_range": [
+        118,
+        247
+      ],
+      "severity": "blocking",
+      "category": "bug",
+      "title": "pLines 在 try-catch 外被引用，文件读取失败时静默丢失阶段数据",
+      "description": "pLines 在第 120 行的 try-catch 块内声明（var pLines = pContent.trim().split('\\n')）。如果 fs.readFileSync 抛出异常（文件被锁定、权限问题等），pLines 保持 undefined。第 236 行的 for 循环（for (var pi2 = 0; pi2 < pLines.length; pi2++)）访问 undefined.length 会抛出 TypeError。虽然外层有 try-catch 捕获，但结果是 userMessages 数组为空，phase detection 退化为无意义的 '阶段N' 标签——静默丢失数据比崩溃更难调试。",
+      "suggestion": "将 pLines 声明提升到 try-catch 外部，或在后续使用前检查是否为 undefined。推荐方案：",
+      "code_snippet_bad": "  try {\n    var pContent = fs.readFileSync(relTarget._file, \"utf-8\");\n    var pLines = pContent.trim().split(\"\\n\");\n    // ... parse dispatch calls ...\n  } catch (e) {}\n  // ... 80 lines later ...\n  try {\n    for (var pi2 = 0; pi2 < pLines.length; pi2++) { // pLines may be undefined!",
+      "code_snippet_good": "  var pLines = [];\n  try {\n    var pContent = fs.readFileSync(relTarget._file, \"utf-8\");\n    pLines = pContent.trim().split(\"\\n\");\n    // ... parse dispatch calls ...\n  } catch (e) { console.error(\"[relations] Failed to read parent file:\", e.message); }",
+      "rule_reference": "Clean Code: Variable declarations should be visible at the scope where they're used",
+      "confidence": 0.95
+    },
+    {
+      "id": "A-002",
+      "file": "routes\\open.js",
+      "line": 169,
+      "line_range": [
+        136,
+        175
+      ],
+      "severity": "blocking",
+      "category": "bug",
+      "title": "settings.json swap 存在竞态条件，并发请求可导致配置互相覆盖",
+      "description": "swapSettingsJson 直接读写 settings.json，launchSessionDirect 在 5 秒后通过 setTimeout 恢复原始值。如果两个会话几乎同时启动（例如用户快速点击两个面板按钮），第一个 swap 写入 configA，第二个 swap 立即覆盖为 configB，5 秒后第一个 timer 恢复 ORIGINAL_SETTINGS，但 Claude Code 可能正在读取 configB——导致配置不一致。更严重的是，两个 setTimeout 都会尝试恢复，后执行的会覆盖前一个的正确恢复。",
+      "suggestion": "引入文件锁或队列机制，确保 settings.json 的 swap/restore 是原子操作。最简方案：使用一个 pending 操作计数器，只在所有 pending 完成后才恢复原始值。",
+      "code_snippet_bad": "  setTimeout(function() {\n    try {\n      var currentSettings = fsModule.readFileSync(defaultSettingsPath, \"utf-8\");\n      if (ORIGINAL_SETTINGS && currentSettings !== ORIGINAL_SETTINGS) {\n        fsModule.writeFileSync(defaultSettingsPath, ORIGINAL_SETTINGS, \"utf-8\");\n      }\n    } catch(e) {}\n  }, 5000);",
+      "code_snippet_good": "  var swapRefCount = 0;\n  function swapSettingsJson(configFile) {\n    swapRefCount++;\n    // ... write config ...\n  }\n  function scheduleRestore() {\n    setTimeout(function() {\n      swapRefCount--;\n      if (swapRefCount <= 0) {\n        swapRefCount = 0;\n        // restore ORIGINAL_SETTINGS\n      }\n    }, 5000);\n  }",
+      "rule_reference": "Pragmatic Programmer: Minimize shared mutable state",
+      "confidence": 0.92
+    },
+    {
+      "id": "A-003",
+      "file": "index.js",
+      "line": 68,
+      "line_range": [
+        58,
+        95
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "server 主函数承担过多职责，单文件 170+ 行混合了路由、静态文件、HTML 模板、UUID 操作",
+      "description": "index.js 的 createServer 回调处理了：SSE 路由、localStorage 导入（含 2000+ 字符内联 HTML）、HTML 首页、localStorage 迁移工具（又一个内联 HTML）、静态文件（sortable.min.js、二维码图片）、create-and-open API（含 UUID 替换、时间戳替换、JSONL 文件操作、元数据写入、VSCode 启动）、以及 4 个路由模块的委派。单个函数超过 170 行，圈复杂度极高，任何一处修改都需要理解整个函数的上下文。",
+      "suggestion": "将 /import-localstorage、/migrate 提取为独立路由模块；将 /api/create-and-open 的 UUID 操作提取为独立工具函数；将静态文件服务提取为 staticRouter。每个路由模块只处理一个关注点。",
+      "rule_reference": "Single Responsibility Principle / Clean Code: Functions should do one thing",
+      "confidence": 0.95
+    },
+    {
+      "id": "A-004",
+      "file": "index.js",
+      "line": 84,
+      "line_range": [
+        75,
+        95
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "UUID 正则替换应用于整个 JSONL 内容，可能误替换消息正文中的 UUID",
+      "description": "在 /api/create-and-open 中，使用 /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi 正则对整个 JSONL 文件内容做全局替换。如果用户的对话消息、工具输出或代码片段中包含 UUID（例如引用另一个 session ID、数据库记录 ID 等），这些非 session 元数据的 UUID 也会被替换，导致数据静默损坏。",
+      "suggestion": "只替换 JSONL 结构中的特定字段（如 sessionId、parentSessionId），而不是对整个文件内容做正则替换。可以逐行解析 JSON，只替换顶层对象的 sessionId 字段。",
+      "code_snippet_bad": "  var uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;\n  var foundUuids = sourceContent.match(uuidRegex);\n  // ... then global replace on entire content",
+      "code_snippet_good": "  var lines = sourceContent.split('\\n');\n  var newLines = lines.map(function(line) {\n    try {\n      var obj = JSON.parse(line);\n      if (obj.sessionId && obj.sessionId !== sourceSessionId) {\n        obj.sessionId = uuidMap[obj.sessionId.toLowerCase()] || obj.sessionId;\n      }\n      return JSON.stringify(obj);\n    } catch(e) { return line; }\n  });",
+      "rule_reference": "Defensive Programming: Don't transform what you don't understand",
+      "confidence": 0.88
+    },
+    {
+      "id": "A-005",
+      "file": "routes\\sessions.js",
+      "line": 14,
+      "line_range": [
+        12,
+        55
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "session 状态计算逻辑在 sessions.js 和 agents 路由中重复",
+      "description": "/api/sessions 和 /api/agents 两个端点中，对每个 session 执行完全相同的状态计算序列：scanner.getStatus()、scanner.getActivity()、scanner.getTokenHeat()、pricing.calcCost()，以及删除 _file、fileMtimeMs 等内部字段。这段代码（约 10 行）在两个端点中逐字重复，修改一处容易忘记另一处。",
+      "suggestion": "提取一个 enrichSession(s) 工具函数，统一计算 status/activity/tokenHeat/cost 并清理内部字段。两个端点共享调用。",
+      "code_snippet_bad": "  // In /api/sessions:\n  s.status = scanner.getStatus(s.fileMtimeMs, s.lastMeaningfulTimestamp, s.lastMeaningfulStopReason);\n  s.activity = scanner.getActivity(s.recentUserMsgs || 0);\n  s.tokenHeat = scanner.getTokenHeat((s._itok || 0) + (s._otok || 0));\n  s.cost = pricing.calcCost(s);\n  delete s._file; delete s.fileMtimeMs; delete s._dirty;",
+      "code_snippet_good": "  // In shared or scanner:\n  function enrichSession(s) {\n    s.status = scanner.getStatus(s.fileMtimeMs, s.lastMeaningfulTimestamp, s.lastMeaningfulStopReason);\n    s.activity = scanner.getActivity(s.recentUserMsgs || 0);\n    s.tokenHeat = scanner.getTokenHeat((s._itok || 0) + (s._otok || 0));\n    s.cost = pricing.calcCost(s);\n    delete s._file; delete s.fileMtimeMs; delete s._dirty;\n    return s;\n  }",
+      "rule_reference": "DRY Principle",
+      "confidence": 0.93
+    },
+    {
+      "id": "A-006",
+      "file": "scanner.js",
+      "line": 16,
+      "line_range": [
+        14,
+        38
+      ],
+      "severity": "nit",
+      "category": "maintainability",
+      "title": "getStatus 返回值中英文混用，增加下游解析和 UI 渲染的复杂度",
+      "description": "getStatus 函数返回值包括：'completed'(英文)、'idle'(英文)、'休眠'(中文)、'归档'(中文)、'interrupted'(英文)、'running'(英文)、'异常'(中文)。中英文混用使得前端判断状态时需要同时处理两种语言的字符串，且不利于 i18n 扩展。",
+      "suggestion": "统一为英文枚举值（如 'dormant'、'archived'、'error'），在前端 UI 层做中文映射。或者定义一个 STATUS 常量对象，统一管理所有状态值。",
+      "rule_reference": "Clean Code: Use enums/constants for magic strings",
+      "confidence": 0.9
+    },
+    {
+      "id": "A-007",
+      "file": "routes\\snapshots.js",
+      "line": 18,
+      "line_range": [
+        17,
+        23
+      ],
+      "severity": "nit",
+      "category": "maintainability",
+      "title": "快照路由使用 startsWith + indexOf 排除法匹配 URL，新增端点时容易遗漏",
+      "description": "snapshot detail 路由的匹配条件为 req.url.startsWith('/api/snapshot/') && req.url.indexOf('/api/snapshot/create') === -1 && req.url.indexOf('/api/snapshot/delete') === -1 && req.url.indexOf('/api/snapshot/rollback') === -1。每新增一个 /api/snapshot/* 端点，都必须在此处添加新的排除条件，否则 detail 路由会错误匹配新端点。rollback 端点已在排除列表中但代码未实现，说明这个模式已经开始失效。",
+      "suggestion": "使用更明确的路由匹配模式，如解析 URL path 段判断：var segments = req.url.split('/'); if (segments[3] === 'snapshot' && segments.length === 5) { /* detail by ID */ }。或者引入轻量路由库（如 express 的 path-to-regexp）。",
+      "rule_reference": "Open-Closed Principle: Open for extension, closed for modification",
+      "confidence": 0.88
+    },
+    {
+      "id": "A-008",
+      "file": "routes\\open.js",
+      "line": 17,
+      "line_range": [
+        9,
+        17
+      ],
+      "severity": "nit",
+      "category": "maintainability",
+      "title": "IIFE 立即执行保存 settings.json 快照，但启动后手动修改 settings.json 会被忽略",
+      "description": "ORIGINAL_SETTINGS 在模块加载时通过 IIFE 读取 settings.json 内容。如果用户在服务器运行期间手动修改了 settings.json（例如通过 Claude CLI 或编辑器），launchSessionDirect 的 5 秒恢复逻辑会将文件回滚到启动时的旧版本，用户的修改会丢失。",
+      "suggestion": "在每次 swap 前先保存当前 settings.json 的快照（而不是启动时），恢复时恢复到 swap 前的状态。或者添加日志警告，提示用户服务器运行期间不应手动修改 settings.json。",
+      "rule_reference": "Pragmatic Programmer: Don't surprise the user",
+      "confidence": 0.85
+    },
+    {
+      "id": "A-009",
+      "file": "routes\\session.js",
+      "line": 101,
+      "line_range": [
+        101,
+        300
+      ],
+      "severity": "suggestion",
+      "category": "maintainability",
+      "title": "buildRelationsResponse 函数约 200 行，应拆分为独立的子函数",
+      "description": "buildRelationsResponse 函数承担了至少 4 个独立职责：1) dispatch 事件解析（L116-138）、2) 子 Agent 解析（L140-193）、3) 阶段检测（L227-300）、4) 瀑布图构建（L302+）。每个职责都有独立的循环和数据结构，但全部挤在一个函数中，局部变量超过 20 个，理解一个功能需要通读整个函数。",
+      "suggestion": "拆分为 parseDispatchEvents(file)、parseSubAgents(dirs)、detectPhases(edges, userMessages)、buildWaterfall(lines) 四个独立函数，buildRelationsResponse 只负责编排调用和组装响应。",
+      "rule_reference": "Clean Code: Functions should be small, and then smaller",
+      "confidence": 0.92
+    },
+    {
+      "id": "A-010",
+      "file": "watcher.js",
+      "line": 13,
+      "line_range": [
+        1,
+        3
+      ],
+      "severity": "suggestion",
+      "category": "maintainability",
+      "title": "watchDir 仅在模块内部使用但被导出，暴露了不必要的 API",
+      "description": "watchDir 函数只在 setupFileWatcher 内部调用，但通过 module.exports 暴露为公共 API。这增加了模块的外部接口面，让调用者误以为可以单独调用 watchDir 来监视新目录（实际上不会更新 shared.watchers 的状态一致性）。同样的问题存在于 sse.js 的 addSSEClient/removeSSEClient。",
+      "suggestion": "只导出需要外部调用的函数（setupFileWatcher、processChanges、cleanupWatchers），内部辅助函数不放入 module.exports。",
+      "rule_reference": "Information Hiding: Minimize exposed surface area",
+      "confidence": 0.82
+    },
+    {
+      "id": "A-011",
+      "file": "index.js",
+      "line": 37,
+      "line_range": [
+        37,
+        55
+      ],
+      "severity": "suggestion",
+      "category": "maintainability",
+      "title": "/import-localstorage 路由包含 2000+ 字符内联 HTML，应提取为模板文件",
+      "description": "index.js 第 37-55 行将完整的 HTML 页面（含 CSS 样式和 JavaScript 逻辑）作为字符串字面量内嵌在路由处理函数中。这段 HTML 无法被 IDE 语法高亮、lint 工具检查、或独立测试。类似的问题也出现在 /migrate 路由（约 800 字符内联 HTML）。",
+      "suggestion": "将 HTML 内容提取为 .html 模板文件（如 templates/import.html、templates/migrate.html），路由处理函数读取模板文件并响应。可以使用简单的字符串替换实现动态数据注入。",
+      "rule_reference": "Separation of Concerns: Keep presentation separate from logic",
+      "confidence": 0.88
+    }
+  ],
+  "metrics": {
+    "total_findings": 11,
+    "by_severity": {
+      "blocking": 2,
+      "important": 3,
+      "nit": 3,
+      "suggestion": 3
+    },
+    "by_category": {
+      "bug": 3,
+      "maintainability": 7,
+      "performance": 0,
+      "security": 0,
+      "correctness": 1
+    },
+    "review_duration_seconds": 0
+  },
+  "praise": [
+    {
+      "file": "scanner.js",
+      "line": 148,
+      "comment": "增量扫描设计优秀：通过 fileOffsets 跟踪文件读取偏移量，只解析新增内容（parseSessionChunk 的 startOffset 参数），并用 mergeSessionData 合并增量数据。对于频繁轮询的场景，这避免了每次全量解析大型 JSONL 文件，是很好的性能优化。"
+    },
+    {
+      "file": "sse.js",
+      "line": 1,
+      "comment": "SSE 实现简洁健壮：broadcastSSE 在写入失败时收集 dead clients 索引，倒序 splice 清理；handleSSE 设置 15 秒心跳保活；SSE_MAX_CLIENTS 上限防止连接泄漏。整个模块职责单一、逻辑清晰，是服务器推送的好实现。"
+    },
+    {
+      "file": "watcher.js",
+      "line": 31,
+      "comment": "文件监视采用 debounce 策略（WATCH_DEBOUNCE_MS = 800ms）防止短时间内大量文件变更触发频繁扫描，加上 _processing 标志防止重入，加上 30 秒 fallback 轮询兜底 fs.watch 的不可靠性。三层防护设计周全。"
+    },
+    {
+      "file": "snapshot.js",
+      "line": 35,
+      "comment": "自动快照保留上限（30 个 auto-snapshots）和清理逻辑设计合理，按时间戳排序后删除最旧的，防止磁盘无限增长。manual- 前缀区分手动和自动快照，不会误删用户主动创建的快照。"
+    }
+  ]
+}

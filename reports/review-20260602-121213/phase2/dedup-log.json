@@ -1,0 +1,96 @@
+{
+  "decisions": [
+    {
+      "pair": [
+        "B-001",
+        "B-010"
+      ],
+      "file": "tools/search/fsearch/fsearch.sh",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-002",
+        "B-006"
+      ],
+      "file": "tools/vision/glm-vision-mcp.py",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-003",
+        "C-003"
+      ],
+      "file": "tools/vision/describe-image.py",
+      "match_type": "borderline",
+      "overlap_ratio": 0.381,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": "Both metrics below threshold (overlap=0.38, title_sim=0.00). Keeping separate."
+    },
+    {
+      "pair": [
+        "B-009",
+        "C-002"
+      ],
+      "file": "scripts/pw-multi.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-009",
+        "C-008"
+      ],
+      "file": "scripts/pw-multi.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-002",
+        "C-008"
+      ],
+      "file": "scripts/pw-multi.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.2727,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-006",
+        "C-010"
+      ],
+      "file": "shared-scripts/douyin/extract-links.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    }
+  ],
+  "statistics": {
+    "total_findings_before_dedup": 20,
+    "total_merged_groups": 20,
+    "total_findings_after_dedup": 20,
+    "findings_merged_away": 0,
+    "merge_rate": 0.0,
+    "borderline_cases": 1
+  }
+}

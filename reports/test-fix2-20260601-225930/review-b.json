@@ -1,0 +1,269 @@
+{
+  "agent_id": "B",
+  "skill": "Claude-BugHunter",
+  "philosophy": "你是'攻击者思维'的安全审计专家。你审查代码时的默认假设是：有恶意攻击者会仔细阅读这段代码，寻找任何可能的突破口。你不是在找'不优雅'的代码——你是在找'可利用'的代码。你的核心理念来自 574+ 个真实 HackerOne 漏洞报告的模式提炼。",
+  "review_scope": {
+    "files": [
+      "agents.js",
+      "index.js",
+      "pricing.js",
+      "routes/open.js",
+      "routes/session.js",
+      "routes/sessions.js",
+      "routes/snapshots.js",
+      "scanner.js",
+      "shared.js",
+      "snapshot.js",
+      "sse.js",
+      "watcher.js"
+    ],
+    "lines_total": 1821
+  },
+  "findings": [
+    {
+      "id": "B-001",
+      "file": "index.js",
+      "line": 18,
+      "line_range": [
+        18,
+        26
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "XSS: import-data.json 内容直接注入 HTML 无任何编码",
+      "description": "/import-localstorage 路由从磁盘读取 import-data.json 文件内容，然后直接拼接进 HTML 的 <script> 标签中：var html = '...var d=' + importData + ';...'. 如果攻击者能控制该文件内容（通过文件写入漏洞、共享目录、或供应链攻击），可以注入任意 JavaScript。例如文件内容为：});</script><script>alert(document.cookie)</script><script>!function(){// 时，会闭合原有 script 标签并注入新脚本。即使文件由管理员创建，这也违反了纵深防御原则——任何文件内容都不应被信任为安全的 HTML/JS。",
+      "suggestion": "对 importData 进行 JSON 编码后再嵌入 HTML，或使用 CSP header 限制内联脚本执行。",
+      "code_snippet_bad": "var importData = fs.readFileSync(importFile, \"utf8\");\nvar html = '...var d=' + importData + ';...';",
+      "code_snippet_good": "var importData = fs.readFileSync(importFile, \"utf8\");\n// 验证是合法 JSON 对象\nvar parsed = JSON.parse(importData);\nvar safeData = JSON.stringify(parsed).replace(/<\\/script/gi, '<\\\\/script');\nvar html = '...var d=' + safeData + ';...';",
+      "rule_reference": "CWE-79: Cross-site Scripting (XSS)",
+      "confidence": 0.95
+    },
+    {
+      "id": "B-002",
+      "file": "routes/open.js",
+      "line": 56,
+      "line_range": [
+        44,
+        68
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "命令注入: bat 文件生成时 env 变量值未转义",
+      "description": "spawnWithBat 函数从 JSON 配置文件读取环境变量，直接拼接进 bat 文件的 set 命令：batLines.push('set ' + k + '=' + cfg.env[k]). 如果 cfg.env 中的值包含换行符或特殊 bat 字符（如 &、|、>、<），攻击者可以注入任意命令。例如 cfg.env.ANTHROPIC_API_KEY = 'abc\\ncalc.exe' 会导致 bat 文件执行 calc.exe。同样 cfg.model 值也存在相同问题。由于配置文件存储在用户可写的 ~/.claude/ 目录，任何能写入该目录的进程都可以利用此漏洞。",
+      "suggestion": "对所有写入 bat 文件的值进行严格的输入验证和转义，过滤换行符和 bat 特殊字符，或使用 PowerShell 的 -Command 参数代替 bat 文件。",
+      "code_snippet_bad": "if (cfg.model) {\n  batLines.push(\"set ANTHROPIC_MODEL=\" + cfg.model);\n}\nif (cfg.env) {\n  for (var i = 0; i < envKeys.length; i++) {\n    batLines.push(\"set \" + k + \"=\" + cfg.env[k]);\n  }\n}",
+      "code_snippet_good": "function safeBatValue(val) {\n  // 过滤换行符、回车符和 bat 特殊字符\n  return String(val).replace(/[\\r\\n&|<>^]/g, '');\n}\nif (cfg.model) {\n  batLines.push(\"set ANTHROPIC_MODEL=\" + safeBatValue(cfg.model));\n}",
+      "rule_reference": "CWE-78: OS Command Injection",
+      "confidence": 0.92
+    },
+    {
+      "id": "B-003",
+      "file": "routes/open.js",
+      "line": 142,
+      "line_range": [
+        130,
+        160
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "TOCTOU 竞态: settings.json 被临时替换为任意配置",
+      "description": "swapSettingsJson 函数将全局 ~/.claude/settings.json 替换为指定配置文件内容。在 launchSessionDirect 中，5秒后才恢复原始值。这5秒窗口期内，任何并发的 Claude Code 启动都会使用被篡改的 settings.json。攻击者如果能控制配置文件名（通过 sessionConfigMap），可以：1) 在 settings.json 中注入恶意 env 变量指向攻击者的 API 代理，截获所有 API 密钥；2) 注入恶意 model 配置重定向到钓鱼端点。更严重的是，如果服务器在恢复前崩溃，settings.json 将永久保持被篡改状态。",
+      "suggestion": "使用文件锁或原子写入操作；在写入前创建备份，使用 try/finally 确保恢复；考虑使用 --settings 参数传递配置而不是修改全局文件。",
+      "code_snippet_bad": "function swapSettingsJson(configFile) {\n  // 直接覆盖 settings.json\n  fs.writeFileSync(defaultSettingsPath, targetSettings, \"utf-8\");\n}\n// 5秒后恢复\nsetTimeout(function() {\n  fsModule.writeFileSync(defaultSettingsPath, ORIGINAL_SETTINGS, \"utf-8\");\n}, 5000);",
+      "code_snippet_good": "function swapSettingsJson(configFile) {\n  // 创建备份\n  var backup = fs.readFileSync(defaultSettingsPath);\n  fs.writeFileSync(defaultSettingsPath, targetSettings);\n  // 使用 try/finally 确保恢复\n  // 或者改用 --settings 参数避免修改全局文件\n}",
+      "rule_reference": "CWE-367: Time-of-check Time-of-use (TOCTOU) Race Condition",
+      "confidence": 0.88
+    },
+    {
+      "id": "B-004",
+      "file": "index.js",
+      "line": 7,
+      "line_range": [
+        7,
+        7
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "CORS 通配符: Access-Control-Allow-Origin: * 允许任意网站访问 API",
+      "description": "服务器对所有响应设置 Access-Control-Allow-Origin: *，这意味着互联网上任何网站都可以向 localhost:5022 发起跨域请求并读取响应。攻击者可以创建恶意页面，通过 JavaScript 调用 /api/sessions 获取所有会话信息、通过 /api/session/{id} 读取会话内容（可能包含敏感的代码和对话）、通过 /api/snapshot/create 创建快照。对于本地开发工具面板，应限制为 localhost 来源。",
+      "suggestion": "将 CORS 限制为 localhost 来源，或完全移除该 header（同源策略会自动保护）。",
+      "code_snippet_bad": "var server = http.createServer(function(req, res) {\n  res.setHeader(\"Access-Control-Allow-Origin\", \"*\");",
+      "code_snippet_good": "var server = http.createServer(function(req, res) {\n  // 仅允许本地访问\n  var origin = req.headers.origin;\n  if (origin && /^https?:\\/\\/localhost(:\\d+)?$/.test(origin)) {\n    res.setHeader(\"Access-Control-Allow-Origin\", origin);\n  }",
+      "rule_reference": "CWE-942: Overly Permissive Cross-domain Whitelist",
+      "confidence": 0.93
+    },
+    {
+      "id": "B-005",
+      "file": "index.js",
+      "line": 83,
+      "line_range": [
+        83,
+        120
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "路径遍历风险: /api/create-and-open 中 config 参数未验证",
+      "description": "/api/create-and-open 端点接受 config 查询参数，直接拼接到路径：var settingsPath = path.join(homeDir, '.claude', configName). 虽然 path.join 会规范化路径，但攻击者可以传入 configName = '../etc/passwd' 或 configName = '../../Windows/win.ini' 来读取任意文件。更严重的是，该文件内容随后被 JSON.parse 解析并用于生成 bat 文件和写入新的 JSONL 文件，可能导致进一步的注入攻击。",
+      "suggestion": "验证 configName 只包含安全字符（字母数字、连字符、下划线、点号），且不包含路径分隔符或 .. 序列。",
+      "code_snippet_bad": "var configName = urlObj.searchParams.get(\"config\");\nvar settingsPath = path.join(homeDir, \".claude\", configName);",
+      "code_snippet_good": "var configName = urlObj.searchParams.get(\"config\");\nif (!configName || !/^[a-zA-Z0-9_\\-\\.]+\\.json$/.test(configName)) {\n  res.writeHead(400); res.end(JSON.stringify({ ok: false, error: \"invalid config name\" }));\n  return;\n}\nvar settingsPath = path.join(homeDir, \".claude\", configName);",
+      "rule_reference": "CWE-22: Path Traversal",
+      "confidence": 0.85
+    },
+    {
+      "id": "B-006",
+      "file": "index.js",
+      "line": 110,
+      "line_range": [
+        105,
+        125
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "路径遍历: 会话文件操作使用未经验证的 sessionId",
+      "description": "在 /api/create-and-open 中，新生成的 sessionId 被直接用于文件路径拼接：var newJsonl = path.join(projectsDir, sessionId + '.jsonl'). 虽然 sessionId 是通过 UUID 生成器生成的（非用户直接输入），但 genUuid 函数使用 Math.random() 生成 UUID，这在安全上下文中是不安全的——Math.random() 不是密码学安全的 PRNG，生成的 UUID 可以被预测。如果攻击者能预测 sessionId，可以预先创建同名文件进行竞争攻击。",
+      "suggestion": "使用 crypto.randomUUID() 或 crypto.randomBytes() 生成不可预测的会话 ID。",
+      "code_snippet_bad": "function genUuid() {\n  return \"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, function(c) {\n    var r = Math.random() * 16 | 0, v = c === \"x\" ? r : (r & 0x3 | 0x8);\n    return v.toString(16);\n  });\n}",
+      "code_snippet_good": "var crypto = require('crypto');\nfunction genUuid() {\n  return crypto.randomUUID();\n}",
+      "rule_reference": "CWE-330: Use of Insufficiently Random Values",
+      "confidence": 0.82
+    },
+    {
+      "id": "B-007",
+      "file": "index.js",
+      "line": 49,
+      "line_range": [
+        49,
+        52
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "HTML 注入: /migrate 路由的 iframe src 包含硬编码端口",
+      "description": "/migrate 路由返回的 HTML 中包含 iframe.src = 'http://localhost:3100/'，这本身不是漏洞，但该页面的 doMigrate() 函数会读取 iframe 内容并直接写入 localStorage：localStorage.setItem(keys[i], data[keys[i]]). 如果攻击者能控制 localhost:3100 的响应（通过端口劫持、DNS 重绑定、或在同一台机器上运行恶意服务），可以注入任意 localStorage 数据，这些数据随后可能被面板 JavaScript 使用，导致 XSS 或数据篡改。",
+      "suggestion": "验证从 iframe 读取的数据结构，限制可写入的 localStorage 键名白名单。",
+      "code_snippet_bad": "var raw=ifr.contentDocument.body.textContent;\nvar data=JSON.parse(raw);\nfor(var i=0;i<keys.length;i++){\n  localStorage.setItem(keys[i],data[keys[i]]);",
+      "code_snippet_good": "// 添加数据验证\nvar ALLOWED_KEYS = ['theme', 'config', 'preferences'];\nfor(var i=0;i<keys.length;i++){\n  if(ALLOWED_KEYS.includes(keys[i])) {\n    localStorage.setItem(keys[i],data[keys[i]]);\n  }\n}",
+      "rule_reference": "CWE-79: Cross-site Scripting",
+      "confidence": 0.78
+    },
+    {
+      "id": "B-008",
+      "file": "index.js",
+      "line": 131,
+      "line_range": [
+        125,
+        140
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "信息泄露: 错误消息暴露内部文件路径",
+      "description": "当源会话文件不存在时，错误响应包含完整的文件系统路径：error: 'Source session not found: ' + sourceFile. 这向攻击者泄露了内部目录结构（如 C:\\Users\\Administrator\\.claude\\projects\\C--Users-Administrator\\），可用于后续的路径遍历攻击。服务器的通用错误处理也泄露了堆栈信息：res.end('Server Error: ' + err.message).",
+      "suggestion": "对客户端响应使用通用错误消息，将详细错误信息仅记录到服务器日志。",
+      "code_snippet_bad": "res.end(JSON.stringify({ ok: false, error: \"Source session not found: \" + sourceFile }));",
+      "code_snippet_good": "console.error('[create-and-open] Source session not found:', sourceFile);\nres.end(JSON.stringify({ ok: false, error: \"Source session not found\" }));",
+      "rule_reference": "CWE-209: Generation of Error Message Containing Sensitive Information",
+      "confidence": 0.87
+    },
+    {
+      "id": "B-009",
+      "file": "routes/snapshots.js",
+      "line": 24,
+      "line_range": [
+        20,
+        30
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "路径遍历: 快照 ID 未验证可读取任意文件",
+      "description": "/api/snapshot/ 端点从 URL 提取 snapId，直接拼接到文件路径：var snapFile = path.join(shared.SNAPSHOTS_DIR, snapId + '.json'). 虽然 SNAPSHOTS_DIR 是固定的，但 snapId 可能包含路径遍历序列。例如 snapId = '../../etc/passwd' 会导致读取 /etc/passwd.json（虽然 .json 后缀限制了利用，但在 Windows 上可以尝试 snapId = '..\\\\..\\\\Windows\\\\win.ini' 读取系统文件）。同样，/api/snapshot/delete/ 端点也存在相同问题，可以删除任意 .json 文件。",
+      "suggestion": "验证 snapId 只包含安全字符，不包含路径分隔符。",
+      "code_snippet_bad": "var snapId = decodeURI(req.url.split(\"/api/snapshot/\")[1]);\nvar snapFile = path.join(shared.SNAPSHOTS_DIR, snapId + \".json\");",
+      "code_snippet_good": "var snapId = decodeURI(req.url.split(\"/api/snapshot/\")[1]);\nif (!/^auto-|manual-/.test(snapId) || /[\\\\/\\.]/.test(snapId)) {\n  res.writeHead(400); res.end(JSON.stringify({ error: \"invalid snapshot id\" }));\n  return true;\n}\nvar snapFile = path.join(shared.SNAPSHOTS_DIR, snapId + \".json\");",
+      "rule_reference": "CWE-22: Path Traversal",
+      "confidence": 0.83
+    },
+    {
+      "id": "B-010",
+      "file": "routes/session.js",
+      "line": 30,
+      "line_range": [
+        25,
+        40
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "路径遍历: 会话详情 API 使用未经验证的 session ID",
+      "description": "/api/session/ 端点从 URL 提取 session ID，用于查找缓存和读取文件。当缓存未命中时，会触发全量扫描。session ID 直接来自 URL 路径，没有进行格式验证。虽然缓存查找使用 Map（不会遍历文件系统），但 buildRelationsResponse 中直接使用 relTarget._file 读取文件，如果缓存被污染或存在竞态条件，可能导致任意文件读取。",
+      "suggestion": "验证 session ID 符合 UUID 格式（8-4-4-4-12 十六进制字符）。",
+      "code_snippet_bad": "var sid = qpos >= 0 ? decodeURI(sessUrl.slice(0, qpos)) : decodeURI(sessUrl);",
+      "code_snippet_good": "var sid = qpos >= 0 ? decodeURI(sessUrl.slice(0, qpos)) : decodeURI(sessUrl);\nif (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sid)) {\n  res.writeHead(400); res.end(JSON.stringify({ error: \"invalid session id format\" }));\n  return true;\n}",
+      "rule_reference": "CWE-22: Path Traversal",
+      "confidence": 0.8
+    },
+    {
+      "id": "B-011",
+      "file": "index.js",
+      "line": 155,
+      "line_range": [
+        148,
+        160
+      ],
+      "severity": "nit",
+      "category": "security",
+      "title": "不安全的随机数: Math.random() 用于生成 fakePid",
+      "description": "创建 session metadata 时使用 Math.random() 生成 PID：var fakePid = Math.floor(Math.random() * 900000) + 100000. 虽然这不是安全关键操作，但如果 PID 被用于后续的进程管理或标识，可预测的 PID 可能导致进程欺骗攻击。",
+      "suggestion": "使用 crypto.randomInt() 生成不可预测的 PID，或使用递增计数器。",
+      "code_snippet_bad": "var fakePid = Math.floor(Math.random() * 900000) + 100000;",
+      "code_snippet_good": "var crypto = require('crypto');\nvar fakePid = crypto.randomInt(100000, 999999);",
+      "rule_reference": "CWE-330: Use of Insufficiently Random Values",
+      "confidence": 0.72
+    },
+    {
+      "id": "B-012",
+      "file": "routes/open.js",
+      "line": 65,
+      "line_range": [
+        60,
+        70
+      ],
+      "severity": "nit",
+      "category": "security",
+      "title": "临时文件清理竞态: bat 文件5分钟后删除可能被利用",
+      "description": "bat 文件在 temp 目录创建，5分钟后通过 setTimeout 删除。在文件存在期间，其他进程可以读取其中包含的环境变量（如 API 密钥）。此外，如果攻击者能预测文件名模式（launch-{timestamp}.bat），可以在文件创建后、执行前的窗口期内修改文件内容，注入恶意命令。",
+      "suggestion": "使用 crypto.randomBytes() 生成不可预测的临时文件名；设置文件权限仅允许当前用户读取；使用 os.tmpdir() 而非自定义 temp 目录。",
+      "code_snippet_bad": "var batPath = path.join(tempDir, \"launch-\" + Date.now() + \".bat\");",
+      "code_snippet_good": "var crypto = require('crypto');\nvar batPath = path.join(tempDir, \"launch-\" + crypto.randomBytes(16).toString('hex') + \".bat\");",
+      "rule_reference": "CWE-377: Insecure Temporary File",
+      "confidence": 0.75
+    }
+  ],
+  "metrics": {
+    "total_findings": 12,
+    "by_severity": {
+      "blocking": 3,
+      "important": 6,
+      "nit": 3
+    },
+    "by_category": {
+      "security": 12
+    },
+    "review_duration_seconds": 0
+  },
+  "praise": [
+    {
+      "file": "scanner.js",
+      "line": 1,
+      "comment": "增量解析设计良好：通过 fileOffsets 跟踪文件偏移量，只解析新增内容，避免了全量读取的性能开销。mergeSessionData 函数正确处理了增量数据合并。"
+    },
+    {
+      "file": "sse.js",
+      "line": 1,
+      "comment": "SSE 实现简洁有效：使用 keepalive 心跳保持连接，自动清理断开的客户端，限制最大客户端数量防止资源耗尽。"
+    },
+    {
+      "file": "routes/open.js",
+      "line": 130,
+      "comment": "settings.json 快照恢复机制（ORIGINAL_SETTINGS）体现了防御性编程思维，虽然实现存在竞态问题，但意图是正确的。"
+    }
+  ]
+}

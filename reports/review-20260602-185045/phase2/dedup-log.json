@@ -1,0 +1,552 @@
+{
+  "decisions": [
+    {
+      "pair": [
+        "B-001",
+        "B-002"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.1,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-001",
+        "B-003"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-001",
+        "B-004"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-001",
+        "B-005"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-001",
+        "B-006"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-001",
+        "B-007"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-001",
+        "B-008"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-001",
+        "B-009"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-001",
+        "B-010"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-002",
+        "B-003"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-002",
+        "B-004"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-002",
+        "B-005"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-002",
+        "B-006"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-002",
+        "B-007"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-002",
+        "B-008"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-002",
+        "B-009"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0833,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-002",
+        "B-010"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-003",
+        "B-004"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-003",
+        "B-005"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-003",
+        "B-006"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-003",
+        "B-007"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-003",
+        "B-008"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-003",
+        "B-009"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-003",
+        "B-010"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-004",
+        "B-005"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-004",
+        "B-006"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-004",
+        "B-007"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-004",
+        "B-008"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-004",
+        "B-009"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-004",
+        "B-010"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-005",
+        "B-006"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-005",
+        "B-007"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-005",
+        "B-008"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-005",
+        "B-009"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-005",
+        "B-010"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-006",
+        "B-007"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-006",
+        "B-008"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-006",
+        "B-009"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-006",
+        "B-010"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-007",
+        "B-008"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-007",
+        "B-009"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-007",
+        "B-010"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-008",
+        "B-009"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-008",
+        "B-010"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-009",
+        "B-010"
+      ],
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    }
+  ],
+  "statistics": {
+    "total_findings_before_dedup": 10,
+    "total_merged_groups": 10,
+    "total_findings_after_dedup": 10,
+    "findings_merged_away": 0,
+    "merge_rate": 0.0,
+    "borderline_cases": 0
+  }
+}

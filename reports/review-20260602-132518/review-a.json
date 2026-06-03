@@ -1,0 +1,324 @@
+{
+  "agent_id": "A",
+  "skill": "code-review-skill",
+  "philosophy": "你是'可维护性优先'的代码审查专家。你的核心理念来自 The Pragmatic Programmer 和 Clean Code 传统：代码首先是写给人看的，其次才是给机器执行的。你关注：命名是否自解释？函数是否做且只做一件事？抽象层次是否一致？重复代码是否可以提取？注释是否解释了'为什么'而非'做了什么'？",
+  "review_scope": {
+    "files": [
+      "agents.js",
+      "index.js",
+      "pricing.js",
+      "routes\\open.js",
+      "routes\\session.js",
+      "routes\\sessions.js",
+      "routes\\snapshots.js",
+      "scanner.js",
+      "shared.js",
+      "snapshot.js",
+      "sse.js",
+      "watcher.js"
+    ],
+    "lines_total": 2026
+  },
+  "findings": [
+    {
+      "id": "A-001",
+      "file": "index.js",
+      "line": 136,
+      "line_range": [
+        136,
+        138
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "create-and-open handler 中 urlObj 重复声明，遮蔽外部变量",
+      "description": "handler 顶部（约第42行）已声明 var urlObj = new URL(...)，create-and-open 分支内再次 var urlObj = new URL(req.url, ...)。由于 var 是函数级作用域，这实际上是重新赋值而非新建变量。虽然功能上不会出错（覆盖了外部 urlObj 的值），但两个同名 var 声明极易让维护者误以为它们是独立变量，且 configName 的解析依赖第二次赋值——如果未来有人删除或移动第二次声明，configName 将永远为 null。",
+      "suggestion": "删除 create-and-open 分支内的重复 var urlObj 声明，直接复用外部已有的 urlObj（它在解析 req.url 时已包含 query 参数）。",
+      "code_snippet_bad": "if (req.url.startsWith(\"/api/create-and-open\")) {\n  var urlObj = new URL(req.url, \"http://localhost\");\n  var configName = urlObj.searchParams.get(\"config\");",
+      "code_snippet_good": "if (req.url.startsWith(\"/api/create-and-open\")) {\n  // urlObj 已在 handler 顶部声明，直接使用\n  var configName = urlObj.searchParams.get(\"config\");",
+      "rule_reference": "Clean Code — 避免变量遮蔽",
+      "confidence": 0.95
+    },
+    {
+      "id": "A-002",
+      "file": "index.js",
+      "line": 147,
+      "line_range": [
+        147,
+        148
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "create-and-open handler 中 homeDir 重复声明遮蔽模块级变量",
+      "description": "模块顶部（第16行）已声明 var homeDir，create-and-open 分支内再次 var homeDir = process.env.HOME || ...。与 urlObj 一样，var 作用域导致遮蔽。该分支后续使用 homeDir 构造路径——若模块顶部的 homeDir 逻辑未来发生变化（如增加 fallback），分支内的重复声明将绕过该变更。",
+      "suggestion": "删除 create-and-open 内的 var homeDir 重新声明，直接复用模块顶部的 homeDir。",
+      "code_snippet_bad": "var homeDir = process.env.HOME || process.env.USERPROFILE || \"C:\\\\Users\\\\Administrator\";",
+      "code_snippet_good": "// homeDir 已在模块顶部声明，直接使用",
+      "rule_reference": "DRY 原则",
+      "confidence": 0.92
+    },
+    {
+      "id": "A-003",
+      "file": "watcher.js",
+      "line": 46,
+      "line_range": [
+        46,
+        48
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "_processing 模块局部变量遮蔽 shared._processing，后者成为死代码",
+      "description": "watcher.js 在第46行声明模块级 var _processing = false，processChanges() 使用该局部变量作为并发守卫。但 shared.js 也导出了 shared._processing（初始值 false）。两个变量完全独立：shared._processing 从未被读写，是死代码；模块级 _processing 才是实际使用的守卫。这不仅造成混淆，还意味着未来若有人从 shared._processing 检查状态，将始终得到 false。",
+      "suggestion": "统一使用 shared._processing 作为唯一的并发守卫，删除 watcher.js 的模块级 _processing 变量。或从 shared.js 中移除 _processing 导出。",
+      "code_snippet_bad": "var _processing = false;\nfunction processChanges() {\n  if (_processing) return;\n  _processing = true;",
+      "code_snippet_good": "function processChanges() {\n  if (shared._processing) return;\n  shared._processing = true;",
+      "rule_reference": "单一职责 — 共享状态应集中管理",
+      "confidence": 0.93
+    },
+    {
+      "id": "A-004",
+      "file": "agents.js",
+      "line": 75,
+      "line_range": [
+        67,
+        76
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "parseSubAgent 使用 readFileSync 读取整个 JSONL 文件，大文件阻塞事件循环",
+      "description": "parseSubAgent 对每个子 Agent 的 .jsonl 文件执行 fs.readFileSync 读取全部内容到内存，然后 split('\\n') 逐行解析。当子 Agent 产生大量工具调用（常见场景），JSONL 文件可达数十 MB。同步读取会阻塞 Node.js 事件循环，导致所有 SSE 推送和 API 请求卡顿。scanner.js 中的 parseSessionChunk 已实现基于 offset 的增量读取，但 parseSubAgent 没有复用该模式。",
+      "suggestion": "将 parseSubAgent 改为流式解析（逐行读取），或复用 scanner.parseSessionChunk 的增量读取模式。至少应改为异步读取（fsp.readFile）。",
+      "code_snippet_bad": "var content;\ntry { content = fs.readFileSync(filePath, \"utf-8\"); } catch (e) { return info; }\nvar lines = content.trim().split(\"\\n\");",
+      "code_snippet_good": "// 使用 readline 逐行流式解析，避免大文件阻塞\nconst rl = require(\"readline\").createInterface({ input: fs.createReadStream(filePath) });\nfor await (const line of rl) { ... }",
+      "rule_reference": "性能 — 避免在请求路径中使用同步 I/O",
+      "confidence": 0.9
+    },
+    {
+      "id": "A-005",
+      "file": "agents.js",
+      "line": 8,
+      "line_range": [
+        6,
+        10
+      ],
+      "severity": "nit",
+      "category": "maintainability",
+      "title": "loadAgentNames 使用 readFileSync，每次调用都同步读磁盘",
+      "description": "loadAgentNames 在每次 relations API 请求时被调用（session.js 第150行），每次都执行 fs.readFileSync 读取 agent-names.json。对于频繁的前端轮询，这会产生不必要的磁盘 I/O。文件内容变化频率极低，适合缓存。",
+      "suggestion": "增加文件修改时间检查或内存缓存，仅在文件变化时重新读取。或在启动时加载一次，通过 fs.watch 监听变化。",
+      "rule_reference": "性能 — 缓存低频变化的配置",
+      "confidence": 0.85
+    },
+    {
+      "id": "A-006",
+      "file": "index.js",
+      "line": 188,
+      "line_range": [
+        185,
+        196
+      ],
+      "severity": "nit",
+      "category": "security",
+      "title": "/api/create-and-open 使用 Math.random() 生成 UUID，不具备密码学安全性",
+      "description": "sessionId 通过 Math.random() 生成 UUID v4 格式。Math.random() 的内部状态可预测，攻击者若观察到若干 sessionId 可能推断后续值。虽然 sessionId 本身不是认证凭证，但可被用于会话劫持（配合其他漏洞）。同一文件中已有 crypto 模块的引入，应优先使用 crypto.randomUUID()。",
+      "suggestion": "将 UUID 生成替换为 crypto.randomUUID()（Node.js 19+）或 crypto.randomBytes(16) 构造 UUID。",
+      "code_snippet_bad": "var sessionId = \"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, function(c) {\n  var r = Math.random() * 16 | 0, v = c === \"x\" ? r : (r & 0x3 | 0x8);\n  return v.toString(16);\n});",
+      "code_snippet_good": "var sessionId = crypto.randomUUID();",
+      "rule_reference": "安全 — 敏感标识符使用 CSPRNG",
+      "confidence": 0.88
+    },
+    {
+      "id": "A-007",
+      "file": "index.js",
+      "line": 206,
+      "line_range": [
+        204,
+        216
+      ],
+      "severity": "nit",
+      "category": "correctness",
+      "title": "UUID 正则替换可能误伤 JSONL 内容中的非会话 UUID",
+      "description": "全局 UUID 正则 /[0-9a-f]{8}-.../gi 会匹配 JSONL 内容中所有 UUID 格式字符串（如 tool call 的 requestId、文件路径中的 UUID 等），不仅仅是会话相关 ID。替换后的 UUID 在语义上可能不一致——例如某个工具调用引用了特定 requestId，替换后该引用断裂。虽然当前场景下 Claude Code 的 JSONL 格式可能不包含此类 UUID，但这是一个脆弱的假设。",
+      "suggestion": "仅替换已知需要替换的 UUID 类型（sessionId、promptId 等），而非盲目的全局正则替换。可以先扫描收集所有需要替换的 key，再精确替换。",
+      "rule_reference": "安全 — 最小权限原则（最小化替换范围）",
+      "confidence": 0.8
+    },
+    {
+      "id": "A-008",
+      "file": "index.js",
+      "line": 121,
+      "line_range": [
+        117,
+        127
+      ],
+      "severity": "nit",
+      "category": "security",
+      "title": "/import-localstorage 路由将文件内容直接注入 HTML，存在 XSS 风险",
+      "description": "import-data.json 的内容通过字符串拼接注入 HTML 页面。虽然用了 .replace(/<\\/script/gi, '<\\\\/script') 做基本转义，但这只防了 </script> 标签注入，无法防止其他 HTML 注入向量（如事件处理器、iframe 等）。如果攻击者能控制 import-data.json 的内容（例如通过其他漏洞写入），可在面板域名下执行任意 JS。",
+      "suggestion": "使用 JSON.stringify 后再进行完整的 HTML 实体转义（& < > \" '），或使用 CSP header 限制 inline script 执行。",
+      "code_snippet_bad": "var safeData = JSON.stringify(JSON.parse(importData)).replace(/<\\/script/gi, '<\\\\/script');",
+      "code_snippet_good": "var safeData = JSON.stringify(JSON.parse(importData))\n  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')\n  .replace(/\"/g, '&quot;').replace(/'/g, '&#x27;');",
+      "rule_reference": "OWASP — XSS Prevention",
+      "confidence": 0.82
+    },
+    {
+      "id": "A-009",
+      "file": "sse.js",
+      "line": 29,
+      "line_range": [
+        28,
+        30
+      ],
+      "severity": "nit",
+      "category": "security",
+      "title": "SSE 端点通过 URL query param 传递认证 token",
+      "description": "handleSSE 从 urlObj.searchParams.get('token') 读取认证 token（通过 index.js 的 authenticateRequest）。Token 出现在 URL 中会被记录在：浏览器历史、代理服务器日志、CDN 日志、Referer header。虽然 SSE 不支持自定义 header（浏览器限制），但应考虑短期 token 或 session cookie 方案。",
+      "suggestion": "1) 为 SSE 使用独立的短期 token（如 5 分钟过期的一次性 token）；2) 或通过 cookie 传递 token；3) 至少在文档中注明 token 会出现在 URL 中的风险。",
+      "rule_reference": "OWASP — 敏感数据不出现在 URL 中",
+      "confidence": 0.85
+    },
+    {
+      "id": "A-010",
+      "file": "index.js",
+      "line": 1,
+      "line_range": [
+        1,
+        270
+      ],
+      "severity": "suggestion",
+      "category": "maintainability",
+      "title": "index.js 承担过多职责：认证、静态文件服务、路由分发、会话创建全在一个文件",
+      "description": "index.js 同时处理：token 认证逻辑、静态资源服务（HTML/JS/图片/QR码）、localStorage 导入/迁移工具、create-and-open API、路由分发、优雅关闭。270 行的单文件包含了至少 6 个不同关注点。这使得：1) 新开发者难以理解请求处理流程；2) 静态资源路径硬编码，添加新资源需要改 index.js；3) 认证逻辑与路由逻辑耦合。",
+      "suggestion": "拆分为：auth.js（认证中间件）、static.js（静态文件服务）、index.js（仅路由分发和服务器启动）。静态资源服务可用 express.static 或简单的目录映射替代硬编码。",
+      "rule_reference": "单一职责原则",
+      "confidence": 0.9
+    },
+    {
+      "id": "A-011",
+      "file": "routes\\session.js",
+      "line": 1,
+      "line_range": [
+        1,
+        300
+      ],
+      "severity": "suggestion",
+      "category": "maintainability",
+      "title": "session.js 中 buildRelationsResponse 函数超过 200 行，职责过多",
+      "description": "buildRelationsResponse 函数（约第95-300行）同时负责：解析父会话的 dispatch 调用、解析子 Agent 文件、匹配 dispatch 到子 Agent（时间邻近算法）、阶段检测（phase detection）、瀑布图（waterfall）数据生成。每个子任务都有独立的循环和状态，函数总长超过 200 行，变量名如 pi2、pk、ui2、wi、wj、wk 难以理解。",
+      "suggestion": "拆分为独立函数：parseDispatchCalls(pLines)、parseSubAgentNodes(subDirs)、matchDispatchToAgents(dispatches, agents)、detectPhases(edges, userMessages)、buildWaterfall(pLines)。每个函数职责单一，可独立测试。",
+      "code_snippet_bad": "function buildRelationsResponse(relTarget, relId, res) {\n  // 200+ 行：解析 dispatch、解析子 Agent、匹配、阶段检测、瀑布图\n}",
+      "code_snippet_good": "function buildRelationsResponse(relTarget, relId, res) {\n  var dispatches = parseDispatchCalls(relTarget._file);\n  var subNodes = parseSubAgentNodes(parentDir, relId);\n  var edges = matchDispatchToAgents(dispatches, subNodes);\n  var phases = detectPhases(edges, userMessages);\n  var waterfall = buildWaterfall(pLines);\n  res.end(JSON.stringify({ nodes, edges, phases, waterfall }));\n}",
+      "rule_reference": "Clean Code — 函数应该短小",
+      "confidence": 0.92
+    },
+    {
+      "id": "A-012",
+      "file": "scanner.js",
+      "line": 75,
+      "line_range": [
+        66,
+        155
+      ],
+      "severity": "suggestion",
+      "category": "maintainability",
+      "title": "parseSessionChunk 中嵌套循环变量名 k 在多个作用域中重复使用",
+      "description": "parseSessionChunk 函数中有三层嵌套循环，外层用 i，中层用 j/k，内层也用 k。由于 var 的函数级作用域，内层的 k 会覆盖中层的 k。虽然当前逻辑中不会同时使用（if-else 分支），但这是潜在的维护陷阱——未来修改时极易引入 bug。整个函数约 90 行，变量命名如 t、obj、pid 缺乏语义。",
+      "suggestion": "为每层循环使用语义化变量名：lineIdx、contentBlockIdx、toolUseIdx。或将解析逻辑拆分为更小的函数（parseUserMessage、parseAssistantMessage）。",
+      "rule_reference": "Clean Code — 有意义的命名",
+      "confidence": 0.88
+    },
+    {
+      "id": "A-013",
+      "file": "pricing.js",
+      "line": 7,
+      "line_range": [
+        7,
+        9
+      ],
+      "severity": "suggestion",
+      "category": "correctness",
+      "title": "DEFAULT_PRICING 只包含 deepseek 模型，其他模型静默降级为硬编码默认价格",
+      "description": "当 info.model 不在 PRICING 字典中时，calcCost 返回 {input: 1.0, cacheRead: 0.2, output: 2.0}。对于 Claude 自身的模型（如 claude-sonnet-4-6），这个默认价格完全不准确，导致成本计算严重偏差。用户看到的成本数据可能是错误的，影响预算决策。",
+      "suggestion": "1) 在 DEFAULT_PRICING 中添加 Claude 系列模型的价格；2) 当模型未知时，在返回值中标记 isEstimate: true；3) 或在前端显示'价格未知'而非错误的估算值。",
+      "rule_reference": "正确性 — 不使用魔数作为默认值",
+      "confidence": 0.87
+    },
+    {
+      "id": "A-014",
+      "file": "scanner.js",
+      "line": 1,
+      "line_range": [
+        1,
+        20
+      ],
+      "severity": "suggestion",
+      "category": "maintainability",
+      "title": "整个代码库使用 ES5 语法（var、function、回调），未利用现代 JS 特性",
+      "description": "所有 12 个文件均使用 var 声明、传统 function 表达式、回调式异步。这导致：1) var 的函数级作用域容易引入变量遮蔽 bug（如 A-001、A-002）；2) 缺少 const/let 的不可变性约束；3) 回调嵌套降低可读性（scanner.js 的 scanSessions 是 async 函数但仍用 var）；4) 无法使用解构、模板字面量、箭头函数等提高可读性的特性。Node.js 14+ 已全面支持 ES2020+。",
+      "suggestion": "逐步迁移：1) 将 var 替换为 const/let；2) 使用箭头函数简化回调；3) 使用 async/await 替代 .then() 链；4) 使用解构简化属性访问。建议在 .eslintrc 中添加 \"no-var\": \"error\" 规则。",
+      "rule_reference": "现代 JavaScript 最佳实践",
+      "confidence": 0.95
+    },
+    {
+      "id": "A-015",
+      "file": "agents.js",
+      "line": 115,
+      "line_range": [
+        115,
+        116
+      ],
+      "severity": "nit",
+      "category": "correctness",
+      "title": "scanSubAgents 每次调用清空整个缓存，导致前端数据闪烁",
+      "description": "shared.subAgentCache.clear() 在每次 scanSubAgents 调用时执行。如果前端在两次扫描之间请求 /api/sessions，可能看到空的 subAgents 数组（缓存刚被清空但还未填充完）。虽然扫描通常很快完成，但在高并发场景下可能导致前端列表中子 Agent 闪烁消失再出现。",
+      "suggestion": "采用双缓冲模式：先填充新 Map，完成后原子性替换引用。或使用 diff 策略：只更新变化的子 Agent，不清空全部。",
+      "rule_reference": "并发安全 — 原子性更新共享状态",
+      "confidence": 0.8
+    }
+  ],
+  "metrics": {
+    "total_findings": 15,
+    "by_severity": {
+      "blocking": 0,
+      "important": 4,
+      "nit": 5,
+      "suggestion": 5,
+      "learning": 0,
+      "praise": 0
+    },
+    "by_category": {
+      "security": 3,
+      "bug": 1,
+      "performance": 1,
+      "correctness": 2,
+      "maintainability": 8
+    },
+    "review_duration_seconds": 420
+  },
+  "praise": [
+    {
+      "file": "routes\\open.js",
+      "line": 59,
+      "comment": "路径遍历防护做得扎实：isValidConfigName 在 open.js 的所有入口点（launchSession、launchTerminalBat、launchSessionDirect、swapSettingsJson）都进行了校验，且 index.js 的 create-and-open 也有独立的验证。纵深防御的实践值得肯定。"
+    },
+    {
+      "file": "scanner.js",
+      "line": 150,
+      "comment": "增量扫描设计精巧：parseSessionChunk 支持 startOffset 参数，配合 fileOffsets Map 实现只读取新增内容。mergeSessionData 正确处理了计数器累加、promptId 去重、标题优先级等边界情况。这是高性能文件监控的良好实践。"
+    },
+    {
+      "file": "index.js",
+      "line": 254,
+      "comment": "优雅关闭实现完整：SIGINT/SIGTERM 都有处理，清理 watchers 和 SSE 连接，5 秒超时强制退出。这是生产级 Node.js 服务的必备模式，很少有项目做到位。"
+    },
+    {
+      "file": "shared.js",
+      "line": 78,
+      "comment": "CCL 会话自动映射的 watchCclSessions 实现巧妙：通过监控 .ccl-sessions.json 的变化，自动将新 CCL 会话映射到对应的 JSONL 文件，15 秒时间窗口的 birthtimeMs/mtimeMs 检查避免了误匹配。"
+    },
+    {
+      "file": "routes\\open.js",
+      "line": 15,
+      "comment": "spawnDirect 函数的设计很好：从配置文件读取环境变量注入到子进程，不影响当前进程的 env。ANTHROPIC_ 和 CLAUDE_ 前缀过滤避免了敏感变量泄露。"
+    }
+  ]
+}

@@ -1,0 +1,408 @@
+{
+  "decisions": [
+    {
+      "pair": [
+        "A-001",
+        "A-004"
+      ],
+      "file": "server/routes/session.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0077,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-001",
+        "A-005"
+      ],
+      "file": "server/routes/session.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-004",
+        "A-005"
+      ],
+      "file": "server/routes/session.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-002",
+        "A-003"
+      ],
+      "file": "server/index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-002",
+        "A-008"
+      ],
+      "file": "server/index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-002",
+        "A-011"
+      ],
+      "file": "server/index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-003",
+        "A-008"
+      ],
+      "file": "server/index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "A-003",
+        "A-011"
+      ],
+      "file": "server/index.js",
+      "match_type": "line_range_overlap",
+      "overlap_ratio": 1.0,
+      "title_similarity": 0.0,
+      "decision": "MERGE",
+      "rationale": "line_range_overlap 1.00 > 0.5 threshold"
+    },
+    {
+      "pair": [
+        "A-008",
+        "A-011"
+      ],
+      "file": "server/index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-001",
+        "B-002"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-001",
+        "B-004"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-001",
+        "B-005"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-001",
+        "B-007"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0588,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-001",
+        "B-009"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-002",
+        "B-004"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-002",
+        "B-005"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.15,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-002",
+        "B-007"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0526,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-002",
+        "B-009"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-004",
+        "B-005"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-004",
+        "B-007"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0526,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-004",
+        "B-009"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-005",
+        "B-007"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-005",
+        "B-009"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-007",
+        "B-009"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.2778,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-003",
+        "B-008"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\session.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0556,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-006",
+        "B-010"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\open.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0909,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-006",
+        "B-012"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\open.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "B-010",
+        "B-012"
+      ],
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\open.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-001",
+        "C-004"
+      ],
+      "file": "shared.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.1,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-002",
+        "C-009"
+      ],
+      "file": "routes\\session.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0072,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-003",
+        "C-006"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.1455,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-003",
+        "C-007"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.2091,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    },
+    {
+      "pair": [
+        "C-006",
+        "C-007"
+      ],
+      "file": "index.js",
+      "match_type": "none",
+      "overlap_ratio": 0.0,
+      "title_similarity": 0.0,
+      "decision": "KEEP_SEPARATE",
+      "rationale": ""
+    }
+  ],
+  "statistics": {
+    "total_findings_before_dedup": 32,
+    "total_merged_groups": 31,
+    "total_findings_after_dedup": 31,
+    "findings_merged_away": 1,
+    "merge_rate": 0.0312,
+    "borderline_cases": 0
+  }
+}

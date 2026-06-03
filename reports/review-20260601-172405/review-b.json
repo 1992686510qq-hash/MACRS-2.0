@@ -1,0 +1,345 @@
+{
+  "agent_id": "B",
+  "skill": "Claude-BugHunter",
+  "philosophy": "你是'攻击者思维'的安全审计专家。你审查代码时的默认假设是：有恶意攻击者会仔细阅读这段代码，寻找任何可能的突破口。你不是在找'不优雅'的代码——你是在找'可利用'的代码。",
+  "review_scope": {
+    "files": [
+      "agents.js",
+      "index.js",
+      "pricing.js",
+      "routes/open.js",
+      "routes/session.js",
+      "routes/sessions.js",
+      "routes/snapshots.js",
+      "scanner.js",
+      "shared.js",
+      "snapshot.js",
+      "sse.js",
+      "watcher.js"
+    ],
+    "lines_total": 1821
+  },
+  "findings": [
+    {
+      "id": "B-001",
+      "file": "routes/snapshots.js",
+      "line": 21,
+      "line_range": [
+        21,
+        23
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "Path Traversal in Snapshot API allows reading arbitrary .json files outside snapshots directory",
+      "description": "snapId is extracted from the URL via decodeURI and directly joined into a file path with path.join(shared.SNAPSHOTS_DIR, snapId + '.json'). An attacker can use ../ sequences (URL-encoded as %2e%2e%2f or %2e%2e/) to traverse outside the snapshots directory and read any .json file on the filesystem. Combined with CORS: *, a malicious website can exfiltrate the user's ~/.claude/settings.json (which likely contains Anthropic API keys). The same traversal exists in the delete endpoint at line 47. Furthermore, the guard at line 20 that checks indexOf('/api/snapshot/delete') can be bypassed via URL-encoding: a URL like /api/snapshot/..%2F..%2Fsettings contains no literal 'delete' substring and passes straight through to the vulnerable read path.",
+      "suggestion": "Validate snapId against a whitelist pattern (e.g. /^[a-zA-Z0-9_\\-]+$/). Reject any input containing path separators or parent directory references. Alternatively, resolve the path and verify it stays within SNAPSHOTS_DIR using path.resolve and a startsWith check.",
+      "code_snippet_bad": "var snapId = decodeURI(req.url.split(\"/api/snapshot/\")[1]);\nvar snapFile = path.join(shared.SNAPSHOTS_DIR, snapId + \".json\");\nif (!fs.existsSync(snapFile)) { ... }",
+      "code_snippet_good": "var snapId = decodeURI(req.url.split(\"/api/snapshot/\")[1]);\nif (!/^[a-zA-Z0-9_\\-]+$/.test(snapId)) {\n  res.writeHead(400); res.end(JSON.stringify({error: \"invalid id\"})); return true;\n}\nvar snapFile = path.join(shared.SNAPSHOTS_DIR, snapId + \".json\");\nvar resolved = path.resolve(snapFile);\nif (!resolved.startsWith(path.resolve(shared.SNAPSHOTS_DIR))) {\n  res.writeHead(403); res.end(JSON.stringify({error: \"forbidden\"})); return true;\n}",
+      "rule_reference": "CWE-22: Improper Limitation of a Pathname to a Restricted Directory",
+      "confidence": 0.98
+    },
+    {
+      "id": "B-002",
+      "file": "routes/open.js",
+      "line": 73,
+      "line_range": [
+        71,
+        98
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "Command Injection via unsanitized environment variables in BAT file generation",
+      "description": "The spawnWithBat function reads a JSON config file and writes env var values directly into a .bat file using string concatenation: batLines.push('set ' + k + '=' + cfg.env[k]). On Windows, batch files interpret &, |, &&, ||, and %VAR% as command separators/operators. If an attacker controls the config file content—via the path traversal in B-003 or by any other means—they can inject arbitrary commands. For example, a config with env.ANTHROPIC_MODEL set to 'claude-sonnet&calc.exe' would execute calc.exe when the bat file runs. The ANTHROPIC_MODEL line at line 76 is equally vulnerable.",
+      "suggestion": "Never construct batch files via string concatenation with user-controlled data. Use child_process.spawn directly with an explicit argument array (which bypasses shell interpretation), or at minimum validate all env values against a strict allowlist pattern (e.g. /^[a-zA-Z0-9_\\-.:\\/]+$/). For the bat file approach, wrap values in quotes and escape special characters: replace % with %%, & with ^&, | with ^|, etc. Better yet, switch to child_process.execFile or spawn with the env option to avoid the bat file entirely.",
+      "code_snippet_bad": "if (k.startsWith(\"ANTHROPIC_\") || k.startsWith(\"CLAUDE_\")) {\n  batLines.push(\"set \" + k + \"=\" + cfg.env[k]);\n}",
+      "code_snippet_good": "var SAFE_VALUE_RE = /^[a-zA-Z0-9_\\-.:\\/]+$/;\nif (k.startsWith(\"ANTHROPIC_\") || k.startsWith(\"CLAUDE_\")) {\n  var val = cfg.env[k];\n  if (!SAFE_VALUE_RE.test(val)) {\n    console.error(\"[open] unsafe env value for \" + k + \", skipping\");\n    continue;\n  }\n  var escaped = val.replace(/%/g, \"%%\").replace(/&/g, \"^&\").replace(/\\|/g, \"^|\");\n  batLines.push(\"set \" + k + \"=\" + escaped);\n}",
+      "rule_reference": "CWE-78: Improper Neutralization of Special Elements used in an OS Command",
+      "confidence": 0.95
+    },
+    {
+      "id": "B-003",
+      "file": "index.js",
+      "line": 95,
+      "line_range": [
+        95,
+        103
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "Path Traversal via config parameter allows reading arbitrary files as configuration",
+      "description": "The /api/create-and-open endpoint takes a config query parameter and—through spawnWithBat in routes/open.js—uses it to construct a file path: path.join(homeDir, '.claude', configName). Since configName comes from user input with no validation, an attacker can supply ../../Windows/win.ini or ../../.ssh/id_rsa to read arbitrary files. The content of the traversed file is then parsed as JSON and its env/model values are written into a bat file (triggering B-002's command injection as a second-stage payload). This same pattern affects the swapSettingsJson function at line 182 of open.js, where the config file content is written directly to settings.json.",
+      "suggestion": "Validate configName against a strict pattern like /^[a-zA-Z0-9_\\-.]+$/. Resolve the resulting path and verify it stays within the ~/.claude directory before reading. Never pass unsanitized user input to path.join for file operations.",
+      "code_snippet_bad": "var configName = urlObj.searchParams.get(\"config\");\nif (!configName) { ... }\nvar settingsPath = path.join(homeDir, \".claude\", configName);",
+      "code_snippet_good": "var configName = urlObj.searchParams.get(\"config\");\nif (!configName || !/^[a-zA-Z0-9_\\-.]+$/.test(configName)) {\n  res.writeHead(400, { \"Content-Type\": \"application/json\" });\n  res.end(JSON.stringify({ ok: false, error: \"invalid config name\" }));\n  return;\n}\nvar configPath = path.join(homeDir, \".claude\", configName);\nif (path.resolve(configPath).indexOf(path.resolve(path.join(homeDir, \".claude\"))) !== 0) {\n  res.writeHead(403); res.end(JSON.stringify({error: \"forbidden\"}));\n  return;\n}",
+      "rule_reference": "CWE-22: Improper Limitation of a Pathname to a Restricted Directory",
+      "confidence": 0.97
+    },
+    {
+      "id": "B-004",
+      "file": "index.js",
+      "line": 22,
+      "line_range": [
+        22,
+        24
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "CORS: Access-Control-Allow-Origin: * combined with no CSRF protection enables cross-origin data exfiltration",
+      "description": "The server sets Access-Control-Allow-Origin: * on every response and has zero CSRF protection. All state-changing endpoints use GET requests (no method restriction). A malicious website can make fetch() requests to localhost:5022, and the browser will allow reading the response due to the wildcard CORS header. The attack chain: (1) user visits attacker.com, (2) attacker.com JS fetches /api/snapshot/../../settings via B-001's path traversal, (3) the response containing Anthropic API keys is readable by attacker.com, (4) attacker exfiltrates the keys. Additionally, attacker.com can trigger /api/create-and-open, /api/snapshot/delete/*, and /api/open-session/* endpoints to manipulate the user's local state.",
+      "suggestion": "Since this is a localhost-only tool, consider removing CORS entirely (browsers allow same-origin localhost requests without CORS) and serving the dashboard HTML from the same origin. If CORS must be kept, restrict to specific origins (not *). Add CSRF protection: require a custom header (X-Requested-With) for state-changing operations, or switch mutating endpoints from GET to POST/PUT/DELETE and validate Origin/Referer headers. Consider binding to 127.0.0.1 explicitly instead of 0.0.0.0.",
+      "code_snippet_bad": "res.setHeader(\"Access-Control-Allow-Origin\", \"*\");",
+      "code_snippet_good": "// Remove CORS header entirely when serving from same origin\n// If external access is needed, use a specific origin:\n// res.setHeader(\"Access-Control-Allow-Origin\", \"http://localhost:5022\");\n// And add CSRF tokens for state-changing endpoints",
+      "rule_reference": "CWE-942: Permissive Cross-domain Policy with Untrusted Domains / CWE-352: Cross-Site Request Forgery",
+      "confidence": 0.92
+    },
+    {
+      "id": "B-005",
+      "file": "routes/snapshots.js",
+      "line": 47,
+      "line_range": [
+        46,
+        50
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "Snapshot delete endpoint has same path traversal as read endpoint",
+      "description": "The delete handler at line 47 mirrors the path traversal vulnerability described in B-001. The delId parameter extracted from the URL is passed directly to deleteSnapshot which does: fs.unlinkSync(path.join(shared.SNAPSHOTS_DIR, id + '.json')). An attacker can traverse out of the snapshots directory and delete arbitrary .json files. Combined with the CORS misconfiguration (B-004), a malicious website can delete the user's configuration files, session data, or other critical .json files.",
+      "suggestion": "Apply the same input validation as recommended in B-001: whitelist the snapshot ID format and verify the resolved path stays within SNAPSHOTS_DIR.",
+      "code_snippet_bad": "var delId = decodeURI(req.url.split(\"/api/snapshot/delete/\")[1]);\nsnapshot.deleteSnapshot(delId);",
+      "code_snippet_good": "var delId = decodeURI(req.url.split(\"/api/snapshot/delete/\")[1]);\nif (!/^[a-zA-Z0-9_\\-]+$/.test(delId)) {\n  res.writeHead(400); res.end(JSON.stringify({error: \"invalid id\"})); return true;\n}\nsnapshot.deleteSnapshot(delId);",
+      "rule_reference": "CWE-22: Improper Limitation of a Pathname to a Restricted Directory",
+      "confidence": 0.98
+    },
+    {
+      "id": "B-006",
+      "file": "routes/open.js",
+      "line": 182,
+      "line_range": [
+        178,
+        195
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "swapSettingsJson writes attacker-controlled file content to settings.json without validation",
+      "description": "The swapSettingsJson function reads a config file (whose path is partially attacker-controlled via B-003) and writes its contents directly to ~/.claude/settings.json. There is no validation that the content is valid JSON, no schema check, and no backup. If an attacker can point configFile to a large binary file, this could corrupt settings.json and potentially break the Claude Code CLI. The function also provides no mechanism to revert to the original settings after a failed or malicious swap (the ORIGINAL_SETTINGS snapshot exists in launchSessionDirect but not in swapSettingsJson itself).",
+      "suggestion": "Validate that the target config content is valid JSON and conforms to the expected settings schema before writing. Create a backup of settings.json before overwriting (e.g., settings.json.bak). Consider using atomic writes (write to temp file, then rename) to prevent corruption on partial writes.",
+      "code_snippet_bad": "var targetSettings = fs.readFileSync(targetConfigPath, \"utf-8\");\nif (currentSettings !== targetSettings) {\n  fs.writeFileSync(defaultSettingsPath, targetSettings, \"utf-8\");\n  shared.currentSettingsConfig = configFile;\n}",
+      "code_snippet_good": "var targetSettings = fs.readFileSync(targetConfigPath, \"utf-8\");\ntry { JSON.parse(targetSettings); } catch(e) { return; }\nif (currentSettings !== targetSettings) {\n  fs.writeFileSync(defaultSettingsPath + \".bak\", currentSettings, \"utf-8\");\n  fs.writeFileSync(defaultSettingsPath, targetSettings, \"utf-8\");\n  shared.currentSettingsConfig = configFile;\n}",
+      "rule_reference": "CWE-20: Improper Input Validation",
+      "confidence": 0.9
+    },
+    {
+      "id": "B-007",
+      "file": "index.js",
+      "line": 109,
+      "line_range": [
+        107,
+        133
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "Math.random() used for session IDs and UUIDs — predictable and forgeable",
+      "description": "Session IDs and UUIDs are generated using Math.random(), which is not cryptographically secure. In V8 (Node.js), Math.random() uses xorshift128+ which is predictable given a few observed outputs. An attacker who can observe generated session IDs could predict future session IDs and potentially hijack or interfere with new sessions. The PID used for session metadata is also generated with Math.random (line 172). This is used in three locations: line 109 (sessionId), line 128 (genUuid), and line 172 (fakePid).",
+      "suggestion": "Use crypto.randomUUID() (available in Node.js 19+) or crypto.randomBytes(16).toString('hex') for UUID generation. For the fake PID, use the actual process PID or a cryptographically random number. Example: const crypto = require('crypto'); const sessionId = crypto.randomUUID();",
+      "code_snippet_bad": "var sessionId = \"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, function(c) {\n  var r = Math.random() * 16 | 0, v = c === \"x\" ? r : (r & 0x3 | 0x8);\n  return v.toString(16);\n});",
+      "code_snippet_good": "var crypto = require(\"crypto\");\nvar sessionId = crypto.randomUUID();",
+      "rule_reference": "CWE-338: Use of Cryptographically Weak Pseudo-Random Number Generator (PRNG)",
+      "confidence": 0.88
+    },
+    {
+      "id": "B-008",
+      "file": "routes/open.js",
+      "line": 228,
+      "line_range": [
+        216,
+        234
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "Race condition: settings.json restore timer fires after 5s regardless of concurrent swaps",
+      "description": "launchSessionDirect swaps settings.json to the target config, then sets a 5-second timeout to restore the original settings. If a second launchSessionDirect or launchTerminalBat is called within that 5-second window, the restore from the first call will overwrite the settings that the second call just set. Additionally, if the VSCode extension reads settings.json after the 5-second restore, it will see the wrong configuration. There is no coordination between concurrent calls — no queue, no reference counting, and no cancellation of pending timers.",
+      "suggestion": "Implement a proper settings swap manager: use a single shared variable to track the pending restore timeout (cancel and restart on each new swap), or use a reference-counting approach where settings.json is only restored when all active sessions using the swapped config have completed. At minimum, clear the previous timeout before setting a new one, extending the window rather than creating conflicting restores.",
+      "code_snippet_bad": "setTimeout(function() {\n  try {\n    var currentSettings = fsModule.readFileSync(defaultSettingsPath, \"utf-8\");\n    if (ORIGINAL_SETTINGS && currentSettings !== ORIGINAL_SETTINGS) {\n      fsModule.writeFileSync(defaultSettingsPath, ORIGINAL_SETTINGS, \"utf-8\");\n    }\n  } catch(e) {}\n}, 5000);",
+      "code_snippet_good": "// At module level:\nvar _restoreTimer = null;\nfunction scheduleRestore() {\n  if (_restoreTimer) clearTimeout(_restoreTimer);\n  _restoreTimer = setTimeout(function() {\n    try {\n      var current = fsModule.readFileSync(defaultSettingsPath, \"utf-8\");\n      if (ORIGINAL_SETTINGS && current !== ORIGINAL_SETTINGS) {\n        fsModule.writeFileSync(defaultSettingsPath, ORIGINAL_SETTINGS, \"utf-8\");\n      }\n    } catch(e) {}\n    _restoreTimer = null;\n  }, 5000);\n}",
+      "rule_reference": "CWE-362: Concurrent Execution using Shared Resource with Improper Synchronization",
+      "confidence": 0.85
+    },
+    {
+      "id": "B-009",
+      "file": "index.js",
+      "line": 36,
+      "line_range": [
+        29,
+        41
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "import-data.json content is injected directly into inline <script> — no escaping",
+      "description": "The /import-localstorage endpoint reads import-data.json and embeds it directly into an HTML <script> tag via string concatenation: 'var d=' + importData + ';'. If importData contains </script>, it would break out of the script tag and allow HTML injection. While this file is local, if an attacker gains write access to the server directory (e.g., via another vulnerability), they could plant a malicious import-data.json that executes arbitrary JavaScript in the context of localhost:5022, accessing localStorage data including API keys stored by the CC Panel.",
+      "suggestion": "JSON-stringify the import data for safe embedding: use JSON.stringify(JSON.parse(importData)) to ensure it's valid JSON and safely encoded. Use a CSP header to mitigate XSS risk. Alternatively, serve the import data via a separate API endpoint instead of embedding it inline.",
+      "code_snippet_bad": "var html = '<!DOCTYPE html>...<script>!function(){var d=' + importData + ';...",
+      "code_snippet_good": "var parsed = JSON.parse(importData);\nvar safeData = JSON.stringify(parsed);\nvar html = '<!DOCTYPE html>...<script>!function(){var d=' + safeData + ';...",
+      "rule_reference": "CWE-79: Improper Neutralization of Input During Web Page Generation (XSS)",
+      "confidence": 0.82
+    },
+    {
+      "id": "B-010",
+      "file": "index.js",
+      "line": 209,
+      "line_range": [
+        22,
+        220
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "No rate limiting on any endpoint — trivial DoS via repeated heavy requests",
+      "description": "The server has no rate limiting, request throttling, or timeout enforcement on any endpoint. An attacker (or a malfunctioning client) can: (1) repeatedly call /api/create-and-open to exhaust disk space by creating session files, (2) call /api/session/*?full=1 to force the server to read and parse entire large JSONL files into memory repeatedly, (3) open unlimited SSE connections (capped at 50, but 50 concurrent long-lived connections still consume resources). The snapshot auto-cleanup caps at 30 auto-snapshots, but manual snapshots have no limit.",
+      "suggestion": "Implement per-endpoint rate limiting (e.g., 10 req/s for read endpoints, 1 req/s for write endpoints). Add a maximum request body size. Add a timeout for session detail parsing (limit the number of lines parsed). Cap the total number of manual snapshots.",
+      "rule_reference": "CWE-770: Allocation of Resources Without Limits or Throttling",
+      "confidence": 0.8
+    },
+    {
+      "id": "B-011",
+      "file": "routes/snapshots.js",
+      "line": 20,
+      "line_range": [
+        20,
+        21
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "URL-encoding bypass: guard checks operate on raw req.url, not decoded path",
+      "description": "The snapshot detail guard at line 20 checks req.url.indexOf('/api/snapshot/delete') on the raw, un-decoded URL. However, the actual path parameter is decoded at line 21 using decodeURI(). An attacker can craft a URL like /api/snapshot/..%2F..%2Fsettings where the literal substring '/api/snapshot/delete' never appears, but after decodeURI the snapId becomes ../../settings. This bypasses the guard meant to exclude delete/create/rollback paths from the detail view handler. While this specific bypass leads to the detail (read) handler rather than delete, it demonstrates inconsistent URL handling that could be exploited if new guarded routes are added.",
+      "suggestion": "Parse req.url with the URL constructor (new URL(req.url, 'http://localhost')) to get the normalized pathname before doing route matching. This prevents encoding-based bypasses. Apply this consistently across all route handlers.",
+      "code_snippet_bad": "if (req.url.startsWith(\"/api/snapshot/\") && req.url.indexOf(\"/api/snapshot/create\") === -1 && req.url.indexOf(\"/api/snapshot/delete\") === -1 && req.url.indexOf(\"/api/snapshot/rollback\") === -1) {\n  var snapId = decodeURI(req.url.split(\"/api/snapshot/\")[1]);",
+      "code_snippet_good": "var parsed = new URL(req.url, \"http://localhost\");\nvar pathname = parsed.pathname;\nif (pathname.startsWith(\"/api/snapshot/\") && !pathname.startsWith(\"/api/snapshot/create\") && !pathname.startsWith(\"/api/snapshot/delete\") && !pathname.startsWith(\"/api/snapshot/rollback\")) {\n  var snapId = pathname.split(\"/api/snapshot/\")[1];",
+      "rule_reference": "CWE-177: Improper Handling of URL Encoding (Double Encoding)",
+      "confidence": 0.87
+    },
+    {
+      "id": "B-012",
+      "file": "scanner.js",
+      "line": 126,
+      "line_range": [
+        87,
+        145
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "parseSessionChunk tail-offset may produce corrupted first line when reading partial content",
+      "description": "When reading a chunk starting from an offset (incremental scan), the function seeks to startOffset bytes into the file. However, the offset points to the byte after the last complete line. If the file is modified in a way that the byte at startOffset is mid-line (e.g., the file was truncated and then appended, or the offset tracking was wrong), the first line read will be a partial/corrupted JSON line. The code at lines 109-114 attempt to skip the first line if 'tailBytes < fsize' (which is always true when startOffset > 0 unless the file is empty), but this check is from a different code path (session detail handler, line 52-60 of session.js) — it's not present in parseSessionChunk itself. parseSessionChunk just splits lines starting from startOffset and tries to parse each one, potentially producing garbage data or missing the first partial line.",
+      "suggestion": "After reading from startOffset, scan forward to the next newline character before beginning line-by-line parsing. This ensures the parser always starts at a line boundary. Also consider using a persistent fd or checking the mtime to detect truncation.",
+      "code_snippet_bad": "var buf = Buffer.alloc(Math.max(1, stat.size - startOffset));\nvar bytesRead = fs.readSync(fd, buf, 0, buf.length, startOffset);\ncontent = buf.toString(\"utf-8\", 0, bytesRead);\n// ...\nvar lines = content.split(\"\\n\");\nfor (var i = 0; i < lines.length; i++) {\n  var obj = parseLine(lines[i]);",
+      "code_snippet_good": "var buf = Buffer.alloc(Math.max(1, stat.size - startOffset));\nvar bytesRead = fs.readSync(fd, buf, 0, buf.length, startOffset);\ncontent = buf.toString(\"utf-8\", 0, bytesRead);\nif (startOffset > 0) {\n  var firstNl = content.indexOf(\"\\n\");\n  if (firstNl >= 0) content = content.slice(firstNl + 1);\n}\nvar lines = content.split(\"\\n\");\nfor (var i = 0; i < lines.length; i++) {\n  var obj = parseLine(lines[i]);",
+      "rule_reference": "N/A — correctness bug in incremental file parsing",
+      "confidence": 0.82
+    },
+    {
+      "id": "B-013",
+      "file": "routes/session.js",
+      "line": 42,
+      "line_range": [
+        28,
+        43
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "Single session API uses keyDecisions from cache without per-request deduplication",
+      "description": "The session detail response at line 87 returns cached.keyDecisions directly. Since keyDecisions are append-only in mergeSessionData (scanner.js line 227-231), repeated API calls for the same session will show growing duplicate decision lists as the cache accumulates data across incremental scans. The decisions array could contain the same tool calls multiple times if mergeSessionData is called with overlapping delta ranges. In the waterfall/relations view for the same session, no deduplication is performed at all.",
+      "suggestion": "Deduplicate keyDecisions before returning them in the API response (by timestamp + tool name), or use a Set-like structure for tool call tracking during parsing. At minimum, cap the array size before serializing to JSON.",
+      "rule_reference": "N/A — data correctness bug",
+      "confidence": 0.78
+    },
+    {
+      "id": "B-014",
+      "file": "index.js",
+      "line": 32,
+      "line_range": [
+        29,
+        41
+      ],
+      "severity": "nit",
+      "category": "security",
+      "title": "import-data.json: missing Content-Type charset may enable encoding-based XSS",
+      "description": "The /import-localstorage endpoint returns Content-Type: text/html; charset=utf-8, which is fine, but the importData is read as utf-8 and embedded directly into a <script> tag without any escaping. If the import-data.json file is somehow encoded differently or contains UTF-7 content (historical IE vector), it could lead to script execution. Low risk on modern browsers but worth hardening.",
+      "suggestion": "Add JSON.parse validation before embedding, as recommended in B-009, which also addresses this concern.",
+      "rule_reference": "CWE-116: Improper Encoding or Escaping of Output",
+      "confidence": 0.7
+    },
+    {
+      "id": "B-015",
+      "file": "shared.js",
+      "line": 6,
+      "line_range": [
+        4,
+        8
+      ],
+      "severity": "suggestion",
+      "category": "security",
+      "title": "Config file paths use ~ which path.join does not resolve on Windows",
+      "description": "The fallback path ~ in process.env.HOME || process.env.USERPROFILE || '~' — on Windows, HOME is not usually set, and if USERPROFILE is somehow unset, the fallback '~' will be passed to path.join and fs operations. Node.js path.join does not expand ~ to the home directory; it treats it as a literal directory name. This would create a directory named ~ in the current working directory and store sensitive config data there, potentially in a world-readable location.",
+      "suggestion": "Use os.homedir() from the os module as the ultimate fallback instead of '~'. This is guaranteed to return the correct home directory on all platforms.",
+      "code_snippet_bad": "var homeDir = process.env.HOME || process.env.USERPROFILE || \"~\";",
+      "code_snippet_good": "var os = require(\"os\");\nvar homeDir = process.env.HOME || process.env.USERPROFILE || os.homedir();",
+      "rule_reference": "CWE-377: Insecure Temporary File",
+      "confidence": 0.75
+    },
+    {
+      "id": "B-016",
+      "file": "index.js",
+      "line": 55,
+      "line_range": [
+        55,
+        62
+      ],
+      "severity": "nit",
+      "category": "security",
+      "title": "/migrate endpoint uses iframe to load data from port 3100 without origin validation",
+      "description": "The localStorage migration page creates an iframe pointing to http://localhost:3100/ and reads its content via ifr.contentDocument.body.textContent. This is a cross-origin access that only works because both are on localhost (same origin). If port 3100 ever hosts malicious content (e.g., another process hijacks that port), the migration page would read and import attacker-controlled data into localStorage. The page also uses a 500ms setTimeout to wait for iframe load, which is a fragile timing assumption.",
+      "suggestion": "Add explicit validation of the imported data structure before writing to localStorage. Verify that the data is a flat key-value object of strings. Use a postMessage-based communication channel instead of iframe contentDocument access for more explicit origin control.",
+      "rule_reference": "CWE-923: Improper Restriction of Communication Channel to Intended Endpoints",
+      "confidence": 0.72
+    }
+  ],
+  "metrics": {
+    "total_findings": 16,
+    "by_severity": {
+      "blocking": 5,
+      "important": 8,
+      "nit": 2,
+      "suggestion": 1
+    },
+    "by_category": {
+      "security": 14,
+      "bug": 2
+    },
+    "review_duration_seconds": 0
+  },
+  "praise": [
+    {
+      "file": "sse.js",
+      "line": 6,
+      "comment": "SSE implementation properly cleans up dead clients during broadcast, preventing memory leaks from disconnected connections."
+    },
+    {
+      "file": "scanner.js",
+      "line": 191,
+      "comment": "mergeSessionData correctly handles the _truncated case (file shrunk) by doing a full re-parse, which prevents stale data when JSONL files are rotated or truncated."
+    },
+    {
+      "file": "index.js",
+      "line": 210,
+      "comment": "Graceful shutdown handler properly cleans up watchers and SSE connections before exiting, with a 5-second force-kill fallback."
+    },
+    {
+      "file": "snapshot.js",
+      "line": 34,
+      "comment": "Auto-snapshot cleanup caps at 30 entries and removes oldest first, preventing unbounded disk usage."
+    },
+    {
+      "file": "watcher.js",
+      "line": 37,
+      "comment": "File watcher debouncing with clearTimeout prevents thundering-herd re-scans when files change rapidly."
+    }
+  ]
+}

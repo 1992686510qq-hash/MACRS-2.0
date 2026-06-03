@@ -1,0 +1,1633 @@
+[
+  {
+    "merged_id": "M-018",
+    "canonical_title": "launchSessionDirect calls undefined function spawnWithBat — will throw ReferenceError",
+    "canonical_severity": "P0 BLOCKING",
+    "canonical_description": "The `launchSessionDirect` function at line 203 calls `spawnWithBat(claudeExe, cliArgs, configFile, cwd)`, but `spawnWithBat` is not defined anywhere in this file. The file defines `spawnDirect` (line 48) instead. This means every call to `/api/create-and-open` that reaches `launchSessionDirect` will throw a `ReferenceError: spawnWithBat is not defined`. The error is caught by the try/catch at index.js:194-198, but the session has already been created and written to disk, leaving an orphaned session that can never be launched.",
+    "category": "bug",
+    "file": "server/routes/open.js",
+    "line_range": [
+      172,
+      208
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-003",
+        "severity": "blocking",
+        "unified_severity": "P0 BLOCKING",
+        "title": "launchSessionDirect calls undefined function spawnWithBat — will throw ReferenceError",
+        "description": "The `launchSessionDirect` function at line 203 calls `spawnWithBat(claudeExe, cliArgs, configFile, cwd)`, but `spawnWithBat` is not defined anywhere in this file. The file defines `spawnDirect` (line 48) instead. This means every call to `/api/create-and-open` that reaches `launchSessionDirect` will throw a `ReferenceError: spawnWithBat is not defined`. The error is caught by the try/catch at index.js:194-198, but the session has already been created and written to disk, leaving an orphaned session that can never be launched.",
+        "confidence": 0.99,
+        "category": "bug",
+        "rule_reference": "ReferenceError / Dead Code"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.99,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.99,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "bug"
+      ]
+    },
+    "code_snippet_bad": "spawnWithBat(claudeExe, cliArgs, configFile, cwd || \"C:\\\\Users\\\\Administrator\");",
+    "code_snippet_good": "spawnDirect(claudeExe, cliArgs, configFile, cwd || \"C:\\\\Users\\\\Administrator\");",
+    "suggestion": "Replace the call to `spawnWithBat` with `spawnDirect` which is the correctly defined function in this file:\n\n```javascript\n// Line 203: change from\nspawnWithBat(claudeExe, cliArgs, configFile, cwd || \"C:\\\\Users\\\\Administrator\");\n// to\nspawnDirect(claudeExe, cliArgs, configFile, cwd || \"C:\\\\Users\\\\Administrator\");\n```"
+  },
+  {
+    "merged_id": "M-016",
+    "canonical_title": "Path Traversal in /api/create-and-open via unsanitized configName parameter",
+    "canonical_severity": "P0 BLOCKING",
+    "canonical_description": "The `configName` query parameter from user input is directly used in `path.join(homeDir, '.claude', configName)` without any sanitization or validation. An attacker can send `config=../../etc/passwd` (Linux) or `config=../../windows/system32/config/sam` (Windows) to read arbitrary files. The value is then passed to `launchSessionDirect` which calls `swapSettingsJson`, causing the contents of the target file to overwrite `~/.claude/settings.json`. This is a critical path traversal vulnerability with file read + file write impact.",
+    "category": "security",
+    "file": "server/index.js",
+    "line_range": [
+      100,
+      107
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-001",
+        "severity": "blocking",
+        "unified_severity": "P0 BLOCKING",
+        "title": "Path Traversal in /api/create-and-open via unsanitized configName parameter",
+        "description": "The `configName` query parameter from user input is directly used in `path.join(homeDir, '.claude', configName)` without any sanitization or validation. An attacker can send `config=../../etc/passwd` (Linux) or `config=../../windows/system32/config/sam` (Windows) to read arbitrary files. The value is then passed to `launchSessionDirect` which calls `swapSettingsJson`, causing the contents of the target file to overwrite `~/.claude/settings.json`. This is a critical path traversal vulnerability with file read + file write impact.",
+        "confidence": 0.98,
+        "category": "security",
+        "rule_reference": "CWE-22: Path Traversal"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.98,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.98,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var configName = urlObj.searchParams.get(\"config\");\nif (!configName) {\n  res.writeHead(400, ...);\n  res.end(JSON.stringify({ ok: false, error: \"config required\" }));\n  return;\n}\nvar settingsPath = path.join(homeDir, \".claude\", configName);",
+    "code_snippet_good": "var configName = urlObj.searchParams.get(\"config\");\nif (!configName || !/^setting-[a-zA-Z0-9_-]+\\.json$/.test(configName)) {\n  res.writeHead(400, ...);\n  res.end(JSON.stringify({ ok: false, error: \"invalid config name\" }));\n  return;\n}\nvar resolvedPath = path.resolve(path.join(homeDir, \".claude\", configName));\nif (!resolvedPath.startsWith(path.resolve(path.join(homeDir, \".claude\")) + path.sep)) {\n  res.writeHead(403); res.end(JSON.stringify({ ok: false, error: \"forbidden\" }));\n  return;\n}",
+    "suggestion": "Add strict validation for configName before using it in any path construction. Validate that the resolved path is within the expected directory:\n\n```javascript\nvar configName = urlObj.searchParams.get('config');\nif (!configName || !/^setting-[a-zA-Z0-9_-]+\\.json$/.test(configName)) {\n  res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });\n  res.end(JSON.stringify({ ok: false, error: 'invalid config name' }));\n  return;\n}\n// Also verify resolved path is within expected directory\nvar resolvedPath = path.resolve(path.join(homeDir, '.claude', configName));\nvar allowedDir = path.resolve(path.join(homeDir, '.claude'));\nif (!resolvedPath.startsWith(allowedDir + path.sep) && resolvedPath !== allowedDir) {\n  res.writeHead(403); res.end(JSON.stringify({ ok: false, error: 'forbidden' }));\n  return;\n}\n```"
+  },
+  {
+    "merged_id": "M-017",
+    "canonical_title": "Path Traversal in swapSettingsJson allows arbitrary file read and settings.json overwrite",
+    "canonical_severity": "P0 BLOCKING",
+    "canonical_description": "The `swapSettingsJson` function constructs `targetConfigPath = path.join(homeDir, '.claude', configFile)` without sanitizing `configFile`. If `configFile` contains path traversal sequences (e.g., `../../etc/passwd`), the function will read the contents of the target file and write them to `settings.json`. This overwrites the user's Claude Code settings with arbitrary file contents. The function is called from `launchSessionDirect` (line 181) which receives `configFile` from the `/api/create-and-open` endpoint.",
+    "category": "security",
+    "file": "server/routes/open.js",
+    "line_range": [
+      150,
+      168
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-002",
+        "severity": "blocking",
+        "unified_severity": "P0 BLOCKING",
+        "title": "Path Traversal in swapSettingsJson allows arbitrary file read and settings.json overwrite",
+        "description": "The `swapSettingsJson` function constructs `targetConfigPath = path.join(homeDir, '.claude', configFile)` without sanitizing `configFile`. If `configFile` contains path traversal sequences (e.g., `../../etc/passwd`), the function will read the contents of the target file and write them to `settings.json`. This overwrites the user's Claude Code settings with arbitrary file contents. The function is called from `launchSessionDirect` (line 181) which receives `configFile` from the `/api/create-and-open` endpoint.",
+        "confidence": 0.97,
+        "category": "security",
+        "rule_reference": "CWE-22: Path Traversal"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.97,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.97,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "function swapSettingsJson(configFile) {\n  var homeDir = process.env.HOME || process.env.USERPROFILE || \"C:\\\\Users\\\\Administrator\";\n  var defaultSettingsPath = path.join(homeDir, \".claude\", \"settings.json\");\n  if (!configFile) return;\n  try {\n    var targetConfigPath = path.join(homeDir, \".claude\", configFile);",
+    "code_snippet_good": "function swapSettingsJson(configFile) {\n  if (!configFile) return;\n  if (!/^setting-[a-zA-Z0-9_-]+\\.json$/.test(configFile)) {\n    console.error('[open] invalid configFile:', configFile);\n    return;\n  }\n  var homeDir = process.env.HOME || process.env.USERPROFILE || \"C:\\\\Users\\\\Administrator\";\n  var targetConfigPath = path.resolve(path.join(homeDir, \".claude\", configFile));\n  if (targetConfigPath.indexOf(path.resolve(path.join(homeDir, \".claude\"))) !== 0) return;",
+    "suggestion": "Validate that `configFile` resolves to a path within the expected `.claude` directory before reading:\n\n```javascript\nfunction swapSettingsJson(configFile) {\n  if (!configFile) return;\n  // Strict whitelist validation\n  if (!/^setting-[a-zA-Z0-9_-]+\\.json$/.test(configFile)) {\n    console.error('[open] invalid configFile name:', configFile);\n    return;\n  }\n  var homeDir = process.env.HOME || process.env.USERPROFILE || 'C:\\\\Users\\\\Administrator';\n  var defaultSettingsPath = path.join(homeDir, '.claude', 'settings.json');\n  var targetConfigPath = path.join(homeDir, '.claude', configFile);\n  // Defense in depth: verify resolved path\n  if (path.resolve(targetConfigPath).indexOf(path.resolve(path.join(homeDir, '.claude'))) !== 0) return;\n  // ... rest of function\n}\n```"
+  },
+  {
+    "merged_id": "M-001",
+    "canonical_title": "settings.json 并发写入竞态条件，多会话启动会互相覆盖",
+    "canonical_severity": "P0 BLOCKING",
+    "canonical_description": "launchSessionDirect 先将 settings.json 替换为目标配置，然后用 setTimeout 5秒后恢复原始快照。如果两个请求间隔 <5秒，第一个请求的恢复操作会把第二个请求刚写入的配置覆盖掉，导致第二个 VSCode 会话使用错误的配置。",
+    "category": "bug",
+    "file": "routes\\open.js",
+    "line_range": [
+      204,
+      215
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-001",
+        "severity": "blocking",
+        "unified_severity": "P0 BLOCKING",
+        "title": "settings.json 并发写入竞态条件，多会话启动会互相覆盖",
+        "description": "launchSessionDirect 先将 settings.json 替换为目标配置，然后用 setTimeout 5秒后恢复原始快照。如果两个请求间隔 <5秒，第一个请求的恢复操作会把第二个请求刚写入的配置覆盖掉，导致第二个 VSCode 会话使用错误的配置。",
+        "confidence": 0.95,
+        "category": "bug",
+        "rule_reference": "race-condition / shared-mutable-state"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.95,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.95,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "bug"
+      ]
+    },
+    "code_snippet_bad": "// 第一个请求写入 config-A，5秒后恢复\n// 第二个请求在2秒后写入 config-B\n// 5秒时第一个请求的恢复会覆盖 config-B\nsetTimeout(function() {\n  if (ORIGINAL_SETTINGS && currentSettings !== ORIGINAL_SETTINGS) {\n    fsModule.writeFileSync(defaultSettingsPath, ORIGINAL_SETTINGS, \"utf-8\");\n  }\n}, 5000);",
+    "code_snippet_good": "// 用引用计数保护\nvar pendingSwaps = 0;\nfunction swapSettingsJson(configFile) {\n  pendingSwaps++;\n  // ... write ...\n}\nfunction scheduleRestore() {\n  setTimeout(function() {\n    pendingSwaps--;\n    if (pendingSwaps <= 0) {\n      pendingSwaps = 0;\n      // restore original\n    }\n  }, 5000);\n}",
+    "suggestion": "引入写入锁或引用计数机制。用一个 Map 记录当前活跃的配置写入请求，只有最后一个请求完成且无新请求时才恢复原始配置。或者改用 per-session settings 路径（通过 --settings 参数传递），避免修改全局 settings.json。"
+  },
+  {
+    "merged_id": "M-011",
+    "canonical_title": "getStatus 函数的中文状态值（'休眠'、'归档'、'异常'）与英文状态值混用",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "getStatus 返回值混合使用英文（'running'、'completed'、'idle'、'interrupted'）和中文（'休眠'、'归档'、'异常'）。前端和 API 消费者需要处理两种语言的状态值，增加复杂度。'异常' 没有使用英文引号风格，与其他中文值不一致。",
+    "category": "correctness",
+    "file": "scanner.js",
+    "line_range": [
+      45,
+      75
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-011",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "getStatus 函数的中文状态值（'休眠'、'归档'、'异常'）与英文状态值混用",
+        "description": "getStatus 返回值混合使用英文（'running'、'completed'、'idle'、'interrupted'）和中文（'休眠'、'归档'、'异常'）。前端和 API 消费者需要处理两种语言的状态值，增加复杂度。'异常' 没有使用英文引号风格，与其他中文值不一致。",
+        "confidence": 0.82,
+        "category": "correctness",
+        "rule_reference": "consistency / i18n-best-practice"
+      },
+      {
+        "agent": "C",
+        "finding_id": "C-009",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "状态机不完整：getStatus的边界条件处理",
+        "description": "getStatus函数对lastMeaningfulStopReason为null（最后消息是用户输入）时，仅根据文件年龄判断状态。但如果会话刚创建还没有任何AI响应，会错误地标记为'异常'。",
+        "confidence": 0.78,
+        "category": "correctness",
+        "rule_reference": "Clean Code: State Machines"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.8,
+      "consensus_boost": 0.15,
+      "final_confidence": 0.95,
+      "agent_count": 2
+    },
+    "status": "consensus",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "correctness"
+      ]
+    },
+    "code_snippet_bad": "// null (最后有意义消息是user) → 等待AI回复\nif (fileAge < 10 * 60 * 1000) return \"running\";\nreturn \"异常\";",
+    "code_snippet_good": "if (lastMeaningfulStopReason === null) {\n  if (fileAge < 10 * 60 * 1000) return 'waiting'; // 新状态\n  if (fileAge < 30 * 60 * 1000) return 'slow';\n  return '异常';\n}",
+    "suggestion": "统一为英文状态值：'休眠' → 'dormant'，'归档' → 'archived'，'异常' → 'stale'。如果前端需要中文显示，应在前端做翻译映射。这也能避免编码问题（UTF-8 中文在 JSON 序列化中的潜在问题）。"
+  },
+  {
+    "merged_id": "M-023",
+    "canonical_title": "settings.json restore references undefined ORIGINAL_SETTINGS — restore never executes",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "The `launchSessionDirect` function calls `swapSettingsJson(configFile)` at line 181, which overwrites `settings.json`. It then schedules a restore after 5 seconds (lines 184-194) that checks `if (ORIGINAL_SETTINGS && currentSettings !== ORIGINAL_SETTINGS)`. However, `ORIGINAL_SETTINGS` is not defined anywhere in this file — the IIFE that defined it was removed (the file starts with a comment saying '不再需要 settings.json 快照'). This means `ORIGINAL_SETTINGS` is `undefined`, the condition is always falsy, and settings.json is NEVER restored. If multiple `/api/create-and-open` requests arrive with different configs, settings.json will be left in whatever state the last request set.",
+    "category": "bug",
+    "file": "server/routes/open.js",
+    "line_range": [
+      181,
+      194
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-008",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "settings.json restore references undefined ORIGINAL_SETTINGS — restore never executes",
+        "description": "The `launchSessionDirect` function calls `swapSettingsJson(configFile)` at line 181, which overwrites `settings.json`. It then schedules a restore after 5 seconds (lines 184-194) that checks `if (ORIGINAL_SETTINGS && currentSettings !== ORIGINAL_SETTINGS)`. However, `ORIGINAL_SETTINGS` is not defined anywhere in this file — the IIFE that defined it was removed (the file starts with a comment saying '不再需要 settings.json 快照'). This means `ORIGINAL_SETTINGS` is `undefined`, the condition is always falsy, and settings.json is NEVER restored. If multiple `/api/create-and-open` requests arrive with different configs, settings.json will be left in whatever state the last request set.",
+        "confidence": 0.95,
+        "category": "bug",
+        "rule_reference": "Undefined Variable / Logic Error"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.95,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.95,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "bug"
+      ]
+    },
+    "code_snippet_bad": "swapSettingsJson(configFile);\n\n// 5 秒后恢复到服务器启动时的原始快照（避免竞态条件）\nsetTimeout(function() {\n  try {\n    var currentSettings = fsModule.readFileSync(defaultSettingsPath, \"utf-8\");\n    if (ORIGINAL_SETTINGS && currentSettings !== ORIGINAL_SETTINGS) {",
+    "code_snippet_good": "// Since spawnDirect uses --settings flag, swapSettingsJson is not needed\n// Remove the call and the broken restore logic\n// Or restore ORIGINAL_SETTINGS:\nvar ORIGINAL_SETTINGS = null;\n(function() {\n  try {\n    var p = path.join(homeDir, '.claude', 'settings.json');\n    if (fs.existsSync(p)) ORIGINAL_SETTINGS = fs.readFileSync(p, 'utf-8');\n  } catch(e) {}\n})();",
+    "suggestion": "Either restore the ORIGINAL_SETTINGS snapshot mechanism, or remove the dead restore code entirely and document that settings.json is permanently modified. If the intent is to not modify settings.json, then `swapSettingsJson` should not be called at all:\n\n```javascript\n// Option A: Remove the broken restore and don't call swapSettingsJson\n// (since spawnDirect uses --settings flag, swapSettingsJson is redundant)\n\n// Option B: Restore the snapshot mechanism\nvar ORIGINAL_SETTINGS = null;\n(function() {\n  try {\n    var settingsPath = path.join(homeDir, '.claude', 'settings.json');\n    if (fs.existsSync(settingsPath)) {\n      ORIGINAL_SETTINGS = fs.readFileSync(settingsPath, 'utf-8');\n    }\n  } catch(e) {}\n})();\n```"
+  },
+  {
+    "merged_id": "M-028",
+    "canonical_title": "XSS漏洞：未转义的用户数据直接注入HTML",
+    "canonical_severity": "P0 BLOCKING",
+    "canonical_description": "import-localstorage路由中，JSON数据通过字符串拼接直接嵌入HTML，且未对special characters进行转义。如果import-data.json包含恶意脚本，将导致存储型XSS攻击。",
+    "category": "security",
+    "file": "index.js",
+    "line_range": [
+      54,
+      63
+    ],
+    "sources": [
+      {
+        "agent": "C",
+        "finding_id": "C-001",
+        "severity": "blocking",
+        "unified_severity": "P0 BLOCKING",
+        "title": "XSS漏洞：未转义的用户数据直接注入HTML",
+        "description": "import-localstorage路由中，JSON数据通过字符串拼接直接嵌入HTML，且未对special characters进行转义。如果import-data.json包含恶意脚本，将导致存储型XSS攻击。",
+        "confidence": 0.95,
+        "category": "security",
+        "rule_reference": "OWASP XSS Prevention Cheat Sheet"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.95,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.95,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var safeData = JSON.stringify(JSON.parse(importData));\nvar html = '...<script>!function(){var d=' + safeData + ';...}();</script>...'",
+    "code_snippet_good": "// Option 1: Serve data via API, use fetch in client\nres.writeHead(200, {\"Content-Type\": \"application/json\"});\nres.end(importData);\n\n// Option 2: If must embed, use proper escaping\nfunction escapeForScript(str) {\n  return str.replace(/<\\/script/g, '<\\\\/script').replace(/<!--/g, '<\\\\!--');\n}",
+    "suggestion": "使用DOM API动态创建元素，或至少对JSON字符串进行HTML实体转义后再嵌入。建议将HTML移至独立模板文件，使用安全的模板引擎。"
+  },
+  {
+    "merged_id": "M-007",
+    "canonical_title": "pLines 变量在 try 块内定义，phase detection 代码在 try 块外引用可能 undefined",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "在 buildRelationsResponse 中，var pLines 在第一个 try 块（解析父文件）内通过 pContent.trim().split 定义。但后续的 phase detection 和 waterfall 代码块在该 try 块之外引用 pLines。如果第一个 try 块因文件读取失败而跳过，pLines 将是 undefined，导致 .length 和索引访问抛出 TypeError。",
+    "category": "bug",
+    "file": "routes\\session.js",
+    "line_range": [
+      155,
+      175
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-007",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "pLines 变量在 try 块内定义，phase detection 代码在 try 块外引用可能 undefined",
+        "description": "在 buildRelationsResponse 中，var pLines 在第一个 try 块（解析父文件）内通过 pContent.trim().split 定义。但后续的 phase detection 和 waterfall 代码块在该 try 块之外引用 pLines。如果第一个 try 块因文件读取失败而跳过，pLines 将是 undefined，导致 .length 和索引访问抛出 TypeError。",
+        "confidence": 0.94,
+        "category": "bug",
+        "rule_reference": "variable-scope / hoisting-pitfall"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.94,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.94,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "bug"
+      ]
+    },
+    "code_snippet_bad": "try {\n  var pContent = fs.readFileSync(relTarget._file, \"utf-8\");\n  var pLines = pContent.trim().split(\"\\n\");\n  // ... parse dispatch calls\n} catch (e) {}\n// 后面直接使用 pLines — 如果 try 失败，pLines 是 undefined\nfor (var pi2 = 0; pi2 < pLines.length; pi2++) { ... }",
+    "code_snippet_good": "var pLines = [];\ntry {\n  var pContent = fs.readFileSync(relTarget._file, \"utf-8\");\n  pLines = pContent.trim().split(\"\\n\");\n} catch (e) { /* pLines remains [] */ }",
+    "suggestion": "将 pLines 的声明提升到 try 块之前（var pLines = []），或在后续使用前检查 pLines 是否已定义。更好的方案是将文件读取结果通过函数返回值传递，而非依赖闭包变量。"
+  },
+  {
+    "merged_id": "M-004",
+    "canonical_title": "delete s._file 污染 sessionCache，后续请求无法定位会话文件",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "/api/sessions 路由中，对 sessions 数组里的对象执行 delete s._file 和 delete s._dirty。但这些对象来自 shared.sessionCache，是引用而非副本。删除 _file 后，其他路由（如 /api/session/:id、/api/open-session/:id）从 cache 取到的 session 对象将缺少 _file 属性，导致无法读取文件内容或启动会话，触发 fallback 到全量扫描。",
+    "category": "bug",
+    "file": "routes\\sessions.js",
+    "line_range": [
+      18,
+      30
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-004",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "delete s._file 污染 sessionCache，后续请求无法定位会话文件",
+        "description": "/api/sessions 路由中，对 sessions 数组里的对象执行 delete s._file 和 delete s._dirty。但这些对象来自 shared.sessionCache，是引用而非副本。删除 _file 后，其他路由（如 /api/session/:id、/api/open-session/:id）从 cache 取到的 session 对象将缺少 _file 属性，导致无法读取文件内容或启动会话，触发 fallback 到全量扫描。",
+        "confidence": 0.93,
+        "category": "bug",
+        "rule_reference": "shared-mutable-state / cache-corruption"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.93,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.93,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "bug"
+      ]
+    },
+    "code_snippet_bad": "for (var i = 0; i < sessions.length; i++) {\n  var s = sessions[i];\n  // ... 修改 s 的属性 ...\n  delete s._file;\n  delete s._dirty;\n  shared.subAgentCache.forEach(function(agent, key) { ... });\n}",
+    "code_snippet_good": "var response = sessions.map(function(s) {\n  var out = Object.assign({}, s);\n  out.status = scanner.getStatus(...);\n  out.cost = pricing.calcCost(out);\n  out.type = 'main';\n  out.filePath = out._file;\n  delete out._file;\n  delete out._dirty;\n  delete out._seenPromptIds;\n  return out;\n});",
+    "suggestion": "在序列化响应前，创建 session 对象的浅拷贝再删除内部字段：var out = Object.assign({}, s); delete out._file; delete out._dirty; 或使用 map 创建新对象数组。"
+  },
+  {
+    "merged_id": "M-002",
+    "canonical_title": "Math.random() 生成 session ID，可预测且存在碰撞风险",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "generateUuid 使用 Math.random() 生成 UUID v4。Math.random() 不是密码学安全的 PRNG，生成的 ID 可被预测。在 /api/create-and-open 路由中，同一请求内调用两次 genUuid（一次生成 sessionId，一次在 uuidMap 替换中），如果多个请求并发，存在碰撞风险。",
+    "category": "security",
+    "file": "index.js",
+    "line_range": [
+      110,
+      120
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-002",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "Math.random() 生成 session ID，可预测且存在碰撞风险",
+        "description": "generateUuid 使用 Math.random() 生成 UUID v4。Math.random() 不是密码学安全的 PRNG，生成的 ID 可被预测。在 /api/create-and-open 路由中，同一请求内调用两次 genUuid（一次生成 sessionId，一次在 uuidMap 替换中），如果多个请求并发，存在碰撞风险。",
+        "confidence": 0.92,
+        "category": "security",
+        "rule_reference": "OWASP-Insecure-Randomness / CWE-330"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.92,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.92,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var sessionId = \"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, function(c) {\n  var r = Math.random() * 16 | 0, v = c === \"x\" ? r : (r & 0x3 | 0x8);\n  return v.toString(16);\n});",
+    "code_snippet_good": "var crypto = require(\"crypto\");\nvar sessionId = crypto.randomUUID();",
+    "suggestion": "使用 crypto.randomUUID()（Node.js 14.17+）或 crypto.randomBytes() 替代 Math.random()。对于 sessionId 这种需要全局唯一的标识符，可预测性是安全隐患。"
+  },
+  {
+    "merged_id": "M-020",
+    "canonical_title": "No authentication — any local process can access all API endpoints",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "The HTTP server has zero authentication. Any process running on the same machine (or any device on the network if the server is bound to 0.0.0.0) can: read all session data including conversation history, create/delete/launch sessions, delete snapshots, modify the sessionConfigMap, and trigger arbitrary process spawning via /api/create-and-open. The CORS policy only restricts origins to localhost, but this provides no protection against local attackers or CSRF from any localhost web page.",
+    "category": "security",
+    "file": "server/index.js",
+    "line_range": [
+      21,
+      25
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-005",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "No authentication — any local process can access all API endpoints",
+        "description": "The HTTP server has zero authentication. Any process running on the same machine (or any device on the network if the server is bound to 0.0.0.0) can: read all session data including conversation history, create/delete/launch sessions, delete snapshots, modify the sessionConfigMap, and trigger arbitrary process spawning via /api/create-and-open. The CORS policy only restricts origins to localhost, but this provides no protection against local attackers or CSRF from any localhost web page.",
+        "confidence": 0.92,
+        "category": "security",
+        "rule_reference": "CWE-306: Missing Authentication for Critical Function"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.92,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.92,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var server = http.createServer(function(req, res) {\n  var origin = req.headers.origin;\n  if (origin && /^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/.test(origin)) {\n    res.setHeader(\"Access-Control-Allow-Origin\", origin);\n  }\n  // ... no auth check",
+    "code_snippet_good": "var API_TOKEN = process.env.CC_PANEL_TOKEN || require('crypto').randomBytes(32).toString('hex');\nvar server = http.createServer(function(req, res) {\n  // Auth check for API endpoints\n  if (req.url.startsWith('/api/')) {\n    var auth = req.headers['authorization'];\n    if (auth !== 'Bearer ' + API_TOKEN) {\n      res.writeHead(401); res.end('Unauthorized');\n      return;\n    }\n  }\n  // ... rest of handler",
+    "suggestion": "Add at minimum a shared secret token authentication:\n\n```javascript\nvar API_TOKEN = process.env.CC_PANEL_TOKEN || require('crypto').randomBytes(32).toString('hex');\nconsole.log('[CC-Panel] API Token: ' + API_TOKEN);\n\nvar server = http.createServer(function(req, res) {\n  // Skip auth for static assets\n  if (req.url === '/' || req.url === '/index.html' || req.url === '/sortable.min.js') {\n    // serve static\n  } else {\n    var authHeader = req.headers['authorization'];\n    if (!authHeader || authHeader !== 'Bearer ' + API_TOKEN) {\n      res.writeHead(401); res.end('Unauthorized');\n      return;\n    }\n  }\n  // ... rest of handler\n});\n```"
+  },
+  {
+    "merged_id": "M-030",
+    "canonical_title": "God Function反模式：单个请求处理函数承担过多职责",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "HTTP server的回调函数包含20+个路由分支，HTML模板内联、业务逻辑混杂。违反单一职责原则，难以测试和维护。新增路由需要在巨大函数中寻找插入点。",
+    "category": "maintainability",
+    "file": "index.js",
+    "line_range": [
+      127,
+      155
+    ],
+    "sources": [
+      {
+        "agent": "C",
+        "finding_id": "C-003",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "God Function反模式：单个请求处理函数承担过多职责",
+        "description": "HTTP server的回调函数包含20+个路由分支，HTML模板内联、业务逻辑混杂。违反单一职责原则，难以测试和维护。新增路由需要在巨大函数中寻找插入点。",
+        "confidence": 0.92,
+        "category": "maintainability",
+        "rule_reference": "Clean Code: Functions should do one thing"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.92,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.92,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "code_snippet_bad": "var server = http.createServer(function(req, res) {\n  if (sse.handleSSE(req, res)) return;\n  if (req.url === \"/import-localstorage\") { /* 50 lines */ }\n  if (req.url === \"/\" || req.url === \"/index.html\") { /* ... */ }\n  // ... 15 more routes\n});",
+    "code_snippet_good": "// routes/index.js - centralized router\nconst routes = [\n  { pattern: '/api/events', handler: sse.handleSSE },\n  { pattern: '/import-localstorage', handler: importHandler },\n  { pattern: '/', handler: indexHandler },\n];\n\nfunction router(req, res) {\n  for (const route of routes) {\n    if (route.handler(req, res)) return;\n  }\n  res.writeHead(404); res.end('404');\n}",
+    "suggestion": "将路由分发重构为中间件模式，每个路由模块自行注册。HTML模板移至独立文件，使用express或koa等框架简化路由管理。"
+  },
+  {
+    "merged_id": "M-006",
+    "canonical_title": "buildRelationsResponse 函数 220+ 行，混合了图构建、阶段检测、瀑布流计算三个独立关注点",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "buildRelationsResponse 同时构建节点/边的关系图、检测会话阶段（phase detection）、计算瀑布流时间线。这三个逻辑完全独立，但被揉在一个函数中。phase detection 使用了 PHASE_GAP_MS 和 PARALLEL_WIN_MS 两个魔法数字，没有注释解释为什么是 10 分钟和 4 分钟。waterfall 计算逻辑中重新读取并解析了父文件（pLines），但前面已经读取过一次。",
+    "category": "maintainability",
+    "file": "routes\\session.js",
+    "line_range": [
+      95,
+      320
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-006",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "buildRelationsResponse 函数 220+ 行，混合了图构建、阶段检测、瀑布流计算三个独立关注点",
+        "description": "buildRelationsResponse 同时构建节点/边的关系图、检测会话阶段（phase detection）、计算瀑布流时间线。这三个逻辑完全独立，但被揉在一个函数中。phase detection 使用了 PHASE_GAP_MS 和 PARALLEL_WIN_MS 两个魔法数字，没有注释解释为什么是 10 分钟和 4 分钟。waterfall 计算逻辑中重新读取并解析了父文件（pLines），但前面已经读取过一次。",
+        "confidence": 0.91,
+        "category": "maintainability",
+        "rule_reference": "SRP / Extract Method refactoring"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.91,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.91,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "suggestion": "拆分为三个独立函数：buildGraphNodes(target) → detectPhases(edges, userMessages) → buildWaterfall(pLines)。将魔法数字提取为命名常量并添加注释。避免重复读取文件——将 pLines 作为参数传递。"
+  },
+  {
+    "merged_id": "M-005",
+    "canonical_title": "parseSessionChunk 函数 110+ 行，承担了 JSONL 解析、token 统计、消息提取等 5 项职责",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "parseSessionChunk 是整个系统的核心函数，但它同时负责：(1) 文件 I/O 和偏移量管理，(2) JSONL 行解析，(3) token 使用量统计，(4) 用户消息和首条消息提取，(5) tool_use 决策记录。违反单一职责原则，难以单独测试任何一个逻辑分支。函数内部有 8 个嵌套的 for 循环和条件判断，认知复杂度极高。",
+    "category": "maintainability",
+    "file": "scanner.js",
+    "line_range": [
+      90,
+      200
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-005",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "parseSessionChunk 函数 110+ 行，承担了 JSONL 解析、token 统计、消息提取等 5 项职责",
+        "description": "parseSessionChunk 是整个系统的核心函数，但它同时负责：(1) 文件 I/O 和偏移量管理，(2) JSONL 行解析，(3) token 使用量统计，(4) 用户消息和首条消息提取，(5) tool_use 决策记录。违反单一职责原则，难以单独测试任何一个逻辑分支。函数内部有 8 个嵌套的 for 循环和条件判断，认知复杂度极高。",
+        "confidence": 0.9,
+        "category": "maintainability",
+        "rule_reference": "SRP / Clean Code - Functions Should Do One Thing"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.9,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.9,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "suggestion": "拆分为：readFileChunk(offset) → parseLines(content) → extractMetadata(entries) → accumulateTokens(entries) → extractDecisions(entries)。每个函数可以独立测试，主函数变为管道式调用。"
+  },
+  {
+    "merged_id": "M-022",
+    "canonical_title": "Information Disclosure — full filesystem paths exposed in API responses",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "The `/api/session/:id` endpoint returns `filePath: fpath` (line 104) which exposes the full filesystem path to the session JSONL file. Similarly, `/api/sessions` returns `s.filePath = s._file` (sessions.js:21). This reveals the internal directory structure, username, and project organization to any client. An attacker can use this information to craft more targeted path traversal attacks or understand the system layout.",
+    "category": "security",
+    "file": "server/routes/session.js",
+    "line_range": [
+      104,
+      104
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-007",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "Information Disclosure — full filesystem paths exposed in API responses",
+        "description": "The `/api/session/:id` endpoint returns `filePath: fpath` (line 104) which exposes the full filesystem path to the session JSONL file. Similarly, `/api/sessions` returns `s.filePath = s._file` (sessions.js:21). This reveals the internal directory structure, username, and project organization to any client. An attacker can use this information to craft more targeted path traversal attacks or understand the system layout.",
+        "confidence": 0.9,
+        "category": "security",
+        "rule_reference": "CWE-200: Exposure of Sensitive Information"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.9,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.9,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var resp = {\n  id: cached.id, title: cached.title, ...\n  filePath: fpath\n};",
+    "code_snippet_good": "var resp = {\n  id: cached.id, title: cached.title, ...\n  // filePath removed or sanitized\n};",
+    "suggestion": "Strip the filesystem path from API responses, or return only a relative/basename:\n\n```javascript\n// Instead of:\nfilePath: fpath\n// Use:\nfilePath: path.basename(fpath)\n// Or remove entirely if not needed by the frontend\n```"
+  },
+  {
+    "merged_id": "M-032",
+    "canonical_title": "阻塞I/O：请求处理路径中使用同步文件操作",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "parseSessionChunk使用fs.readFileSync读取整个JSONL文件，该函数在每个API请求中被调用。大文件（数MB）会阻塞事件循环，导致所有并发请求延迟。",
+    "category": "performance",
+    "file": "scanner.js",
+    "line_range": [
+      95,
+      130
+    ],
+    "sources": [
+      {
+        "agent": "C",
+        "finding_id": "C-005",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "阻塞I/O：请求处理路径中使用同步文件操作",
+        "description": "parseSessionChunk使用fs.readFileSync读取整个JSONL文件，该函数在每个API请求中被调用。大文件（数MB）会阻塞事件循环，导致所有并发请求延迟。",
+        "confidence": 0.9,
+        "category": "performance",
+        "rule_reference": "Node.js Best Practices: Avoid blocking the event loop"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.9,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.9,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "performance"
+      ]
+    },
+    "code_snippet_bad": "var fd = fs.openSync(filePath, \"r\");\ntry {\n  var buf = Buffer.alloc(Math.max(1, stat.size - startOffset));\n  var bytesRead = fs.readSync(fd, buf, 0, buf.length, startOffset);\n  content = buf.toString(\"utf-8\", 0, bytesRead);\n} finally { fs.closeSync(fd); }",
+    "code_snippet_good": "const fs = require('fs').promises;\nconst readline = require('readline');\n\nasync function parseSessionChunk(filePath, startOffset) {\n  const stream = fs.createReadStream(filePath, { start: startOffset });\n  const rl = readline.createInterface({ input: stream });\n  for await (const line of rl) {\n    // Process line by line\n  }\n}",
+    "suggestion": "将parseSessionChunk改为async函数，使用fs.promises.readFile。对于大文件，实现流式解析（逐行读取），避免一次性加载到内存。"
+  },
+  {
+    "merged_id": "M-003",
+    "canonical_title": "/import-localstorage 路由通过字符串拼接注入用户数据到 HTML，存在 XSS 风险",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "import-data.json 的内容通过 JSON.stringify 后直接拼接进 HTML 的 <script> 标签。虽然 JSON.stringify 会转义双引号，但如果文件内容包含 </script> 标签或特殊 Unicode 字符（如 U+2028/U+2029），可能突破字符串上下文执行任意 JavaScript。此外，该路由没有认证机制，任何能访问服务器的人都可以触发。",
+    "category": "security",
+    "file": "index.js",
+    "line_range": [
+      48,
+      70
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-003",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "/import-localstorage 路由通过字符串拼接注入用户数据到 HTML，存在 XSS 风险",
+        "description": "import-data.json 的内容通过 JSON.stringify 后直接拼接进 HTML 的 <script> 标签。虽然 JSON.stringify 会转义双引号，但如果文件内容包含 </script> 标签或特殊 Unicode 字符（如 U+2028/U+2029），可能突破字符串上下文执行任意 JavaScript。此外，该路由没有认证机制，任何能访问服务器的人都可以触发。",
+        "confidence": 0.88,
+        "category": "security",
+        "rule_reference": "CWE-79 / XSS via HTML injection"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.88,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.88,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var safeData = JSON.stringify(JSON.parse(importData));\n// ... 直接拼入 HTML\nvar html = '...var d=' + safeData + ';...';",
+    "code_snippet_good": "// 方案: 数据通过 API 返回，前端 fetch\nif (req.url === '/api/import-data') {\n  res.writeHead(200, {'Content-Type':'application/json'});\n  res.end(fs.readFileSync(importFile, 'utf8'));\n  return;\n}\n// 前端: fetch('/api/import-data').then(r=>r.json()).then(d=>{...})",
+    "suggestion": "1. 将数据通过独立 API 端点返回 JSON，前端 fetch 获取后再写入 localStorage，避免将数据内嵌到 HTML。2. 添加至少 localhost 限制或简单的 token 认证。3. 如果必须内嵌，使用 CSP nonce 保护 script 标签。"
+  },
+  {
+    "merged_id": "M-008",
+    "canonical_title": "subAgentCache.forEach 遍历全部缓存只为筛选属于当前 session 的 agent，O(n×m) 复杂度",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "/api/sessions 和 /api/agents 路由中，对每个 session 都遍历整个 subAgentCache（key.indexOf(s.id + '::') === 0）。如果缓存中有 1000 个 sub-agent 和 100 个 session，每次请求要执行 100,000 次字符串比较。这个模式在两个路由中重复出现。",
+    "category": "performance",
+    "file": "routes\\sessions.js",
+    "line_range": [
+      28,
+      40
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-008",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "subAgentCache.forEach 遍历全部缓存只为筛选属于当前 session 的 agent，O(n×m) 复杂度",
+        "description": "/api/sessions 和 /api/agents 路由中，对每个 session 都遍历整个 subAgentCache（key.indexOf(s.id + '::') === 0）。如果缓存中有 1000 个 sub-agent 和 100 个 session，每次请求要执行 100,000 次字符串比较。这个模式在两个路由中重复出现。",
+        "confidence": 0.88,
+        "category": "performance",
+        "rule_reference": "performance / algorithmic-complexity"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.88,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.88,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "performance"
+      ]
+    },
+    "code_snippet_bad": "shared.subAgentCache.forEach(function(agent, key) {\n  if (key.indexOf(s.id + \"::\") === 0) {\n    s.subAgents.push(agent);\n  }\n});",
+    "code_snippet_good": "// 在 shared.js 中: subAgentIndex: new Map() // sessionId → [agentInfo]\nvar agents = shared.subAgentIndex.get(s.id) || [];\ns.subAgents = agents;",
+    "suggestion": "改用嵌套 Map 结构：subAgentCache = Map<sessionId, Map<agentId, agentInfo>>，按 sessionId 直接索引，避免全量遍历。或者在 scanSubAgents 时建立 sessionId → agentIds 的反向索引。"
+  },
+  {
+    "merged_id": "M-021",
+    "canonical_title": "XSS in /import-localstorage — JSON content injected into HTML without escaping",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "The `/import-localstorage` endpoint reads `import-data.json`, runs `JSON.stringify(JSON.parse(data))`, and concatenates the result directly into an HTML `<script>` tag. `JSON.stringify` does NOT escape `</script>` sequences. If `import-data.json` contains a value like `</script><img onerror=alert(document.cookie) src=x>`, the browser will close the script tag prematurely and execute the injected HTML/JavaScript. This is a stored XSS vulnerability that requires control of `import-data.json` (local file write or supply chain attack).",
+    "category": "security",
+    "file": "server/index.js",
+    "line_range": [
+      38,
+      40
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-006",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "XSS in /import-localstorage — JSON content injected into HTML without escaping",
+        "description": "The `/import-localstorage` endpoint reads `import-data.json`, runs `JSON.stringify(JSON.parse(data))`, and concatenates the result directly into an HTML `<script>` tag. `JSON.stringify` does NOT escape `</script>` sequences. If `import-data.json` contains a value like `</script><img onerror=alert(document.cookie) src=x>`, the browser will close the script tag prematurely and execute the injected HTML/JavaScript. This is a stored XSS vulnerability that requires control of `import-data.json` (local file write or supply chain attack).",
+        "confidence": 0.88,
+        "category": "security",
+        "rule_reference": "CWE-79: Cross-site Scripting (XSS)"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.88,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.88,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var importData = fs.readFileSync(importFile, \"utf8\");\nvar safeData = JSON.stringify(JSON.parse(importData));\nvar html = '...<script>!function(){var d=' + safeData + ';...}();</script>...';",
+    "code_snippet_good": "var importData = fs.readFileSync(importFile, \"utf8\");\n// Validate JSON, then HTML-escape before embedding\nJSON.parse(importData); // validate\nvar safeData = importData.replace(/<\\//g, '<\\\\/').replace(/<!--/g, '<\\\\!--');\n// Or serve via /api/import-data endpoint and fetch client-side",
+    "suggestion": "HTML-encode the JSON data before embedding in the HTML response, or use a safer injection method:\n\n```javascript\nvar importData = fs.readFileSync(importFile, 'utf8');\n// Validate it's safe JSON, then HTML-encode for embedding\nvar safeData = importData\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;')\n  .replace(/\"/g, '&quot;');\n// Or better: serve as a separate JSON endpoint and fetch via JS\nvar html = '...var d = JSON.parse(\\'' + safeData + '\\');...';\n```"
+  },
+  {
+    "merged_id": "M-031",
+    "canonical_title": "全局可变状态：shared模块作为隐式依赖注入",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "shared.js导出大量可变的全局状态（sessionCache, subAgentCache, sseClients等），所有模块直接导入修改。形成隐式的网状依赖，状态变更难以追踪，测试时无法隔离。",
+    "category": "maintainability",
+    "file": "shared.js",
+    "line_range": [
+      20,
+      45
+    ],
+    "sources": [
+      {
+        "agent": "C",
+        "finding_id": "C-004",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "全局可变状态：shared模块作为隐式依赖注入",
+        "description": "shared.js导出大量可变的全局状态（sessionCache, subAgentCache, sseClients等），所有模块直接导入修改。形成隐式的网状依赖，状态变更难以追踪，测试时无法隔离。",
+        "confidence": 0.88,
+        "category": "maintainability",
+        "rule_reference": "Clean Architecture: Dependency Rule"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.88,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.88,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "code_snippet_bad": "module.exports = {\n  sessionCache: new Map(),\n  subAgentCache: new Map(),\n  sseClients: [],\n  watchers: [],\n  // ... 15 more mutable exports\n};",
+    "code_snippet_good": "class SessionStore {\n  constructor() { this._cache = new Map(); }\n  get(id) { return this._cache.get(id); }\n  set(id, data) { this._cache.set(id, data); }\n}\n\nclass EventBus {\n  constructor() { this._clients = []; }\n  broadcast(data) { /* ... */ }\n}\n\nmodule.exports = { SessionStore, EventBus };",
+    "suggestion": "引入依赖注入模式，将shared重构为Context类，通过构造函数传入各模块。或至少将状态分为独立的Store类（SessionStore, EventBus等）。"
+  },
+  {
+    "merged_id": "M-037",
+    "canonical_title": "静默吞错：watcher错误被完全忽略",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "fs.watch的error事件处理器为空函数，watchDir的catch块也不记录日志。文件系统监控失败时，用户完全不知情，导致数据不更新但无任何提示。",
+    "category": "correctness",
+    "file": "watcher.js",
+    "line_range": [
+      25,
+      35
+    ],
+    "sources": [
+      {
+        "agent": "C",
+        "finding_id": "C-011",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "静默吞错：watcher错误被完全忽略",
+        "description": "fs.watch的error事件处理器为空函数，watchDir的catch块也不记录日志。文件系统监控失败时，用户完全不知情，导致数据不更新但无任何提示。",
+        "confidence": 0.88,
+        "category": "correctness",
+        "rule_reference": "The Pragmatic Programmer: Dead Programs Tell No Lies"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.88,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.88,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "correctness"
+      ]
+    },
+    "code_snippet_bad": "watcher.on(\"error\", function() { /* swallow */ });",
+    "code_snippet_good": "watcher.on('error', (err) => {\n  console.warn(`[watcher] Error watching ${dirPath}:`, err.message);\n  sse.broadcastSSE({ type: 'watcher-error', dir: dirPath, error: err.message });\n});",
+    "suggestion": "至少记录警告日志，并在SSE中广播watcher状态变化，让前端显示降级提示。"
+  },
+  {
+    "merged_id": "M-010",
+    "canonical_title": "/api/create-and-open 路由 95 行内联在 HTTP handler 中，应提取为独立模块",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "create-and-open 路由包含 UUID 生成、UUID 映射替换、时间戳替换、JSONL 文件写入、session metadata 创建、VSCode 启动等 6 个步骤，全部内联在 http.createServer 的回调函数中。与其他路由（open.js、session.js 等已独立为模块）风格不一致。",
+    "category": "maintainability",
+    "file": "index.js",
+    "line_range": [
+      99,
+      195
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-010",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "/api/create-and-open 路由 95 行内联在 HTTP handler 中，应提取为独立模块",
+        "description": "create-and-open 路由包含 UUID 生成、UUID 映射替换、时间戳替换、JSONL 文件写入、session metadata 创建、VSCode 启动等 6 个步骤，全部内联在 http.createServer 的回调函数中。与其他路由（open.js、session.js 等已独立为模块）风格不一致。",
+        "confidence": 0.87,
+        "category": "maintainability",
+        "rule_reference": "consistency / extract-method"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.87,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.87,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "suggestion": "提取为 routes/create.js 模块，遵循现有的 makeXxxRouter() 工厂函数模式。UUID 生成函数应提升为 shared 或工具模块中的公共函数。"
+  },
+  {
+    "merged_id": "M-034",
+    "canonical_title": "竞态条件：settings.json的写入-读取-恢复存在并发风险",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "swapSettingsJson写入settings.json后，launchSessionDirect在5秒后恢复原始快照。如果两个请求几乎同时到达，第二个请求可能恢复到第一个请求的临时值，而非原始值。",
+    "category": "correctness",
+    "file": "routes/open.js",
+    "line_range": [
+      140,
+      170
+    ],
+    "sources": [
+      {
+        "agent": "C",
+        "finding_id": "C-007",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "竞态条件：settings.json的写入-读取-恢复存在并发风险",
+        "description": "swapSettingsJson写入settings.json后，launchSessionDirect在5秒后恢复原始快照。如果两个请求几乎同时到达，第二个请求可能恢复到第一个请求的临时值，而非原始值。",
+        "confidence": 0.87,
+        "category": "correctness",
+        "rule_reference": "The Pragmatic Programmer: Concurrency"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.87,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.87,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "correctness"
+      ]
+    },
+    "code_snippet_bad": "setTimeout(function() {\n  try {\n    var currentSettings = fsModule.readFileSync(defaultSettingsPath, \"utf-8\");\n    if (ORIGINAL_SETTINGS && currentSettings !== ORIGINAL_SETTINGS) {\n      fsModule.writeFileSync(defaultSettingsPath, ORIGINAL_SETTINGS, \"utf-8\");\n    }\n  } catch(e) {}\n}, 5000);",
+    "code_snippet_good": "const lockfile = require('proper-lockfile');\n\nasync function withSettingsLock(fn) {\n  const release = await lockfile.lock(settingsPath);\n  try {\n    return await fn();\n  } finally {\n    await release();\n  }\n}",
+    "suggestion": "使用文件锁（proper-lockfile）或引入请求级别的配置覆盖机制（通过--settings参数传递，不修改全局文件）。"
+  },
+  {
+    "merged_id": "M-009",
+    "canonical_title": "fakePid 用 Math.random 生成 6 位数，碰撞概率不可忽略",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "创建 session metadata 时用 Math.floor(Math.random() * 900000) + 100000 生成 PID，范围 100000-999999。根据生日悖论，约 1000 个并发 session 时碰撞概率超过 50%。如果两个 session 生成相同 PID，后写入的 JSON 会覆盖前一个，导致 VSCode 扩展无法找到正确的 session metadata。",
+    "category": "bug",
+    "file": "index.js",
+    "line_range": [
+      174,
+      182
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-009",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "fakePid 用 Math.random 生成 6 位数，碰撞概率不可忽略",
+        "description": "创建 session metadata 时用 Math.floor(Math.random() * 900000) + 100000 生成 PID，范围 100000-999999。根据生日悖论，约 1000 个并发 session 时碰撞概率超过 50%。如果两个 session 生成相同 PID，后写入的 JSON 会覆盖前一个，导致 VSCode 扩展无法找到正确的 session metadata。",
+        "confidence": 0.85,
+        "category": "bug",
+        "rule_reference": "birthday-attack / collision-risk"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.85,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.85,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "bug"
+      ]
+    },
+    "code_snippet_bad": "var fakePid = Math.floor(Math.random() * 900000) + 100000;",
+    "code_snippet_good": "var crypto = require('crypto');\nvar fakePid = crypto.randomInt(100000, 999999);\n// 或使用自增 ID:\nvar fakePid = Date.now() % 900000 + 100000;",
+    "suggestion": "使用递增计数器（从一个随机起始值开始）或直接用 sessionId 作为文件名而非 PID。如果必须用 PID，使用 crypto.randomInt() 并检查文件是否已存在。"
+  },
+  {
+    "merged_id": "M-013",
+    "canonical_title": "/migrate 路由内嵌 80+ 行 HTML/JS 模板字符串，可读性极差",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "index.js 中有三个路由（/import-localstorage、/migrate、/api/create-and-open）将完整的 HTML 页面内嵌为字符串常量。这些 HTML 包含内联 CSS 和 JavaScript，单个字符串长达 80+ 行。修改任何前端逻辑都需要在字符串中精确定位，极易引入语法错误。",
+    "category": "maintainability",
+    "file": "index.js",
+    "line_range": [
+      85,
+      95
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-013",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "/migrate 路由内嵌 80+ 行 HTML/JS 模板字符串，可读性极差",
+        "description": "index.js 中有三个路由（/import-localstorage、/migrate、/api/create-and-open）将完整的 HTML 页面内嵌为字符串常量。这些 HTML 包含内联 CSS 和 JavaScript，单个字符串长达 80+ 行。修改任何前端逻辑都需要在字符串中精确定位，极易引入语法错误。",
+        "confidence": 0.85,
+        "category": "maintainability",
+        "rule_reference": "separation-of-concerns / template-extraction"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.85,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.85,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "suggestion": "将 HTML 模板提取为独立的 .html 文件（如 templates/migrate.html），用 fs.readFileSync 加载并用模板引擎（或简单的 String.replace）注入动态数据。遵循关注点分离原则。"
+  },
+  {
+    "merged_id": "M-019",
+    "canonical_title": "No session ID validation on /api/terminal-bat/ and /api/open-session/ endpoints",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "The `/api/terminal-bat/` (line 11) and `/api/open-session/` (line 26) endpoints decode the session ID from the URL but do not validate its format. Unlike `/api/session/` endpoints in session.js which validate UUID format with regex, these endpoints accept arbitrary strings. A crafted session ID containing path traversal sequences could potentially be used to target files outside the expected session directory when the session lookup falls back to filesystem scanning.",
+    "category": "security",
+    "file": "server/routes/open.js",
+    "line_range": [
+      11,
+      37
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-004",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "No session ID validation on /api/terminal-bat/ and /api/open-session/ endpoints",
+        "description": "The `/api/terminal-bat/` (line 11) and `/api/open-session/` (line 26) endpoints decode the session ID from the URL but do not validate its format. Unlike `/api/session/` endpoints in session.js which validate UUID format with regex, these endpoints accept arbitrary strings. A crafted session ID containing path traversal sequences could potentially be used to target files outside the expected session directory when the session lookup falls back to filesystem scanning.",
+        "confidence": 0.85,
+        "category": "security",
+        "rule_reference": "CWE-20: Improper Input Validation"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.85,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.85,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var batId = decodeURI(req.url.split(\"/api/terminal-bat/\")[1]);\nvar batCached = shared.sessionCache.get(batId);",
+    "code_snippet_good": "var batId = decodeURI(req.url.split(\"/api/terminal-bat/\")[1]);\nif (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(batId)) {\n  res.writeHead(400, { \"Content-Type\": \"application/json; charset=utf-8\" });\n  res.end(JSON.stringify({ error: \"invalid session id format\" }));\n  return true;\n}\nvar batCached = shared.sessionCache.get(batId);",
+    "suggestion": "Add UUID format validation before processing:\n\n```javascript\nif (req.url.startsWith('/api/terminal-bat/') && req.method === 'GET') {\n  var batId = decodeURI(req.url.split('/api/terminal-bat/')[1]);\n  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(batId)) {\n    res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });\n    res.end(JSON.stringify({ error: 'invalid session id format' }));\n    return true;\n  }\n  // ... rest of handler\n}\n```"
+  },
+  {
+    "merged_id": "M-024",
+    "canonical_title": "Weak random session ID generation using Math.random()",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "Session IDs are generated using `Math.random()` which is not cryptographically secure. On V8/Node.js, `Math.random()` uses xorshift128+ which is predictable if an attacker can observe a few outputs. Since session IDs are used as file paths and session identifiers, a predictable ID could allow an attacker to guess existing session IDs and access them via the unauthenticated API.",
+    "category": "security",
+    "file": "server/index.js",
+    "line_range": [
+      112,
+      115
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-009",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "Weak random session ID generation using Math.random()",
+        "description": "Session IDs are generated using `Math.random()` which is not cryptographically secure. On V8/Node.js, `Math.random()` uses xorshift128+ which is predictable if an attacker can observe a few outputs. Since session IDs are used as file paths and session identifiers, a predictable ID could allow an attacker to guess existing session IDs and access them via the unauthenticated API.",
+        "confidence": 0.85,
+        "category": "security",
+        "rule_reference": "CWE-330: Use of Insufficiently Random Values"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.85,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.85,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var sessionId = \"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, function(c) {\n  var r = Math.random() * 16 | 0, v = c === \"x\" ? r : (r & 0x3 | 0x8);\n  return v.toString(16);\n});",
+    "code_snippet_good": "var crypto = require('crypto');\nvar sessionId = crypto.randomUUID();",
+    "suggestion": "Use `crypto.randomUUID()` (Node.js 14.17+) or `crypto.randomBytes(16)` for session ID generation:\n\n```javascript\nvar crypto = require('crypto');\nvar sessionId = crypto.randomUUID();\n// Or for older Node.js:\nvar sessionId = crypto.randomBytes(16).toString('hex').replace(\n  /(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5'\n);\n```"
+  },
+  {
+    "merged_id": "M-029",
+    "canonical_title": "命令注入风险：用户输入直接拼接到bat文件命令",
+    "canonical_severity": "P0 BLOCKING",
+    "canonical_description": "spawnWithBat函数中，configFile参数从URL query获取后直接拼接到bat脚本的set命令中，未进行任何转义。攻击者可注入换行符执行任意命令。",
+    "category": "security",
+    "file": "routes/open.js",
+    "line_range": [
+      75,
+      95
+    ],
+    "sources": [
+      {
+        "agent": "C",
+        "finding_id": "C-002",
+        "severity": "blocking",
+        "unified_severity": "P0 BLOCKING",
+        "title": "命令注入风险：用户输入直接拼接到bat文件命令",
+        "description": "spawnWithBat函数中，configFile参数从URL query获取后直接拼接到bat脚本的set命令中，未进行任何转义。攻击者可注入换行符执行任意命令。",
+        "confidence": 0.85,
+        "category": "security",
+        "rule_reference": "CWE-78: OS Command Injection"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.85,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.85,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "batLines.push(\"set \" + k + \"=\" + cfg.env[k]);",
+    "code_snippet_good": "// Validate and sanitize env key/value\nfunction sanitizeEnvValue(val) {\n  return String(val).replace(/[\\r\\n%]/g, '');\n}\nbatLines.push(\"set \" + k + \"=\" + sanitizeEnvValue(cfg.env[k]));",
+    "suggestion": "对configFile进行严格白名单验证（只允许字母数字和连字符），或使用child_process.execFile直接传递参数而非写入bat文件。"
+  },
+  {
+    "merged_id": "M-035",
+    "canonical_title": "硬编码魔法值：端口号和路径分散在代码中",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "端口5022、超时时间300000ms、扫描间隔30000ms等魔法值直接内联在代码中。违反DRY原则，修改时需要搜索多个位置。",
+    "category": "maintainability",
+    "file": "index.js",
+    "line_range": [
+      130,
+      135
+    ],
+    "sources": [
+      {
+        "agent": "C",
+        "finding_id": "C-008",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "硬编码魔法值：端口号和路径分散在代码中",
+        "description": "端口5022、超时时间300000ms、扫描间隔30000ms等魔法值直接内联在代码中。违反DRY原则，修改时需要搜索多个位置。",
+        "confidence": 0.85,
+        "category": "maintainability",
+        "rule_reference": "Clean Code: Constants"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.85,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.85,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "code_snippet_bad": "setTimeout(function() { try { fs.unlinkSync(batPath); } catch (e) {} }, 300000);\nsetInterval(function() { watcher.processChanges(); }, 30000);",
+    "code_snippet_good": "// shared.js\nmodule.exports = {\n  BAT_CLEANUP_DELAY: parseInt(process.env.BAT_CLEANUP_DELAY || '300000'),\n  POLL_INTERVAL: parseInt(process.env.POLL_INTERVAL || '30000'),\n};",
+    "suggestion": "将所有配置值集中到shared.js或专门的config模块，通过环境变量或配置文件提供默认值。"
+  },
+  {
+    "merged_id": "M-033",
+    "canonical_title": "CORS配置过宽：允许任意localhost端口",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "CORS正则 /^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/ 允许任意端口的localhost请求。如果用户机器上有恶意网页，可向CC Panel发起跨域请求读取会话数据。",
+    "category": "security",
+    "file": "index.js",
+    "line_range": [
+      102,
+      107
+    ],
+    "sources": [
+      {
+        "agent": "C",
+        "finding_id": "C-006",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "CORS配置过宽：允许任意localhost端口",
+        "description": "CORS正则 /^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/ 允许任意端口的localhost请求。如果用户机器上有恶意网页，可向CC Panel发起跨域请求读取会话数据。",
+        "confidence": 0.82,
+        "category": "security",
+        "rule_reference": "OWASP CORS Best Practices"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.82,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.82,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "if (origin && /^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/.test(origin)) {\n  res.setHeader(\"Access-Control-Allow-Origin\", origin);\n}",
+    "code_snippet_good": "const ALLOWED_ORIGINS = new Set([\n  `http://localhost:${PORT}`,\n  `http://127.0.0.1:${PORT}`\n]);\nif (ALLOWED_ORIGINS.has(origin)) {\n  res.setHeader('Access-Control-Allow-Origin', origin);\n}",
+    "suggestion": "将CORS origin限制为面板自身端口（http://localhost:5022），或通过环境变量配置允许的origin列表。"
+  },
+  {
+    "merged_id": "M-012",
+    "canonical_title": "waterfallSpans 超过 200 条时截断并重新计算 relStart，可能丢失关键上下文",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "当 waterfallSpans 超过 200 条时，代码用 slice(-200) 保留最后 200 条，然后减去新锚点重新计算 relStart。这会丢弃会话开头的用户消息和早期工具调用，使瀑布流图从中间开始，用户无法看到完整的会话时间线。截断阈值 200 是硬编码的魔法数字。",
+    "category": "correctness",
+    "file": "routes\\session.js",
+    "line_range": [
+      290,
+      308
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-012",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "waterfallSpans 超过 200 条时截断并重新计算 relStart，可能丢失关键上下文",
+        "description": "当 waterfallSpans 超过 200 条时，代码用 slice(-200) 保留最后 200 条，然后减去新锚点重新计算 relStart。这会丢弃会话开头的用户消息和早期工具调用，使瀑布流图从中间开始，用户无法看到完整的会话时间线。截断阈值 200 是硬编码的魔法数字。",
+        "confidence": 0.8,
+        "category": "correctness",
+        "rule_reference": "data-integrity / magic-number"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.8,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.8,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "correctness"
+      ]
+    },
+    "suggestion": "1. 改为保留首条 user 消息 + 最后 N 条，确保上下文完整。2. 将 200 提取为配置常量 WATERFALL_MAX_SPANS。3. 考虑在响应中标记 truncatedRoute = true，让前端知道数据被截断了。"
+  },
+  {
+    "merged_id": "M-036",
+    "canonical_title": "算法复杂度过高：O(n*m)的agent匹配算法",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "buildRelationsResponse中，dispatch calls与sub-agents的匹配使用嵌套循环，对每个call遍历所有agents。当agent数量增长时，性能将二次方下降。",
+    "category": "maintainability",
+    "file": "routes/session.js",
+    "line_range": [
+      180,
+      250
+    ],
+    "sources": [
+      {
+        "agent": "C",
+        "finding_id": "C-010",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "算法复杂度过高：O(n*m)的agent匹配算法",
+        "description": "buildRelationsResponse中，dispatch calls与sub-agents的匹配使用嵌套循环，对每个call遍历所有agents。当agent数量增长时，性能将二次方下降。",
+        "confidence": 0.8,
+        "category": "maintainability",
+        "rule_reference": "Clean Code: Premature Optimization (but this is a known bottleneck)"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.8,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.8,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "code_snippet_bad": "for (var ci = 0; ci < sortedCalls.length; ci++) {\n  for (var ai = 0; ai < sortedAgents.length; ai++) {\n    var dist = Math.abs(new Date(call.time).getTime() - new Date(sortedAgents[ai].startTime).getTime());\n    if (dist < bestDist && dist < 60000) { /* ... */ }\n  }\n}",
+    "code_snippet_good": "// Pre-sort both arrays, use two-pointer technique\nconst matchByTimeProximity = (calls, agents, threshold = 60000) => {\n  const matches = new Map();\n  let j = 0;\n  for (const call of calls) {\n    while (j < agents.length && agents[j].startTime < call.time - threshold) j++;\n    // Check agents[j] and agents[j+1] for closest match\n  }\n  return matches;\n};",
+    "suggestion": "预排序后使用双指针或时间索引（Map<minute, agents[]>）将匹配复杂度降至O(n log n)。"
+  },
+  {
+    "merged_id": "M-014",
+    "canonical_title": "ORIGINAL_SETTINGS 的 IIFE 在模块加载时同步读取文件，失败时静默吞掉错误",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "open.js 顶部的 IIFE 在 require 时同步读取 settings.json 作为原始快照。如果此时文件不存在（如首次安装），ORIGINAL_SETTINGS 为 null，后续所有 restore 操作都会跳过，但没有任何日志提示。console.error 只在 catch 中输出，但不会阻止模块加载。",
+    "category": "maintainability",
+    "file": "routes\\open.js",
+    "line_range": [
+      10,
+      20
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-014",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "ORIGINAL_SETTINGS 的 IIFE 在模块加载时同步读取文件，失败时静默吞掉错误",
+        "description": "open.js 顶部的 IIFE 在 require 时同步读取 settings.json 作为原始快照。如果此时文件不存在（如首次安装），ORIGINAL_SETTINGS 为 null，后续所有 restore 操作都会跳过，但没有任何日志提示。console.error 只在 catch 中输出，但不会阻止模块加载。",
+        "confidence": 0.78,
+        "category": "maintainability",
+        "rule_reference": "lazy-initialization / fail-safe"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.78,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.78,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "suggestion": "将快照延迟到首次 swapSettingsJson 调用时获取（lazy initialization），或在 restore 时检查 ORIGINAL_SETTINGS 是否为 null 并输出警告日志。这样即使 settings.json 后来被创建，也能正确工作。"
+  },
+  {
+    "merged_id": "M-026",
+    "canonical_title": "Unbounded synchronous file read — large JSONL files will block the event loop",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "When `startOffset === 0`, `parseSessionChunk` allocates `Buffer.alloc(stat.size - 0)` which reads the ENTIRE file into memory synchronously. For very large session files (hundreds of MB), this will block the Node.js event loop and potentially cause memory exhaustion. The synchronous `fs.openSync`, `fs.readSync`, and `fs.statSync` calls compound the issue.",
+    "category": "performance",
+    "file": "server/scanner.js",
+    "line_range": [
+      92,
+      97
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-011",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "Unbounded synchronous file read — large JSONL files will block the event loop",
+        "description": "When `startOffset === 0`, `parseSessionChunk` allocates `Buffer.alloc(stat.size - 0)` which reads the ENTIRE file into memory synchronously. For very large session files (hundreds of MB), this will block the Node.js event loop and potentially cause memory exhaustion. The synchronous `fs.openSync`, `fs.readSync`, and `fs.statSync` calls compound the issue.",
+        "confidence": 0.78,
+        "category": "performance",
+        "rule_reference": "DoS via Resource Exhaustion"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.78,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.78,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "performance"
+      ]
+    },
+    "code_snippet_bad": "var fd = fs.openSync(filePath, \"r\");\ntry {\n  var buf = Buffer.alloc(Math.max(1, stat.size - startOffset));\n  var bytesRead = fs.readSync(fd, buf, 0, buf.length, startOffset);",
+    "code_snippet_good": "var MAX_SIZE = 50 * 1024 * 1024; // 50MB cap\nvar readSize = Math.min(stat.size - startOffset, MAX_SIZE);\nvar readOffset = (stat.size - startOffset > MAX_SIZE) ? stat.size - MAX_SIZE : startOffset;\nvar fd = fs.openSync(filePath, \"r\");\ntry {\n  var buf = Buffer.alloc(Math.max(1, readSize));\n  var bytesRead = fs.readSync(fd, buf, 0, buf.length, readOffset);",
+    "suggestion": "Add a size cap for full reads, and consider streaming for large files:\n\n```javascript\nvar MAX_FULL_READ = 50 * 1024 * 1024; // 50MB\nif (startOffset === 0 && stat.size > MAX_FULL_READ) {\n  // Read only the tail portion\n  startOffset = stat.size - MAX_FULL_READ;\n}\n```"
+  },
+  {
+    "merged_id": "M-015",
+    "canonical_title": "processChanges 每次触发都执行全量 scanSessions，无法利用增量解析",
+    "canonical_severity": "P3 MEDIUM",
+    "canonical_description": "watcher 检测到文件变化后调用 processChanges，而 processChanges 调用 scanner.scanSessions 做全量目录扫描。虽然 scanner 内部有 fileOffsets 增量解析机制，但 scanSessions 的递归目录遍历（readdir + stat）在会话文件很多时仍然开销不小。watcher 本身已经知道哪个目录变化了，但这个信息没有传递给 scanner。",
+    "category": "performance",
+    "file": "watcher.js",
+    "line_range": [
+      44,
+      60
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-015",
+        "severity": "suggestion",
+        "unified_severity": "P3 MEDIUM",
+        "title": "processChanges 每次触发都执行全量 scanSessions，无法利用增量解析",
+        "description": "watcher 检测到文件变化后调用 processChanges，而 processChanges 调用 scanner.scanSessions 做全量目录扫描。虽然 scanner 内部有 fileOffsets 增量解析机制，但 scanSessions 的递归目录遍历（readdir + stat）在会话文件很多时仍然开销不小。watcher 本身已经知道哪个目录变化了，但这个信息没有传递给 scanner。",
+        "confidence": 0.76,
+        "category": "performance",
+        "rule_reference": "incremental-processing / watch-optimization"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.76,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.76,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "performance"
+      ]
+    },
+    "suggestion": "让 fs.watch 的回调传递变化的 filename 和 dirPath 给 processChanges，processChanges 只对该目录下的文件做增量解析。全量扫描留给 30 秒的定时轮询作为兜底。"
+  },
+  {
+    "merged_id": "M-027",
+    "canonical_title": "Unbounded in-memory caches — sessionCache, subAgentCache, fileOffsets grow without limit",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "The `sessionCache`, `subAgentCache`, and `fileOffsets` Maps in shared.js grow without any size limit. Every session scanned is cached permanently. Over time, with many sessions, this will consume increasing amounts of memory. There is no eviction policy, no LRU mechanism, and no maximum size constraint.",
+    "category": "performance",
+    "file": "server/shared.js",
+    "line_range": [
+      43,
+      46
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-012",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "Unbounded in-memory caches — sessionCache, subAgentCache, fileOffsets grow without limit",
+        "description": "The `sessionCache`, `subAgentCache`, and `fileOffsets` Maps in shared.js grow without any size limit. Every session scanned is cached permanently. Over time, with many sessions, this will consume increasing amounts of memory. There is no eviction policy, no LRU mechanism, and no maximum size constraint.",
+        "confidence": 0.75,
+        "category": "performance",
+        "rule_reference": "Resource Management"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.75,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.75,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "performance"
+      ]
+    },
+    "code_snippet_bad": "// Session cache\nsessionCache: new Map(),\nsubAgentCache: new Map(),\nfileOffsets: new Map(),",
+    "code_snippet_good": "// Session cache with size limit\nsessionCache: new Map(),\nsubAgentCache: new Map(),\nfileOffsets: new Map(),\nMAX_CACHE_SIZE: 1000,",
+    "suggestion": "Implement a maximum cache size with LRU eviction:\n\n```javascript\nvar MAX_CACHE_SIZE = 1000;\n\nfunction setWithLimit(map, key, value) {\n  if (map.size >= MAX_CACHE_SIZE) {\n    var firstKey = map.keys().next().value;\n    map.delete(firstKey);\n  }\n  map.set(key, value);\n}\n```"
+  },
+  {
+    "merged_id": "M-038",
+    "canonical_title": "定价模型硬编码：DEFAULT_PRICING应为配置文件",
+    "canonical_severity": "P3 MEDIUM",
+    "canonical_description": "价格数据（input/cacheRead/output）硬编码在代码中。价格变动时需要修改代码并重新部署。不同模型的价格结构不一致。",
+    "category": "maintainability",
+    "file": "pricing.js",
+    "line_range": [
+      8,
+      12
+    ],
+    "sources": [
+      {
+        "agent": "C",
+        "finding_id": "C-012",
+        "severity": "suggestion",
+        "unified_severity": "P3 MEDIUM",
+        "title": "定价模型硬编码：DEFAULT_PRICING应为配置文件",
+        "description": "价格数据（input/cacheRead/output）硬编码在代码中。价格变动时需要修改代码并重新部署。不同模型的价格结构不一致。",
+        "confidence": 0.75,
+        "category": "maintainability",
+        "rule_reference": "Clean Architecture: Framework Independence"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.75,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.75,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "code_snippet_bad": "var DEFAULT_PRICING = {\n  \"deepseek-v4-pro\":   { input: 1.0, cacheRead: 0.2, output: 2.0 },\n  \"deepseek-v4-flash\": { input: 0.5, cacheRead: 0.1, output: 1.0 }\n};",
+    "code_snippet_good": "// pricing-defaults.json (shipped with package)\n{\n  \"deepseek-v4-pro\": { \"input\": 1.0, \"cacheRead\": 0.2, \"output\": 2.0 }\n}\n\n// pricing.js\nconst DEFAULTS_PATH = path.join(__dirname, 'pricing-defaults.json');\nfunction loadDefaults() { return JSON.parse(fs.readFileSync(DEFAULTS_PATH)); }",
+    "suggestion": "将默认定价移至JSON配置文件，pricing.json作为用户覆盖。代码只保留最低限度的fallback价格。"
+  },
+  {
+    "merged_id": "M-025",
+    "canonical_title": "Prototype pollution risk in mergeSessionData via for...in loop",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "The `mergeSessionData` function uses `for (var pid2 in delta._seenPromptIds)` at line 220 to iterate over properties. If `delta._seenPromptIds` has prototype pollution (e.g., via a maliciously crafted JSONL entry), this could inject unexpected properties into the cached session's `_seenPromptIds`. While the risk is low since the data comes from local JSONL files, it's a defense-in-depth concern.",
+    "category": "security",
+    "file": "server/scanner.js",
+    "line_range": [
+      218,
+      222
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-010",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "Prototype pollution risk in mergeSessionData via for...in loop",
+        "description": "The `mergeSessionData` function uses `for (var pid2 in delta._seenPromptIds)` at line 220 to iterate over properties. If `delta._seenPromptIds` has prototype pollution (e.g., via a maliciously crafted JSONL entry), this could inject unexpected properties into the cached session's `_seenPromptIds`. While the risk is low since the data comes from local JSONL files, it's a defense-in-depth concern.",
+        "confidence": 0.72,
+        "category": "security",
+        "rule_reference": "CWE-1321: Prototype Pollution"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.72,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.72,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "if (delta._seenPromptIds) {\n  if (!cached._seenPromptIds) cached._seenPromptIds = {};\n  for (var pid2 in delta._seenPromptIds) {\n    if (delta._seenPromptIds.hasOwnProperty(pid2)) cached._seenPromptIds[pid2] = true;\n  }\n}",
+    "code_snippet_good": "if (delta._seenPromptIds) {\n  if (!cached._seenPromptIds) cached._seenPromptIds = {};\n  var pids = Object.keys(delta._seenPromptIds);\n  for (var i = 0; i < pids.length; i++) {\n    cached._seenPromptIds[pids[i]] = true;\n  }\n}",
+    "suggestion": "Use `Object.keys()` or `hasOwnProperty` check to prevent prototype pollution:\n\n```javascript\nif (delta._seenPromptIds) {\n  if (!cached._seenPromptIds) cached._seenPromptIds = {};\n  var pids = Object.keys(delta._seenPromptIds);\n  for (var i = 0; i < pids.length; i++) {\n    cached._seenPromptIds[pids[i]] = true;\n  }\n}\n```"
+  }
+]

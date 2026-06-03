@@ -1,0 +1,283 @@
+{
+  "agent_id": "C",
+  "skill": "pragmatic-clean-code-reviewer",
+  "philosophy": "你是'架构防腐'的代码审查专家。你不只关心单行代码的对错，更关心这段代码在整个系统架构中的位置和长期影响。你的核心理念来自：The Pragmatic Programmer、Clean Code、Clean Architecture。你审查时的核心问题是：'这段代码会加速还是延缓系统的技术债务累积？'",
+  "review_scope": {
+    "files": [
+      "D:\\CC项目\\00\\ccl-launcher.js"
+    ],
+    "lines_total": 1532
+  },
+  "findings": [
+    {
+      "id": "C-001",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 82,
+      "line_range": [
+        82,
+        84
+      ],
+      "severity": "blocking",
+      "category": "bug",
+      "title": "函数名 b() 与 IIFE 作用域变量 b 发生遮蔽冲突",
+      "description": "第 8 行 IIFE 内声明 `var b = p.join(d, 'blessed', 'package.json')`（行8），但第 82 行又定义全局函数 `function b() { return _e }`。由于 JavaScript 的函数声明提升（hoisting），函数 b 会被提升到作用域顶部，覆盖 IIFE 内的 var b。然而在 IIFE 执行时（行1-29），b 已经被提升为函数引用而非字符串路径。第 9 行 `f.existsSync(b)` 将收到一个函数引用而非文件路径，`existsSync` 会将其转为字符串（函数的 toString()），导致路径检查永远返回 false。这意味着**每次运行都会触发 npm install**——除非 Node.js 对 existsSync 有特殊的类型转换行为。这是一个隐蔽的时序 bug。",
+      "suggestion": "将 IIFE 内的变量名改为不与全局函数冲突的名称，如 `blessedPkgPath`，或将函数 b() 重命名为 `getConfigDir()` 等有意义的名称。最佳方案：彻底重命名所有单字母函数为语义化名称。",
+      "code_snippet_bad": "var b = p.join(d, \"blessed\", \"package.json\"); // IIFE line 8\nif (!f.existsSync(b)) { // line 9\n...\nfunction b() { return _e } // line 82",
+      "code_snippet_good": "var blessedPkgPath = p.join(d, \"blessed\", \"package.json\");\nif (!f.existsSync(blessedPkgPath)) {\n...\nfunction getConfigDir() { return _e }",
+      "rule_reference": "Clean Code: Meaningful Names / Shadowing",
+      "confidence": 0.85
+    },
+    {
+      "id": "C-002",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 1,
+      "line_range": [
+        1,
+        1532
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "1532 行单文件混合了 6+ 个独立关注点，违反单一职责原则",
+      "description": "该文件同时承担：(1) 依赖自举与模块路径注入（行1-29），(2) 配置管理 CRUD（行54-131），(3) 导航状态机（行136-184），(4) TUI 渲染层 blessed 封装（行185-421），(5) 远程 tips/API 通信（行446-523），(6) Claude 进程启动与会话管理（行527-671），(7) 11 个屏幕定义（行673-959），(8) 向导流程 add_model（行1210-1358）。这使得任何单一功能的修改都必须理解整个 1532 行上下文，认知负担极高。随着功能演进，修改一个屏幕的行为可能意外破坏另一个屏幕的状态。",
+      "suggestion": "将文件拆分为以下模块：`config.js`（配置管理）、`navigation.js`（状态机）、`tui.js`（blessed 封装）、`screens/` 目录（每个屏幕一个文件）、`session.js`（会话管理）、`launcher.js`（进程启动）、`tips.js`（远程提示）。即使是单文件打包，也应在开发时保持模块化，用 bundler 合并。",
+      "rule_reference": "Clean Architecture: Single Responsibility Principle / Separation of Concerns",
+      "confidence": 0.95
+    },
+    {
+      "id": "C-003",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 189,
+      "line_range": [
+        185,
+        191
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "全局 UI 组件使用无语义单字母变量名，可读性极差",
+      "description": "所有 blessed UI 组件和回调都用单字母命名：`g`(screen), `F`(headerBox), `f`(list), `D`(footerBox), `S`(textbox), `P`(promptPrefix), `Y`(onSelect), `V`(onCancel), `k`(onSelectItem)。这些变量贯穿整个文件（f 被引用 50+ 次），使得代码几乎无法在不查阅定义的情况下理解。当新开发者（或未来的自己）看到 `f.hide()` 或 `Y?.(t)` 时，需要回溯到行 189 才能理解含义。这是技术债务的直接来源。",
+      "suggestion": "重命名为语义化名称：`g→screen`, `F→headerBox`, `f→listWidget`, `D→footerBar`, `S→inputBox`, `P→promptIndicator`, `Y→selectHandler`, `V→cancelHandler`, `k→itemChangeHandler`。即使最终打包为单文件，开发时应使用有意义的名称。",
+      "rule_reference": "Clean Code: Chapter 2 - Meaningful Names",
+      "confidence": 0.95
+    },
+    {
+      "id": "C-004",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 136,
+      "line_range": [
+        136,
+        139
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "全局可变状态散布在 10+ 个散落变量中，无封装",
+      "description": "应用状态分散在多个独立的全局变量中：`ce`(screenStack), `ae`(currentScreen), `ne`(selectedOption), `Ae`(sessionData), `u`(config), `Y/V/k`(UI callbacks), `De`(tipOverride), `tt`(currentTip), `_traceStep`。这些变量在文件各处被直接读写，没有任何封装或访问控制。修改一个变量的语义（如将 ne 从数字改为对象）需要搜索所有读写点。更危险的是，`u` 是配置的全局可变引用，任何地方都可以 `u.models.push(...)` 而不经过 `_()` 持久化，导致内存状态和磁盘状态不一致。",
+      "suggestion": "将相关状态封装到类或模块对象中：`NavigationState { stack, currentScreen, selectedOption }`, `SessionData { ... }`, `ConfigManager { get, set, save }`。通过方法访问而非直接暴露内部状态。配置对象应使用 Proxy 或 setter 拦截写入，自动触发持久化。",
+      "rule_reference": "Clean Architecture: Entity Encapsulation / Tell Don't Ask",
+      "confidence": 0.9
+    },
+    {
+      "id": "C-005",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 474,
+      "line_range": [
+        474,
+        506
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "远程 tips 内容未经验证直接存储和显示，存在注入风险",
+      "description": "函数 `ot()` 从 `${ie()}/api/ccl/tips` 获取 JSON 数据，直接调用 `Oe(s)` 将整个响应写入 `.ccl.config` 文件。后续 `st()` 读取 `tips.items` 数组并将内容赋值给 `tt`，最终在 TUI 中通过 `rt()` 返回显示。整个链路没有任何内容验证：(1) 未验证响应结构是否符合预期 schema，(2) 未对 tip 文本做 XSS/注入清理（blessed 支持 `{tag}` 标记语法，恶意内容可能注入 blessed 标签），(3) `force_update=true` 时直接覆盖整个配置文件，可能被中间人攻击利用。如果 API 端点被劫持或返回恶意数据，可以覆盖用户的配置文件。",
+      "suggestion": "添加响应 schema 验证（至少检查 tips.items 是字符串数组），对 tip 文本做 blessed 标签转义（`{` → `\\{`），移除 `force_update` 直接覆盖整个配置的行为（应只更新 tips 字段），使用 HTTPS 并验证证书。",
+      "code_snippet_bad": "let s = JSON.parse(r);\nif (!s) return;\nif (i) { Oe(s); return; } // force_update: 写入整个响应",
+      "code_snippet_good": "let s = JSON.parse(r);\nif (!s?.tips?.items || !Array.isArray(s.tips.items)) return;\ns.tips.items = s.tips.items.map(t => typeof t === 'string' ? t.replace(/\\{/g, '\\\\{') : '');\nif (i) { let cfg = de() || {}; cfg.tips = s.tips; Oe(cfg); return; }",
+      "rule_reference": "Pragmatic Programmer: Defensive Programming / Trust Boundary",
+      "confidence": 0.85
+    },
+    {
+      "id": "C-006",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 527,
+      "line_range": [
+        527,
+        560
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "函数 Dt 内部重复声明已存在的模块变量，造成混淆",
+      "description": "函数 `Dt` 在行 528 用 `var K = m(require('fs')), Q = m(require('path'))` 重新导入 fs 和 path 模块。但文件顶部已有 `T`（fs）、`ye`（path）、`Z`（fs）、`Xe`（path）、`Qt`（fs）、`Wt`（path）、`h`（fs）、`U`（path）等多个 fs/path 引用。整个文件中 fs 模块被 require 了至少 8 次，path 模块至少 7 次，每次使用不同的变量名。这不仅浪费内存（虽然 Node 有缓存），更使得代码审查时无法快速判断'这里用的是哪个引用'。",
+      "suggestion": "在文件顶部统一声明一次 `const fs = require('fs'), path = require('path')`，全文使用统一名称。移除所有重复的 require 调用。",
+      "rule_reference": "DRY Principle / Clean Code: Minimize Scope",
+      "confidence": 0.95
+    },
+    {
+      "id": "C-007",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 619,
+      "line_range": [
+        619,
+        641
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "Unix 平台 shell 命令拼接存在注入风险",
+      "description": "在 `ct()` 函数中，Unix 路径通过单引号转义后拼接到 shell 命令字符串中：`n.replace(/'/g, \"'\\\\''\")`。虽然对单引号做了转义，但项目路径 `n` 来自用户输入（通过 `N('project_path', n)` 设置），如果路径包含特殊字符如 `$(...)` 或反引号，在某些 shell 环境下可能被解释执行。此外，Claude 命令的参数 `e`（来自配置文件的模型设置等）也没有做额外验证。Windows 路径通过 `shell: true` 的 `spawnSync` 执行，同样存在参数注入风险。",
+      "suggestion": "Unix 平台使用 `execFileSync` 的数组参数形式而非拼接 shell 字符串（行 635 的 `execFileSync('/bin/sh', ['-c', s])` 应改为直接传递参数数组给 claude 进程）。Windows 平台对 `spawnSync` 使用 `shell: false` 并直接传递参数数组。",
+      "code_snippet_bad": "let o = [t, ...e].map(d => \"'\" + d.replace(/'/g, \"'\\\\''\") + \"'\").join(\" \");\nlet s = \"...exec \" + o;\nme.execFileSync(\"/bin/sh\", [\"-c\", s], ...)",
+      "code_snippet_good": "me.execFileSync(t, e, { stdio: 'inherit', cwd: n || undefined });",
+      "rule_reference": "CWE-78: OS Command Injection / Pragmatic Programmer: Minimize Coupling",
+      "confidence": 0.8
+    },
+    {
+      "id": "C-008",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 939,
+      "line_range": [
+        939,
+        944
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "编辑配置文件时路径未转义，存在命令注入风险",
+      "description": "session_action_screen 的'编辑配置'功能中，`cfgPath`（来自 `session.settingsFile`）直接拼接到 shell 命令中：`me.exec('start \"\" \"' + cfgPath + '\"', ...)`（Windows）和 `me.exec('${EDITOR:-vi} \"' + cfgPath + '\"', ...)`（Unix）。`settingsFile` 存储在 `.ccl-sessions.json` 中，如果该文件被篡改或路径包含引号字符，可以执行任意命令。Unix 版本还使用了单引号包裹双引号的错误语法——外层是单引号字符串所以 `${EDITOR:-vi}` 不会被 shell 展开，vi 会成为固定值。",
+      "suggestion": "使用 `child_process.execFile` 或 `child_process.spawn` 传递参数数组，避免 shell 拼接。Unix 上应使用 `process.env.EDITOR || 'vi'` 在 Node 层面解析环境变量，而非依赖 shell 展开。",
+      "code_snippet_bad": "me.exec('start \"\" \"' + cfgPath + '\"', () => {})\nme.exec('${EDITOR:-vi} \"' + cfgPath + '\"', () => {})",
+      "code_snippet_good": "const editor = process.env.EDITOR || 'vi';\nme.execFile(editor, [cfgPath], () => {});",
+      "rule_reference": "CWE-78: OS Command Injection",
+      "confidence": 0.85
+    },
+    {
+      "id": "C-009",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 1094,
+      "line_range": [
+        1094,
+        1094
+      ],
+      "severity": "important",
+      "category": "correctness",
+      "title": "项目基础路径硬编码为 D:\\CC项目，不可移植",
+      "description": "新建项目功能将基础路径硬编码为 `sProjectBase = \"D:\\\\CC项目\"`。这意味着：(1) 在非 Windows 系统上完全无法使用（路径格式错误），(2) 在 Windows 上如果 D 盘不存在或用户希望使用其他位置则无法工作，(3) 与配置中已有的 `projects` 数组机制不一致——已有项目可以是任意路径，但新建项目只能在固定位置。这是一个典型的'在我的机器上能用'问题。",
+      "suggestion": "将项目基础路径改为可配置项：从配置文件读取 `u.projectBaseDir`，或使用用户主目录下的默认位置（如 `path.join(os.homedir(), 'CC项目')`），并在设置界面提供修改入口。至少应该使用 `path.join` 构建路径并支持跨平台。",
+      "rule_reference": "Pragmatic Programmer: Orthogonality / Environment Independence",
+      "confidence": 0.9
+    },
+    {
+      "id": "C-010",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 1095,
+      "line_range": [
+        1095,
+        1097
+      ],
+      "severity": "nit",
+      "category": "security",
+      "title": "项目名称未做路径遍历检查",
+      "description": "用户输入的项目名称 `oName` 直接用于构建路径 `ue.join(sProjectBase, sName)`。虽然 `path.join` 会规范化路径，但如果用户输入 `../../etc` 或 `..\\Windows`，`path.join('D:\\\\CC项目', '..\\\\..\\\\etc')` 会解析到 `D:\\etc`，可能在意外位置创建目录和文件。虽然影响有限（只是创建目录和写入模板文件），但属于输入验证缺失。",
+      "suggestion": "对项目名称做白名单验证：`if (!/^[a-zA-Z0-9_-]+$/.test(sName))` 拒绝包含路径分隔符或特殊字符的名称。或验证最终路径仍在基础目录下：`if (!sPath.startsWith(sProjectBase))`。",
+      "rule_reference": "CWE-22: Path Traversal / Input Validation",
+      "confidence": 0.75
+    },
+    {
+      "id": "C-011",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 100,
+      "line_range": [
+        100,
+        110
+      ],
+      "severity": "nit",
+      "category": "correctness",
+      "title": "配置保存的错误恢复不完整",
+      "description": "函数 `_()` 使用原子写入模式（write tmp → rename），这是好的实践。但错误恢复只尝试删除 `te + '.tmp.' + process.pid`。如果 `writeFileSync` 成功但 `renameSync` 失败（例如跨文件系统），临时文件不会被清理。此外，`renameSync` 在某些 Windows 环境下如果目标文件被其他进程锁定会失败，此时配置不会被更新但用户只看到 console.error，TUI 仍在运行。",
+      "suggestion": "在启动时（`Le()` 函数中）检查并清理残留的 `.tmp.*` 文件。rename 失败时应通知用户配置可能未保存，或回退到直接 writeFileSync 写入目标文件。",
+      "rule_reference": "Pragmatic Programmer: Dead Programs Tell No Lies",
+      "confidence": 0.8
+    },
+    {
+      "id": "C-012",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 578,
+      "line_range": [
+        578,
+        611
+      ],
+      "severity": "nit",
+      "category": "correctness",
+      "title": "会话恢复逻辑可能误续无关会话",
+      "description": "当 `reuse` 为空且无 `session_uuid` 时，`Ht()` 函数在行 583 执行 `c.push('--continue')`。Claude Code 的 `--continue` 会恢复最近的会话，但 CCL 可能刚创建了新的 settings 文件，用户期望的是新会话而非恢复旧会话。特别是当用户从'新建配置'流程进入时，可能会意外恢复一个使用不同配置的旧会话。",
+      "suggestion": "在新建配置启动时不添加 `--continue` 标志。只有在用户明确选择'重新打开会话'时才使用 `--resume` 或 `--continue`。检查当前场景：如果是 `reuse` 路径且有 uuid 用 `--resume`，否则不添加续接参数。",
+      "rule_reference": "Principle of Least Surprise",
+      "confidence": 0.75
+    },
+    {
+      "id": "C-013",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 305,
+      "line_range": [
+        305,
+        326
+      ],
+      "severity": "suggestion",
+      "category": "maintainability",
+      "title": "ve/H/E 等 TUI 异步交互函数使用闭包保存/恢复回调，存在泄漏风险",
+      "description": "函数 `ve`（行305）通过保存旧的 Y/V/k 回调并在 Promise 解析时恢复它们来实现模态对话框。如果 Promise 被多次 resolve（理论上不应该，但 blessed 的事件可能触发多次），旧回调的恢复会被跳过。更隐蔽的是，如果在等待用户输入期间发生未捕获异常，回调永远不会被恢复，导致后续所有 UI 交互失效。`E` 函数（行360）使用 `g.key/unkey` 注册全局键盘监听，如果 Promise 永不 resolve（例如 blessed screen 被意外销毁），监听器会泄漏。",
+      "suggestion": "为所有异步 UI 交互添加超时机制。使用 AbortController 模式管理回调生命周期。在 screen destroy 时清理所有 pending 的 Promise。",
+      "rule_reference": "Clean Code: Error Handling / Resource Management",
+      "confidence": 0.75
+    },
+    {
+      "id": "C-014",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 598,
+      "line_range": [
+        598,
+        607
+      ],
+      "severity": "suggestion",
+      "category": "maintainability",
+      "title": "CLAUDE.local.md 的 CCL Session 标记写入缺乏原子性",
+      "description": "函数在行 598-607 读取项目的 `CLAUDE.local.md`，截断到 `## CCL Session` 标记位置，然后追加新的 session 信息并写回。这个 read-modify-write 操作不是原子的。如果 Claude Code 或其他进程同时在修改该文件，内容可能丢失。此外，用简单的字符串 `indexOf` 查找标记位置，如果用户在 CLAUDE.local.md 中手动写了包含 `## CCL Session` 的注释，会被误截断。",
+      "suggestion": "使用文件锁（如 `proper-lockfile`）保护 read-modify-write 操作。或使用更唯一的标记如 `<!-- CCL_SESSION_START -->...<!-- CCL_SESSION_END -->` 减少误匹配。",
+      "rule_reference": "Pragmatic Programmer: Protect Against Concurrent Access",
+      "confidence": 0.75
+    }
+  ],
+  "metrics": {
+    "total_findings": 14,
+    "by_severity": {
+      "blocking": 1,
+      "important": 8,
+      "nit": 3,
+      "suggestion": 2
+    },
+    "by_category": {
+      "maintainability": 6,
+      "security": 4,
+      "correctness": 3,
+      "bug": 1
+    },
+    "review_duration_seconds": 0
+  },
+  "praise": [
+    {
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 100,
+      "comment": "配置保存使用原子写入模式（write to tmp → rename），这是防止数据丢失的正确实践。所有配置写入点（_、Oe、Dt 等）都遵循了这个模式，体现了对数据完整性的重视。"
+    },
+    {
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 1360,
+      "comment": "屏幕注册表 he 对象使用声明式结构定义导航图（screen → { def, getDefault }），每个屏幕定义都有统一的接口（getOptions/onSelect/onCancel），这是良好的状态机/策略模式实现。新增屏幕只需添加一个条目，符合开闭原则。"
+    },
+    {
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 864,
+      "comment": "_strWidth 函数正确处理了 CJK 字符的双宽度计算（Unicode 范围检查），Xt 函数使用智能截断确保 TUI 列对齐不被中文字符破坏。这种对国际化细节的关注在 TUI 工具中很少见。"
+    },
+    {
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 474,
+      "comment": "tips 远程获取实现了完整的缓存策略：protect_days 保护期、version 版本比对、force_update 强制覆盖。这表明作者考虑了网络效率和用户体验的平衡。"
+    }
+  ]
+}

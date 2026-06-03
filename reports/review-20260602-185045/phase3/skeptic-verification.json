@@ -1,0 +1,74 @@
+{
+  "verifications": [
+    {
+      "merged_id": "M-001",
+      "verdict": "CONFIRM",
+      "adjusted_severity": null,
+      "rationale": "确认存在命令注入漏洞。实际漏洞代码在 lines 938-945（报告标注的 775/790 行是权限选择界面，非漏洞位置）。edit_config 使用 `exec('start \"\" \"' + cfgPath + '\"')` (Windows) 和 `exec('${EDITOR:-vi} \"' + cfgPath + '\"')` (Unix) 拼接命令。如果 session.settingsFile 包含双引号 `\"`，可突破引号注入任意命令。例如 Windows: `foo\" & calc.exe \"` 会执行 calc。settingsFile 来自 .ccl-sessions.json 会话记录，如果远端 tips API 的 force_update 修改了模型配置中的 configFile 字段，可链式利用。虽然需要一定前置条件（修改本地会话文件或链式攻击），但 exec 字符串拼接确实是不安全的编码模式，应当使用 execFile + 参数数组。",
+      "confidence_after_verification": 0.85
+    },
+    {
+      "merged_id": "M-002",
+      "verdict": "DOWNGRADE",
+      "adjusted_severity": "P2 HIGH",
+      "rationale": "降级理由：1) Windows 端 project_path 仅用作 `cwd` 参数（line 624: `n && (o.cwd = n)`），cwd 不经过 shell 解释，不是注入向量。2) 但 project_path 同时也会作为 claude 的参数传入（来自 Ht() 函数的 c.push(o)），在 shell: true 模式下参数经过 cmd.exe 处理，如果路径含 `&`、`|` 等元字符理论上可被解释。3) Unix 端对路径做了单引号转义 `n.replace(/'/g, \"'\\\\''\")`，是标准安全做法。4) 攻击需要用户自己配置恶意路径或攻击者已能修改本地配置文件——此时已有同等权限。shell: true 是代码异味，但实际利用难度高。",
+      "confidence_after_verification": 0.88
+    },
+    {
+      "merged_id": "M-003",
+      "verdict": "DOWNGRADE",
+      "adjusted_severity": "P1 HIGH",
+      "rationale": "降级理由：1) 漏洞确实存在——当远端响应 `force_update === true` 时，`Oe(s)` 将整个服务器响应写入本地配置（lines 486-489），可覆盖 agentBase、models、defaultPermission 等全部字段。2) 但利用需要服务器被攻陷或 MITM 攻击。代码 line 476 检查 URL 是否以 https 开头并使用对应模块（`Qe.get` 即 https.get），提供了传输层保护。3) 没有证书固定（certificate pinning）和响应 schema 校验是真实的缺陷，但 HTTPS 已提供基线防护。4) 从 P0 降级到 P1——不是阻断性问题，而是纵深防御不足。建议添加 schema 校验和移除 force_update 逻辑。",
+      "confidence_after_verification": 0.9
+    },
+    {
+      "merged_id": "M-004",
+      "verdict": "CONFIRM",
+      "adjusted_severity": null,
+      "rationale": "确认存在供应链风险。Line 17: `npm install blessed --no-package-lock` 存在以下问题：1) 无版本锁定——不指定版本号，安装最新版，可能安装到被投毒的版本。2) `--no-package-lock` 显式禁用 lock 文件，无法保证可重现构建。3) 未使用 `--ignore-scripts`，blessed 的 postinstall 脚本会自动执行。4) 无安装后哈希校验。5) blessed 是知名包，实际被投毒概率低，但 2018 年 event-stream 事件证明即使是流行包也可能被劫持。严重等级 P1 合理——这是真实的供应链攻击面，虽然概率不高但影响面大（首次运行时所有用户都会触发）。",
+      "confidence_after_verification": 0.92
+    },
+    {
+      "merged_id": "M-005",
+      "verdict": "NEEDS_HUMAN",
+      "adjusted_severity": null,
+      "rationale": "无法确定。报告标注 lines 570-590，但该区域是权限模式映射代码（bypassPermissions/acceptEdits 等），不涉及凭证写入。配置文件 claude-launcher-config.json 存储的是 models 数组（含 id/name/configFile）、projects 列表、defaultPermission 等。代码中未直接看到 API key 写入。但无法确认：1) model 对象是否在其他代码路径中包含 API key 字段；2) 配置文件的文件权限是否过于宽松（Windows 上依赖 NTFS ACL，Unix 上依赖 umask，默认可能是 0644）。需要人工确认 model 对象的完整结构和配置文件的实际权限设置。",
+      "confidence_after_verification": 0.6
+    },
+    {
+      "merged_id": "M-006",
+      "verdict": "DOWNGRADE",
+      "adjusted_severity": "P3 LOW",
+      "rationale": "降级理由：1) PID 作为临时文件后缀确实可预测（`file.tmp.${process.pid}`），但这是 Node.js 生态中常见的原子写入模式。2) 实际利用需要：攻击者在 writeFileSync 和 renameSync 之间的时间窗口（微秒级）内，预测 PID 并在同目录创建符号链接——这在 Windows 上需要管理员权限（创建符号链接需 SeCreateSymbolicLinkPrivilege）。3) Windows 上 renameSync 在目标文件已存在时会覆盖（与 Unix 不同），但这也意味着攻击者需要在极短时间内完成符号链接创建。4) 使用 crypto.randomBytes 生成随机后缀确实是更好的实践，但当前实现的实际可利用性极低。",
+      "confidence_after_verification": 0.93
+    },
+    {
+      "merged_id": "M-007",
+      "verdict": "DOWNGRADE",
+      "adjusted_severity": "P2 MEDIUM",
+      "rationale": "降级理由：1) 默认权限 `bypassPermissions` 是设计选择而非漏洞。该工具是 Claude Code 启动器，其 TUI 在 line 762-771 明确提供了三个权限选项供用户选择（bypassPermissions/auto/acceptEdits）。2) 用户在启动前必须经过权限选择界面（dt screen），默认选中 bypassPermissions 但可更改。3) 在 Unix root 用户下，代码 line 609-610 会强制降级为 acceptEdits：`process.getuid() === 0 ? c.push('--permission-mode', 'acceptEdits')`，说明开发者有安全意识。4) bypassPermissions 是 Claude CLI 本身支持的合法模式，许多用户确实需要此模式以提高效率。建议在 TUI 中添加安全警告提示，但不应将此标为 P1 CRITICAL。",
+      "confidence_after_verification": 0.91
+    },
+    {
+      "merged_id": "M-008",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "驳斥理由：1) 报告称「项目路径未验证，可遍历至系统任意目录」——但 project_path 仅用作 Claude CLI 的工作目录（cwd）和参数，不是文件读取接口。2) 用户通过 TUI 选择项目目录（lines 730-754），路径来自用户自己配置的 projects 列表或 process.cwd()。3) 这是标准的目录选择行为——任何 CLI 工具都可以在任意目录下运行，这不是漏洞。4) 如果限制项目路径只能在特定目录下，反而会破坏工具的正常使用场景。5) 代码 line 742 还检查了目录是否存在：`if (!Me.existsSync(o.path))`。这是功能性验证，不是安全漏洞。",
+      "confidence_after_verification": 0.95
+    },
+    {
+      "merged_id": "M-009",
+      "verdict": "REFUTE",
+      "adjusted_severity": null,
+      "rationale": "驳斥理由：1) 报告称「project 路径用于正则构造，可 ReDoS 或绕过过滤」——这是对代码的误读。Zt() 函数（lines 644-661）使用 `t.replace(/[^a-zA-Z0-9]/g, \"-\")` 将路径中的非字母数字字符替换为连字符，这是**静态正则**，不涉及用户输入构造正则表达式。2) 匹配使用 `indexOf`（line 649: `c.indexOf(d) !== -1`），不是正则匹配，不存在 ReDoS 风险。3) 该正则模式 `[^a-zA-Z0-9]` 是简单字符类，没有回溯风险。4) 代码的目的是在 projects 目录下查找匹配的会话文件夹，sanitize 逻辑实际上是防御性编码。整个 finding 基于对代码的误解。",
+      "confidence_after_verification": 0.96
+    }
+  ],
+  "summary": {
+    "total_verified": 9,
+    "confirmed": 2,
+    "refuted": 2,
+    "downgraded": 4,
+    "needs_human": 1
+  }
+}

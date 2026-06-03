@@ -1,0 +1,45 @@
+{
+  "status": "OK",
+  "agents": {
+    "A": {
+      "name": "Agent A",
+      "status": "OK",
+      "elapsed_seconds": 274.6,
+      "findings_count": 12,
+      "validation_errors": [],
+      "praise_count": 4
+    },
+    "B": {
+      "name": "Agent B",
+      "status": "OK",
+      "elapsed_seconds": 272.0,
+      "findings_count": 16,
+      "validation_errors": [],
+      "praise_count": 5
+    },
+    "C": {
+      "name": "Agent C",
+      "status": "OK",
+      "elapsed_seconds": 145.7,
+      "findings_count": 0,
+      "validation_errors": [
+        "Missing top-level field: agent_id",
+        "Missing top-level field: skill",
+        "Missing top-level field: philosophy",
+        "Missing top-level field: review_scope",
+        "Missing top-level field: findings",
+        "Missing top-level field: metrics"
+      ],
+      "praise_count": 0
+    }
+  },
+  "total_findings": 28,
+  "total_praise": 9,
+  "output_files": [
+    "D:\\MACRS\\reports\\review-20260601-172405\\review-a.json",
+    "D:\\MACRS\\reports\\review-20260601-172405\\review-b.json",
+    "D:\\MACRS\\reports\\review-20260601-172405\\review-c.json"
+  ],
+  "summary_file": "D:\\MACRS\\reports\\review-20260601-172405\\phase-1-summary.json",
+  "total_elapsed_seconds": 274.6
+}

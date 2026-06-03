@@ -1,0 +1,276 @@
+{
+  "agent_id": "B",
+  "skill": "Claude-BugHunter",
+  "philosophy": "你是'攻击者思维'的安全审计专家。你审查代码时的默认假设是：有恶意攻击者会仔细阅读这段代码，寻找任何可能的突破口。你不是在找'不优雅'的代码——你是在找'可利用'的代码。你的核心理念来自 574+ 个真实 HackerOne 漏洞报告的模式提炼。",
+  "review_scope": {
+    "files": [
+      "server/agents.js",
+      "server/index.js",
+      "server/pricing.js",
+      "server/routes/open.js",
+      "server/routes/session.js",
+      "server/routes/sessions.js",
+      "server/routes/snapshots.js",
+      "server/scanner.js",
+      "server/shared.js",
+      "server/snapshot.js",
+      "server/sse.js",
+      "server/watcher.js"
+    ],
+    "lines_total": 1838
+  },
+  "findings": [
+    {
+      "id": "B-001",
+      "file": "server/index.js",
+      "line": 100,
+      "line_range": [
+        100,
+        107
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "Path Traversal in /api/create-and-open via unsanitized configName parameter",
+      "description": "The `configName` query parameter from user input is directly used in `path.join(homeDir, '.claude', configName)` without any sanitization or validation. An attacker can send `config=../../etc/passwd` (Linux) or `config=../../windows/system32/config/sam` (Windows) to read arbitrary files. The value is then passed to `launchSessionDirect` which calls `swapSettingsJson`, causing the contents of the target file to overwrite `~/.claude/settings.json`. This is a critical path traversal vulnerability with file read + file write impact.",
+      "suggestion": "Add strict validation for configName before using it in any path construction. Validate that the resolved path is within the expected directory:\n\n```javascript\nvar configName = urlObj.searchParams.get('config');\nif (!configName || !/^setting-[a-zA-Z0-9_-]+\\.json$/.test(configName)) {\n  res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });\n  res.end(JSON.stringify({ ok: false, error: 'invalid config name' }));\n  return;\n}\n// Also verify resolved path is within expected directory\nvar resolvedPath = path.resolve(path.join(homeDir, '.claude', configName));\nvar allowedDir = path.resolve(path.join(homeDir, '.claude'));\nif (!resolvedPath.startsWith(allowedDir + path.sep) && resolvedPath !== allowedDir) {\n  res.writeHead(403); res.end(JSON.stringify({ ok: false, error: 'forbidden' }));\n  return;\n}\n```",
+      "code_snippet_bad": "var configName = urlObj.searchParams.get(\"config\");\nif (!configName) {\n  res.writeHead(400, ...);\n  res.end(JSON.stringify({ ok: false, error: \"config required\" }));\n  return;\n}\nvar settingsPath = path.join(homeDir, \".claude\", configName);",
+      "code_snippet_good": "var configName = urlObj.searchParams.get(\"config\");\nif (!configName || !/^setting-[a-zA-Z0-9_-]+\\.json$/.test(configName)) {\n  res.writeHead(400, ...);\n  res.end(JSON.stringify({ ok: false, error: \"invalid config name\" }));\n  return;\n}\nvar resolvedPath = path.resolve(path.join(homeDir, \".claude\", configName));\nif (!resolvedPath.startsWith(path.resolve(path.join(homeDir, \".claude\")) + path.sep)) {\n  res.writeHead(403); res.end(JSON.stringify({ ok: false, error: \"forbidden\" }));\n  return;\n}",
+      "rule_reference": "CWE-22: Path Traversal",
+      "confidence": 0.98
+    },
+    {
+      "id": "B-002",
+      "file": "server/routes/open.js",
+      "line": 155,
+      "line_range": [
+        150,
+        168
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "Path Traversal in swapSettingsJson allows arbitrary file read and settings.json overwrite",
+      "description": "The `swapSettingsJson` function constructs `targetConfigPath = path.join(homeDir, '.claude', configFile)` without sanitizing `configFile`. If `configFile` contains path traversal sequences (e.g., `../../etc/passwd`), the function will read the contents of the target file and write them to `settings.json`. This overwrites the user's Claude Code settings with arbitrary file contents. The function is called from `launchSessionDirect` (line 181) which receives `configFile` from the `/api/create-and-open` endpoint.",
+      "suggestion": "Validate that `configFile` resolves to a path within the expected `.claude` directory before reading:\n\n```javascript\nfunction swapSettingsJson(configFile) {\n  if (!configFile) return;\n  // Strict whitelist validation\n  if (!/^setting-[a-zA-Z0-9_-]+\\.json$/.test(configFile)) {\n    console.error('[open] invalid configFile name:', configFile);\n    return;\n  }\n  var homeDir = process.env.HOME || process.env.USERPROFILE || 'C:\\\\Users\\\\Administrator';\n  var defaultSettingsPath = path.join(homeDir, '.claude', 'settings.json');\n  var targetConfigPath = path.join(homeDir, '.claude', configFile);\n  // Defense in depth: verify resolved path\n  if (path.resolve(targetConfigPath).indexOf(path.resolve(path.join(homeDir, '.claude'))) !== 0) return;\n  // ... rest of function\n}\n```",
+      "code_snippet_bad": "function swapSettingsJson(configFile) {\n  var homeDir = process.env.HOME || process.env.USERPROFILE || \"C:\\\\Users\\\\Administrator\";\n  var defaultSettingsPath = path.join(homeDir, \".claude\", \"settings.json\");\n  if (!configFile) return;\n  try {\n    var targetConfigPath = path.join(homeDir, \".claude\", configFile);",
+      "code_snippet_good": "function swapSettingsJson(configFile) {\n  if (!configFile) return;\n  if (!/^setting-[a-zA-Z0-9_-]+\\.json$/.test(configFile)) {\n    console.error('[open] invalid configFile:', configFile);\n    return;\n  }\n  var homeDir = process.env.HOME || process.env.USERPROFILE || \"C:\\\\Users\\\\Administrator\";\n  var targetConfigPath = path.resolve(path.join(homeDir, \".claude\", configFile));\n  if (targetConfigPath.indexOf(path.resolve(path.join(homeDir, \".claude\"))) !== 0) return;",
+      "rule_reference": "CWE-22: Path Traversal",
+      "confidence": 0.97
+    },
+    {
+      "id": "B-003",
+      "file": "server/routes/open.js",
+      "line": 203,
+      "line_range": [
+        172,
+        208
+      ],
+      "severity": "blocking",
+      "category": "bug",
+      "title": "launchSessionDirect calls undefined function spawnWithBat — will throw ReferenceError",
+      "description": "The `launchSessionDirect` function at line 203 calls `spawnWithBat(claudeExe, cliArgs, configFile, cwd)`, but `spawnWithBat` is not defined anywhere in this file. The file defines `spawnDirect` (line 48) instead. This means every call to `/api/create-and-open` that reaches `launchSessionDirect` will throw a `ReferenceError: spawnWithBat is not defined`. The error is caught by the try/catch at index.js:194-198, but the session has already been created and written to disk, leaving an orphaned session that can never be launched.",
+      "suggestion": "Replace the call to `spawnWithBat` with `spawnDirect` which is the correctly defined function in this file:\n\n```javascript\n// Line 203: change from\nspawnWithBat(claudeExe, cliArgs, configFile, cwd || \"C:\\\\Users\\\\Administrator\");\n// to\nspawnDirect(claudeExe, cliArgs, configFile, cwd || \"C:\\\\Users\\\\Administrator\");\n```",
+      "code_snippet_bad": "spawnWithBat(claudeExe, cliArgs, configFile, cwd || \"C:\\\\Users\\\\Administrator\");",
+      "code_snippet_good": "spawnDirect(claudeExe, cliArgs, configFile, cwd || \"C:\\\\Users\\\\Administrator\");",
+      "rule_reference": "ReferenceError / Dead Code",
+      "confidence": 0.99
+    },
+    {
+      "id": "B-004",
+      "file": "server/routes/open.js",
+      "line": 12,
+      "line_range": [
+        11,
+        37
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "No session ID validation on /api/terminal-bat/ and /api/open-session/ endpoints",
+      "description": "The `/api/terminal-bat/` (line 11) and `/api/open-session/` (line 26) endpoints decode the session ID from the URL but do not validate its format. Unlike `/api/session/` endpoints in session.js which validate UUID format with regex, these endpoints accept arbitrary strings. A crafted session ID containing path traversal sequences could potentially be used to target files outside the expected session directory when the session lookup falls back to filesystem scanning.",
+      "suggestion": "Add UUID format validation before processing:\n\n```javascript\nif (req.url.startsWith('/api/terminal-bat/') && req.method === 'GET') {\n  var batId = decodeURI(req.url.split('/api/terminal-bat/')[1]);\n  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(batId)) {\n    res.writeHead(400, { 'Content-Type': 'application/json; charset=utf-8' });\n    res.end(JSON.stringify({ error: 'invalid session id format' }));\n    return true;\n  }\n  // ... rest of handler\n}\n```",
+      "code_snippet_bad": "var batId = decodeURI(req.url.split(\"/api/terminal-bat/\")[1]);\nvar batCached = shared.sessionCache.get(batId);",
+      "code_snippet_good": "var batId = decodeURI(req.url.split(\"/api/terminal-bat/\")[1]);\nif (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(batId)) {\n  res.writeHead(400, { \"Content-Type\": \"application/json; charset=utf-8\" });\n  res.end(JSON.stringify({ error: \"invalid session id format\" }));\n  return true;\n}\nvar batCached = shared.sessionCache.get(batId);",
+      "rule_reference": "CWE-20: Improper Input Validation",
+      "confidence": 0.85
+    },
+    {
+      "id": "B-005",
+      "file": "server/index.js",
+      "line": 21,
+      "line_range": [
+        21,
+        25
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "No authentication — any local process can access all API endpoints",
+      "description": "The HTTP server has zero authentication. Any process running on the same machine (or any device on the network if the server is bound to 0.0.0.0) can: read all session data including conversation history, create/delete/launch sessions, delete snapshots, modify the sessionConfigMap, and trigger arbitrary process spawning via /api/create-and-open. The CORS policy only restricts origins to localhost, but this provides no protection against local attackers or CSRF from any localhost web page.",
+      "suggestion": "Add at minimum a shared secret token authentication:\n\n```javascript\nvar API_TOKEN = process.env.CC_PANEL_TOKEN || require('crypto').randomBytes(32).toString('hex');\nconsole.log('[CC-Panel] API Token: ' + API_TOKEN);\n\nvar server = http.createServer(function(req, res) {\n  // Skip auth for static assets\n  if (req.url === '/' || req.url === '/index.html' || req.url === '/sortable.min.js') {\n    // serve static\n  } else {\n    var authHeader = req.headers['authorization'];\n    if (!authHeader || authHeader !== 'Bearer ' + API_TOKEN) {\n      res.writeHead(401); res.end('Unauthorized');\n      return;\n    }\n  }\n  // ... rest of handler\n});\n```",
+      "code_snippet_bad": "var server = http.createServer(function(req, res) {\n  var origin = req.headers.origin;\n  if (origin && /^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/.test(origin)) {\n    res.setHeader(\"Access-Control-Allow-Origin\", origin);\n  }\n  // ... no auth check",
+      "code_snippet_good": "var API_TOKEN = process.env.CC_PANEL_TOKEN || require('crypto').randomBytes(32).toString('hex');\nvar server = http.createServer(function(req, res) {\n  // Auth check for API endpoints\n  if (req.url.startsWith('/api/')) {\n    var auth = req.headers['authorization'];\n    if (auth !== 'Bearer ' + API_TOKEN) {\n      res.writeHead(401); res.end('Unauthorized');\n      return;\n    }\n  }\n  // ... rest of handler",
+      "rule_reference": "CWE-306: Missing Authentication for Critical Function",
+      "confidence": 0.92
+    },
+    {
+      "id": "B-006",
+      "file": "server/index.js",
+      "line": 39,
+      "line_range": [
+        38,
+        40
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "XSS in /import-localstorage — JSON content injected into HTML without escaping",
+      "description": "The `/import-localstorage` endpoint reads `import-data.json`, runs `JSON.stringify(JSON.parse(data))`, and concatenates the result directly into an HTML `<script>` tag. `JSON.stringify` does NOT escape `</script>` sequences. If `import-data.json` contains a value like `</script><img onerror=alert(document.cookie) src=x>`, the browser will close the script tag prematurely and execute the injected HTML/JavaScript. This is a stored XSS vulnerability that requires control of `import-data.json` (local file write or supply chain attack).",
+      "suggestion": "HTML-encode the JSON data before embedding in the HTML response, or use a safer injection method:\n\n```javascript\nvar importData = fs.readFileSync(importFile, 'utf8');\n// Validate it's safe JSON, then HTML-encode for embedding\nvar safeData = importData\n  .replace(/&/g, '&amp;')\n  .replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;')\n  .replace(/\"/g, '&quot;');\n// Or better: serve as a separate JSON endpoint and fetch via JS\nvar html = '...var d = JSON.parse(\\'' + safeData + '\\');...';\n```",
+      "code_snippet_bad": "var importData = fs.readFileSync(importFile, \"utf8\");\nvar safeData = JSON.stringify(JSON.parse(importData));\nvar html = '...<script>!function(){var d=' + safeData + ';...}();</script>...';",
+      "code_snippet_good": "var importData = fs.readFileSync(importFile, \"utf8\");\n// Validate JSON, then HTML-escape before embedding\nJSON.parse(importData); // validate\nvar safeData = importData.replace(/<\\//g, '<\\\\/').replace(/<!--/g, '<\\\\!--');\n// Or serve via /api/import-data endpoint and fetch client-side",
+      "rule_reference": "CWE-79: Cross-site Scripting (XSS)",
+      "confidence": 0.88
+    },
+    {
+      "id": "B-007",
+      "file": "server/routes/session.js",
+      "line": 104,
+      "line_range": [
+        104,
+        104
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "Information Disclosure — full filesystem paths exposed in API responses",
+      "description": "The `/api/session/:id` endpoint returns `filePath: fpath` (line 104) which exposes the full filesystem path to the session JSONL file. Similarly, `/api/sessions` returns `s.filePath = s._file` (sessions.js:21). This reveals the internal directory structure, username, and project organization to any client. An attacker can use this information to craft more targeted path traversal attacks or understand the system layout.",
+      "suggestion": "Strip the filesystem path from API responses, or return only a relative/basename:\n\n```javascript\n// Instead of:\nfilePath: fpath\n// Use:\nfilePath: path.basename(fpath)\n// Or remove entirely if not needed by the frontend\n```",
+      "code_snippet_bad": "var resp = {\n  id: cached.id, title: cached.title, ...\n  filePath: fpath\n};",
+      "code_snippet_good": "var resp = {\n  id: cached.id, title: cached.title, ...\n  // filePath removed or sanitized\n};",
+      "rule_reference": "CWE-200: Exposure of Sensitive Information",
+      "confidence": 0.9
+    },
+    {
+      "id": "B-008",
+      "file": "server/routes/open.js",
+      "line": 181,
+      "line_range": [
+        181,
+        194
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "settings.json restore references undefined ORIGINAL_SETTINGS — restore never executes",
+      "description": "The `launchSessionDirect` function calls `swapSettingsJson(configFile)` at line 181, which overwrites `settings.json`. It then schedules a restore after 5 seconds (lines 184-194) that checks `if (ORIGINAL_SETTINGS && currentSettings !== ORIGINAL_SETTINGS)`. However, `ORIGINAL_SETTINGS` is not defined anywhere in this file — the IIFE that defined it was removed (the file starts with a comment saying '不再需要 settings.json 快照'). This means `ORIGINAL_SETTINGS` is `undefined`, the condition is always falsy, and settings.json is NEVER restored. If multiple `/api/create-and-open` requests arrive with different configs, settings.json will be left in whatever state the last request set.",
+      "suggestion": "Either restore the ORIGINAL_SETTINGS snapshot mechanism, or remove the dead restore code entirely and document that settings.json is permanently modified. If the intent is to not modify settings.json, then `swapSettingsJson` should not be called at all:\n\n```javascript\n// Option A: Remove the broken restore and don't call swapSettingsJson\n// (since spawnDirect uses --settings flag, swapSettingsJson is redundant)\n\n// Option B: Restore the snapshot mechanism\nvar ORIGINAL_SETTINGS = null;\n(function() {\n  try {\n    var settingsPath = path.join(homeDir, '.claude', 'settings.json');\n    if (fs.existsSync(settingsPath)) {\n      ORIGINAL_SETTINGS = fs.readFileSync(settingsPath, 'utf-8');\n    }\n  } catch(e) {}\n})();\n```",
+      "code_snippet_bad": "swapSettingsJson(configFile);\n\n// 5 秒后恢复到服务器启动时的原始快照（避免竞态条件）\nsetTimeout(function() {\n  try {\n    var currentSettings = fsModule.readFileSync(defaultSettingsPath, \"utf-8\");\n    if (ORIGINAL_SETTINGS && currentSettings !== ORIGINAL_SETTINGS) {",
+      "code_snippet_good": "// Since spawnDirect uses --settings flag, swapSettingsJson is not needed\n// Remove the call and the broken restore logic\n// Or restore ORIGINAL_SETTINGS:\nvar ORIGINAL_SETTINGS = null;\n(function() {\n  try {\n    var p = path.join(homeDir, '.claude', 'settings.json');\n    if (fs.existsSync(p)) ORIGINAL_SETTINGS = fs.readFileSync(p, 'utf-8');\n  } catch(e) {}\n})();",
+      "rule_reference": "Undefined Variable / Logic Error",
+      "confidence": 0.95
+    },
+    {
+      "id": "B-009",
+      "file": "server/index.js",
+      "line": 112,
+      "line_range": [
+        112,
+        115
+      ],
+      "severity": "nit",
+      "category": "security",
+      "title": "Weak random session ID generation using Math.random()",
+      "description": "Session IDs are generated using `Math.random()` which is not cryptographically secure. On V8/Node.js, `Math.random()` uses xorshift128+ which is predictable if an attacker can observe a few outputs. Since session IDs are used as file paths and session identifiers, a predictable ID could allow an attacker to guess existing session IDs and access them via the unauthenticated API.",
+      "suggestion": "Use `crypto.randomUUID()` (Node.js 14.17+) or `crypto.randomBytes(16)` for session ID generation:\n\n```javascript\nvar crypto = require('crypto');\nvar sessionId = crypto.randomUUID();\n// Or for older Node.js:\nvar sessionId = crypto.randomBytes(16).toString('hex').replace(\n  /(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5'\n);\n```",
+      "code_snippet_bad": "var sessionId = \"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, function(c) {\n  var r = Math.random() * 16 | 0, v = c === \"x\" ? r : (r & 0x3 | 0x8);\n  return v.toString(16);\n});",
+      "code_snippet_good": "var crypto = require('crypto');\nvar sessionId = crypto.randomUUID();",
+      "rule_reference": "CWE-330: Use of Insufficiently Random Values",
+      "confidence": 0.85
+    },
+    {
+      "id": "B-010",
+      "file": "server/scanner.js",
+      "line": 220,
+      "line_range": [
+        218,
+        222
+      ],
+      "severity": "nit",
+      "category": "security",
+      "title": "Prototype pollution risk in mergeSessionData via for...in loop",
+      "description": "The `mergeSessionData` function uses `for (var pid2 in delta._seenPromptIds)` at line 220 to iterate over properties. If `delta._seenPromptIds` has prototype pollution (e.g., via a maliciously crafted JSONL entry), this could inject unexpected properties into the cached session's `_seenPromptIds`. While the risk is low since the data comes from local JSONL files, it's a defense-in-depth concern.",
+      "suggestion": "Use `Object.keys()` or `hasOwnProperty` check to prevent prototype pollution:\n\n```javascript\nif (delta._seenPromptIds) {\n  if (!cached._seenPromptIds) cached._seenPromptIds = {};\n  var pids = Object.keys(delta._seenPromptIds);\n  for (var i = 0; i < pids.length; i++) {\n    cached._seenPromptIds[pids[i]] = true;\n  }\n}\n```",
+      "code_snippet_bad": "if (delta._seenPromptIds) {\n  if (!cached._seenPromptIds) cached._seenPromptIds = {};\n  for (var pid2 in delta._seenPromptIds) {\n    if (delta._seenPromptIds.hasOwnProperty(pid2)) cached._seenPromptIds[pid2] = true;\n  }\n}",
+      "code_snippet_good": "if (delta._seenPromptIds) {\n  if (!cached._seenPromptIds) cached._seenPromptIds = {};\n  var pids = Object.keys(delta._seenPromptIds);\n  for (var i = 0; i < pids.length; i++) {\n    cached._seenPromptIds[pids[i]] = true;\n  }\n}",
+      "rule_reference": "CWE-1321: Prototype Pollution",
+      "confidence": 0.72
+    },
+    {
+      "id": "B-011",
+      "file": "server/scanner.js",
+      "line": 94,
+      "line_range": [
+        92,
+        97
+      ],
+      "severity": "nit",
+      "category": "performance",
+      "title": "Unbounded synchronous file read — large JSONL files will block the event loop",
+      "description": "When `startOffset === 0`, `parseSessionChunk` allocates `Buffer.alloc(stat.size - 0)` which reads the ENTIRE file into memory synchronously. For very large session files (hundreds of MB), this will block the Node.js event loop and potentially cause memory exhaustion. The synchronous `fs.openSync`, `fs.readSync`, and `fs.statSync` calls compound the issue.",
+      "suggestion": "Add a size cap for full reads, and consider streaming for large files:\n\n```javascript\nvar MAX_FULL_READ = 50 * 1024 * 1024; // 50MB\nif (startOffset === 0 && stat.size > MAX_FULL_READ) {\n  // Read only the tail portion\n  startOffset = stat.size - MAX_FULL_READ;\n}\n```",
+      "code_snippet_bad": "var fd = fs.openSync(filePath, \"r\");\ntry {\n  var buf = Buffer.alloc(Math.max(1, stat.size - startOffset));\n  var bytesRead = fs.readSync(fd, buf, 0, buf.length, startOffset);",
+      "code_snippet_good": "var MAX_SIZE = 50 * 1024 * 1024; // 50MB cap\nvar readSize = Math.min(stat.size - startOffset, MAX_SIZE);\nvar readOffset = (stat.size - startOffset > MAX_SIZE) ? stat.size - MAX_SIZE : startOffset;\nvar fd = fs.openSync(filePath, \"r\");\ntry {\n  var buf = Buffer.alloc(Math.max(1, readSize));\n  var bytesRead = fs.readSync(fd, buf, 0, buf.length, readOffset);",
+      "rule_reference": "DoS via Resource Exhaustion",
+      "confidence": 0.78
+    },
+    {
+      "id": "B-012",
+      "file": "server/shared.js",
+      "line": 43,
+      "line_range": [
+        43,
+        46
+      ],
+      "severity": "nit",
+      "category": "performance",
+      "title": "Unbounded in-memory caches — sessionCache, subAgentCache, fileOffsets grow without limit",
+      "description": "The `sessionCache`, `subAgentCache`, and `fileOffsets` Maps in shared.js grow without any size limit. Every session scanned is cached permanently. Over time, with many sessions, this will consume increasing amounts of memory. There is no eviction policy, no LRU mechanism, and no maximum size constraint.",
+      "suggestion": "Implement a maximum cache size with LRU eviction:\n\n```javascript\nvar MAX_CACHE_SIZE = 1000;\n\nfunction setWithLimit(map, key, value) {\n  if (map.size >= MAX_CACHE_SIZE) {\n    var firstKey = map.keys().next().value;\n    map.delete(firstKey);\n  }\n  map.set(key, value);\n}\n```",
+      "code_snippet_bad": "// Session cache\nsessionCache: new Map(),\nsubAgentCache: new Map(),\nfileOffsets: new Map(),",
+      "code_snippet_good": "// Session cache with size limit\nsessionCache: new Map(),\nsubAgentCache: new Map(),\nfileOffsets: new Map(),\nMAX_CACHE_SIZE: 1000,",
+      "rule_reference": "Resource Management",
+      "confidence": 0.75
+    }
+  ],
+  "metrics": {
+    "total_findings": 12,
+    "by_severity": {
+      "blocking": 3,
+      "important": 5,
+      "nit": 4
+    },
+    "by_category": {
+      "security": 8,
+      "bug": 2,
+      "performance": 2
+    },
+    "review_duration_seconds": 0
+  },
+  "praise": [
+    {
+      "file": "server/routes/session.js",
+      "line": 13,
+      "comment": "Session ID validation via UUID regex (/^[0-9a-f]{8}-...$/i) is correctly applied on /api/session/ and /api/session/:id/relations endpoints, preventing path traversal through session IDs. This is a good security practice that should be extended to the /api/open-session/ and /api/terminal-bat/ endpoints."
+    },
+    {
+      "file": "server/routes/snapshots.js",
+      "line": 22,
+      "comment": "Snapshot ID validation with strict alphanumeric regex (/^[a-zA-Z0-9_-]+$/) correctly prevents path traversal in snapshot operations. Good defense-in-depth."
+    },
+    {
+      "file": "server/routes/open.js",
+      "line": 48,
+      "comment": "The spawnDirect function correctly uses child_process.spawn with an env object instead of shell interpolation, which is much safer than the older spawnWithBat approach for launching processes."
+    },
+    {
+      "file": "server/scanner.js",
+      "line": 186,
+      "comment": "The _seenPromptIds deduplication logic correctly handles both promptId-based and promptId-less user messages, preventing double-counting of user messages in incremental scans. This shows careful attention to data integrity."
+    }
+  ]
+}

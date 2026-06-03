@@ -1,0 +1,247 @@
+{
+  "agent_id": "C",
+  "skill": "pragmatic-clean-code-reviewer",
+  "philosophy": "你是'架构防腐'的代码审查专家。你不只关心单行代码的对错，更关心这段代码在整个系统架构中的位置和长期影响。你的核心理念来自：The Pragmatic Programmer、Clean Code、Clean Architecture。你审查时的核心问题是：'这段代码会加速还是延缓系统的技术债务累积？'",
+  "review_scope": {
+    "files": [
+      "scripts/pw-multi.js",
+      "scripts/quick-test.sh",
+      "shared-scripts/bilibili/extract-links.js",
+      "shared-scripts/douyin/extract-links.js",
+      "shared-scripts/quark/download-file.js",
+      "shared-scripts/tools/fsearch.sh",
+      "shared-scripts/utils/playwright-helpers.js",
+      "shared-scripts/zlib/download-book.js",
+      "shared-scripts/zsxq/delete-article.js",
+      "shared-scripts/zsxq/publish-article.js",
+      "skills/scrapling/examples/01_fetcher_session.py",
+      "skills/scrapling/examples/02_dynamic_session.py",
+      "skills/scrapling/examples/03_stealthy_session.py",
+      "skills/scrapling/examples/04_spider.py",
+      "tools/browser/helpers/node-helpers.js",
+      "tools/browser/helpers/playwright-helpers.js",
+      "tools/browser/proxy/pw-multi.js",
+      "tools/browser/proxy/start-proxy.sh",
+      "tools/fetch/smart-fetch.sh",
+      "tools/platform/bilibili/extract-links.js",
+      "tools/platform/douyin/extract-links.js",
+      "tools/platform/quark/download-file.js",
+      "tools/platform/zlib/download-book.js",
+      "tools/platform/zsxq/delete-article.js",
+      "tools/platform/zsxq/publish-article.js",
+      "tools/search/fsearch/fsearch.sh",
+      "tools/vision/describe-image.py",
+      "tools/vision/glm-vision-mcp.py"
+    ],
+    "lines_total": 3674
+  },
+  "findings": [
+    {
+      "id": "C-001",
+      "file": "shared-scripts/ (全目录) vs tools/ (全目录)",
+      "line": 0,
+      "line_range": [
+        0,
+        0
+      ],
+      "severity": "blocking",
+      "category": "maintainability",
+      "title": "shared-scripts/ 与 tools/ 下 7 对文件完全重复，违反 DRY 原则",
+      "description": "经逐字节比对，以下 7 对文件内容完全一致：bilibili/extract-links.js、douyin/extract-links.js、quark/download-file.js、zlib/download-book.js、zsxq/delete-article.js、zsxq/publish-article.js、以及 tools/fsearch.sh 与 shared-scripts/tools/fsearch.sh。这意味着每次 bug 修复或功能更新必须同步修改两处，否则将产生静默分歧。这是架构层面最严重的技术债务——它不会立即引发 bug，但会在每次维护时制造隐患。",
+      "suggestion": "选择一个权威来源（建议 tools/ 目录），删除 shared-scripts/ 中的重复文件，改为 symlink 或在 shared-scripts/ 中仅保留 re-export 模块。或者统一目录结构，消除双源维护。",
+      "rule_reference": "DRY (Don't Repeat Yourself) — The Pragmatic Programmer",
+      "confidence": 1.0
+    },
+    {
+      "id": "C-002",
+      "file": "scripts/pw-multi.js",
+      "line": 37,
+      "line_range": [
+        37,
+        37
+      ],
+      "severity": "blocking",
+      "category": "maintainability",
+      "title": "scripts/pw-multi.js 与 tools/browser/proxy/pw-multi.js 完全重复",
+      "description": "两个文件逐字节相同（119行）。当需要修复清理逻辑、环境变量处理或 spawn 参数时，开发者必须同时修改两处，极易遗漏。",
+      "suggestion": "保留 tools/browser/proxy/pw-multi.js 作为权威版本，scripts/pw-multi.js 改为 require 或直接 symlink。",
+      "rule_reference": "DRY — Single Source of Truth",
+      "confidence": 1.0
+    },
+    {
+      "id": "C-003",
+      "file": "tools/vision/describe-image.py",
+      "line": 26,
+      "line_range": [
+        22,
+        40
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "preprocess() 函数在两个文件中重复，且描述文件仍在使用已废弃的 GLM-4V-Flash",
+      "description": "describe-image.py 和 glm-vision-mcp.py 都定义了 preprocess() 函数，逻辑几乎相同（resize/compress/base64）。更关键的是，describe-image.py 使用 model='GLM-4V-Flash'，而 glm-vision-mcp.py 已升级到 'GLM-5V-Turbo'。同一个视觉能力，两个入口使用不同模型版本，违背架构一致性。glm-vision-mcp.py 还增加了 max_tokens=4096 的推理模型适配，而 describe-image.py 仍是 max_tokens=1024。",
+      "suggestion": "将 preprocess() 提取为共享工具模块（如 vision-utils.py），两个入口 import 同一份。统一模型版本到 GLM-5V-Turbo，或明确标注 describe-image.py 为轻量版/兼容版。",
+      "rule_reference": "DRY + Single Responsibility",
+      "confidence": 0.95
+    },
+    {
+      "id": "C-004",
+      "file": "shared-scripts/utils/playwright-helpers.js",
+      "line": 17,
+      "line_range": [
+        17,
+        21
+      ],
+      "severity": "important",
+      "category": "correctness",
+      "title": "angularClick 事件顺序不一致：click 在 mousedown 之前触发",
+      "description": "shared-scripts/utils/playwright-helpers.js 中 angularClick 的 dispatchEvent 顺序为 click → mousedown → mouseup，而 tools/browser/helpers/playwright-helpers.js 中为 mousedown → mouseup → click。真实浏览器的事件顺序是 mousedown → mouseup → click。shared-scripts 版本在 click 之前就触发了 click，这会导致依赖事件顺序的 Angular 组件行为异常。由于这两份文件都是'权威来源'（重复文件问题），不同入口调用不同版本会产生不一致的行为。",
+      "suggestion": "统一为 mousedown → mouseup → click 的正确顺序，且消除重复文件（见 C-001）。",
+      "code_snippet_bad": "// shared-scripts 版本 (错误顺序)\nelement.dispatchEvent(new MouseEvent('click', { bubbles: true }));\nelement.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));\nelement.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));",
+      "code_snippet_good": "// 正确顺序\nelement.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));\nelement.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));\nelement.dispatchEvent(new MouseEvent('click', { bubbles: true }));",
+      "rule_reference": "Correctness — Browser Event Model",
+      "confidence": 0.95
+    },
+    {
+      "id": "C-005",
+      "file": "shared-scripts/zsxq/delete-article.js",
+      "line": 52,
+      "line_range": [
+        49,
+        53
+      ],
+      "severity": "important",
+      "category": "correctness",
+      "title": "zsxq delete-article 中 click 事件调用冗余且顺序矛盾",
+      "description": "step4_clickDelete 函数先 dispatchEvent(click) 再调用原生 .click()。注释说'必须用 dispatchEvent 而非 click()'，但代码两个都调了。原生 .click() 不会触发 Angular 的事件绑定，如果 Angular 只监听 dispatchEvent 的 click，后面的 .click() 是多余的；如果 Angular 也监听原生 click，则 dispatchEvent 的 click 会被触发两次。这与 step3_openMenu 中只用 dispatchEvent 的模式不一致。",
+      "suggestion": "与 step3_openMenu 保持一致，只用 dispatchEvent 系列（mousedown → mouseup → click），去掉原生 .click() 调用。",
+      "code_snippet_bad": "deleteItem.dispatchEvent(new MouseEvent('click', { bubbles: true }));\ndeleteItem.click();  // 冗余或导致双触发",
+      "code_snippet_good": "deleteItem.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));\ndeleteItem.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));\ndeleteItem.dispatchEvent(new MouseEvent('click', { bubbles: true }));",
+      "rule_reference": "Consistency + Correctness",
+      "confidence": 0.9
+    },
+    {
+      "id": "C-006",
+      "file": "shared-scripts/douyin/extract-links.js",
+      "line": 55,
+      "line_range": [
+        52,
+        57
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "抖音搜索 API 拦截模式存在事件监听器累积泄漏",
+      "description": "extractFromSearchPage 的 while 循环每次迭代调用 page.on('response', onResponse)，在 finally 中调用 page.off('response', onResponse)。但 onResponse 是在循环体内用 async (response) => {...} 创建的闭包，每次迭代都是新的函数引用。page.off 需要与 page.on 传入同一个函数引用才能移除。由于 onResponse 在循环开头声明，finally 中 off 的确实是同一个引用，这部分是正确的。但深层问题是：当 searchJson 未命中（staleCount++），循环仍会继续，下一次迭代会再次注册新的 onResponse，此时如果上一次的 finally 已经 off 了旧的，新的又注册了——在滚动等待期间（waitForTimeout 1500ms * 8次），可能有多个 onResponse 同时活跃，导致 searchJson 被后续响应覆盖。",
+      "suggestion": "将 onResponse 的注册移到循环外部，或在每次迭代开头显式清理 searchJson 并确保只有一个活跃的 response listener。更好的方案是用 page.waitForResponse() 替代手动 on/off 模式。",
+      "rule_reference": "Resource Management — Clean Code",
+      "confidence": 0.85
+    },
+    {
+      "id": "C-007",
+      "file": "shared-scripts/tools/fsearch.sh",
+      "line": 32,
+      "line_range": [
+        30,
+        34
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "fsearch.sh 存在命令注入风险：用户输入未经转义直接嵌入 Python 字符串",
+      "description": "KEYWORD 通过 `'''$KEYWORD'''` 传入 python3 -c 的字符串中。如果用户输入包含 ''' 或反斜杠等特殊字符，可以逃逸 Python 字符串边界，执行任意 Python 代码。例如输入 `test''' + __import__('os').system('rm -rf /') + '''` 会导致代码注入。",
+      "suggestion": "使用环境变量传递 KEYWORD 到 Python，而非字符串插值：`KEYWORD=\"$KEYWORD\" python3 -c \"import os; KEYWORD=os.environ['KEYWORD']; ...\"`。或使用 Python 的 shlex.quote()。",
+      "code_snippet_bad": "ENCODED=$(python3 -c \"import urllib.parse; print(urllib.parse.quote('''$KEYWORD'''))\")",
+      "code_snippet_good": "ENCODED=$(python3 -c \"import urllib.parse, os; print(urllib.parse.quote(os.environ['KEYWORD']))\" <<< \"$KEYWORD\")",
+      "rule_reference": "Security — Input Sanitization",
+      "confidence": 0.9
+    },
+    {
+      "id": "C-008",
+      "file": "scripts/pw-multi.js",
+      "line": 35,
+      "line_range": [
+        33,
+        35
+      ],
+      "severity": "nit",
+      "category": "correctness",
+      "title": "pw-multi.js 残留清理中 catch 空块吞没所有错误",
+      "description": "清理 24h+ 残留目录的 try/catch 块为空，statSync 或 rmSync 的任何错误（包括权限不足、路径不存在等）都被静默忽略。如果清理逻辑本身有 bug（如 mtimeMs 比较错误），开发者永远不会知道。",
+      "suggestion": "至少记录到 stderr：`catch (e) { process.stderr.write(`[pw-multi] cleanup warn: ${e.message}\\n`); }`",
+      "rule_reference": "Never Ignore Errors — The Pragmatic Programmer",
+      "confidence": 0.85
+    },
+    {
+      "id": "C-009",
+      "file": "tools/browser/proxy/start-proxy.sh",
+      "line": 42,
+      "line_range": [
+        38,
+        48
+      ],
+      "severity": "nit",
+      "category": "bug",
+      "title": "start-proxy.sh 端口检测使用 grep 可能误匹配子串端口",
+      "description": "`netstat -ano | grep -q \":${CDP_PORT} \"` 使用空格作为端口后缀分隔符。但如果端口号是另一个端口的前缀（如 345 被 3456 匹配），且 netstat 输出格式不一致，可能产生误判。虽然当前默认端口 3456 风险较低，但这是一个脆弱的匹配模式。",
+      "suggestion": "使用更精确的正则：`grep -qE \":${CDP_PORT}( |$)\"` 或使用 `ss -tlnp | grep -q \":${CDP_PORT} \"` 的标准格式。",
+      "rule_reference": "Defensive Programming",
+      "confidence": 0.75
+    },
+    {
+      "id": "C-010",
+      "file": "shared-scripts/douyin/extract-links.js",
+      "line": 88,
+      "line_range": [
+        86,
+        90
+      ],
+      "severity": "nit",
+      "category": "performance",
+      "title": "抖音 DOM 模式 deepQueryAll 递归遍历所有元素的 shadowRoot，性能开销大",
+      "description": "extractFromDom 中的 deepQueryAll 递归遍历 document 下所有元素（`root.querySelectorAll('*')`），对每个元素检查 shadowRoot。在复杂页面（如抖音 SPA）中，DOM 节点可能数万个，每次滚动后都全量遍历一次，加上 while 循环和 waitForTimeout，整体性能较差。",
+      "suggestion": "1) 限制遍历深度或使用 MutationObserver 增量发现新节点；2) 缓存已遍历的 shadowRoot，避免重复扫描；3) 考虑用 Playwright 原生的 locator API 替代手动 DOM 遍历。",
+      "rule_reference": "Performance — Premature Optimization vs. Real Bottleneck",
+      "confidence": 0.8
+    }
+  ],
+  "metrics": {
+    "total_findings": 10,
+    "by_severity": {
+      "blocking": 2,
+      "important": 4,
+      "nit": 3,
+      "suggestion": 0,
+      "learning": 0,
+      "praise": 0
+    },
+    "by_category": {
+      "maintainability": 3,
+      "correctness": 3,
+      "bug": 1,
+      "security": 1,
+      "performance": 1
+    },
+    "review_duration_seconds": 0
+  },
+  "praise": [
+    {
+      "file": "shared-scripts/douyin/extract-links.js",
+      "line": 15,
+      "comment": "抖音提取器的双策略设计（API 拦截 + DOM 遍历）是优秀的防御性架构，注释中记录了实测发现（Lynx 框架、deviceScaleFactor 要求等），这种'记录为什么'而非'记录是什么'的注释风格值得推广。"
+    },
+    {
+      "file": "tools/browser/helpers/node-helpers.js",
+      "line": 58,
+      "comment": "screenshotOnError 高阶函数同时支持直调和柯里化两种模式，API 设计灵活。将'出错时截图'这个横切关注点封装为装饰器，是 Clean Code 中'错误处理抽象'的好实践。"
+    },
+    {
+      "file": "tools/vision/glm-vision-mcp.py",
+      "line": 64,
+      "comment": "MCP Server 的 handle() 函数使用 early-return 模式处理不同 method，结构清晰。对 notifications（无 id）返回 None 的处理符合 JSON-RPC 规范。preprocess() 中的自适应压缩策略（先判断大小再决定是否 resize）是务实的工程选择。"
+    },
+    {
+      "file": "tools/fetch/smart-fetch.sh",
+      "line": 1,
+      "comment": "smart-fetch.sh 的分层降级策略（curl 直连 → curl 代理 → cdp-proxy）设计合理，--force-curl / --force-cdp 手动覆盖选项为调试提供了便利。输出格式支持人类可读和 JSON 两种模式，体现了对不同消费者（人 vs 程序）的考虑。"
+    }
+  ]
+}

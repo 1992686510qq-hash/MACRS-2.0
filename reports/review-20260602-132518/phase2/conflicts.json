@@ -1,0 +1,196 @@
+[
+  {
+    "conflict_id": "CFL-001",
+    "type": "severity",
+    "merged_finding": "M-012",
+    "file": "scanner.js",
+    "severity_gap": 3,
+    "needs_human": true,
+    "disagreement": {
+      "A": {
+        "severity": "suggestion",
+        "unified_severity": "P3 MEDIUM"
+      },
+      "C": {
+        "severity": "blocking",
+        "unified_severity": "P0 BLOCKING"
+      }
+    }
+  },
+  {
+    "conflict_id": "CFL-002",
+    "type": "category",
+    "merged_finding": "M-012",
+    "file": "scanner.js",
+    "categories": [
+      "performance",
+      "maintainability"
+    ],
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-003",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "index.js",
+    "missing_agent": "C",
+    "reported_by": [
+      "A"
+    ],
+    "finding_ids": [
+      "A-001"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-004",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "index.js",
+    "missing_agent": "C",
+    "reported_by": [
+      "A"
+    ],
+    "finding_ids": [
+      "A-002"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-005",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "watcher.js",
+    "missing_agent": "C",
+    "reported_by": [
+      "A"
+    ],
+    "finding_ids": [
+      "A-003"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-006",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "agents.js",
+    "missing_agent": "C",
+    "reported_by": [
+      "A"
+    ],
+    "finding_ids": [
+      "A-004"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-007",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "shared.js",
+    "missing_agent": "A",
+    "reported_by": [
+      "C"
+    ],
+    "finding_ids": [
+      "C-002"
+    ],
+    "max_severity": "P0 BLOCKING",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-008",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "index.js",
+    "missing_agent": "A",
+    "reported_by": [
+      "C"
+    ],
+    "finding_ids": [
+      "C-003"
+    ],
+    "max_severity": "P0 BLOCKING",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-009",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "agents.js",
+    "missing_agent": "A",
+    "reported_by": [
+      "C"
+    ],
+    "finding_ids": [
+      "C-006"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-010",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "index.js",
+    "missing_agent": "A",
+    "reported_by": [
+      "C"
+    ],
+    "finding_ids": [
+      "C-007"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-011",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "index.js",
+    "missing_agent": "A",
+    "reported_by": [
+      "C"
+    ],
+    "finding_ids": [
+      "C-008"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-012",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "shared.js",
+    "missing_agent": "A",
+    "reported_by": [
+      "C"
+    ],
+    "finding_ids": [
+      "C-009"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  },
+  {
+    "conflict_id": "CFL-013",
+    "type": "existence",
+    "merged_finding": null,
+    "file": "index.js",
+    "missing_agent": "A",
+    "reported_by": [
+      "C"
+    ],
+    "finding_ids": [
+      "C-011"
+    ],
+    "max_severity": "P1 CRITICAL",
+    "needs_human": false
+  }
+]

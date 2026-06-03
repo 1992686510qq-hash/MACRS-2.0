@@ -1,0 +1,36 @@
+{
+  "status": "PARTIAL",
+  "agents": {
+    "A": {
+      "name": "Agent A",
+      "status": "FAILED",
+      "elapsed_seconds": 234.1,
+      "findings_count": 0,
+      "validation_errors": [],
+      "error": "Could not extract valid JSON from agent output"
+    },
+    "B": {
+      "name": "Agent B",
+      "status": "OK",
+      "elapsed_seconds": 258.7,
+      "findings_count": 12,
+      "validation_errors": [],
+      "praise_count": 3
+    },
+    "C": {
+      "name": "Agent C",
+      "status": "TIMEOUT",
+      "elapsed_seconds": 2162.7,
+      "findings_count": 0,
+      "validation_errors": [],
+      "error": "Agent timed out after 600s"
+    }
+  },
+  "total_findings": 12,
+  "total_praise": 3,
+  "output_files": [
+    "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\MACRS\\reports\\review-20260602-190652\\review-b.json"
+  ],
+  "summary_file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\MACRS\\reports\\review-20260602-190652\\phase-1-summary.json",
+  "total_elapsed_seconds": 3352.0
+}

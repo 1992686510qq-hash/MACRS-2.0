@@ -1,0 +1,322 @@
+{
+  "agent_id": "A",
+  "skill": "code-review-skill",
+  "philosophy": "你是'可维护性优先'的代码审查专家。你的核心理念来自 The Pragmatic Programmer 和 Clean Code 传统：代码首先是写给人看的，其次才是给机器执行的。你关注：命名是否自解释？函数是否做且只做一件事？抽象层次是否一致？重复代码是否可以提取？注释是否解释了'为什么'而非'做了什么'？",
+  "review_scope": {
+    "files": [
+      "server/agents.js",
+      "server/index.js",
+      "server/pricing.js",
+      "server/routes/open.js",
+      "server/routes/session.js",
+      "server/routes/sessions.js",
+      "server/routes/snapshots.js",
+      "server/scanner.js",
+      "server/shared.js",
+      "server/snapshot.js",
+      "server/sse.js",
+      "server/watcher.js"
+    ],
+    "lines_total": 1821
+  },
+  "findings": [
+    {
+      "id": "A-001",
+      "file": "server/routes/session.js",
+      "line": 236,
+      "line_range": [
+        118,
+        289
+      ],
+      "severity": "blocking",
+      "category": "bug",
+      "title": "pLines 在 try 块外部引用——文件读取失败时触发 ReferenceError 崩溃",
+      "description": "在 buildRelationsResponse 中，pLines 在第 120 行的 try 块内声明（var pLines = pContent.trim().split('\\n')）。但同一函数在第 236 行（userMessages 循环）和第 289 行（waterfall 循环）中引用了 pLines，这两处都在 try 块之外。如果文件读取失败（权限问题、文件被删除等），pLines 未定义，两处 for 循环将抛出 ReferenceError，导致整个 /api/session/:id/relations 请求 500 崩溃。这个 bug 的触发条件是：会话文件在扫描缓存后、请求处理前被删除或移动——在文件系统活跃的环境中完全可能发生。",
+      "suggestion": "将 pLines 声明提升到 try 块之前（var pLines = []），或在 try 块外添加防御性检查（if (!pLines || pLines.length === 0)）提前返回响应。",
+      "code_snippet_bad": "  try {\n    var pContent = fs.readFileSync(relTarget._file, \"utf-8\");\n    var pLines = pContent.trim().split(\"\\n\");\n    // ...\n  } catch (e) {}\n  // ... 100+ lines later ...\n  for (var pi2 = 0; pi2 < pLines.length; pi2++) {  // ← pLines 可能未定义!",
+      "code_snippet_good": "  var pLines = [];  // 提升声明\n  try {\n    var pContent = fs.readFileSync(relTarget._file, \"utf-8\");\n    pLines = pContent.trim().split(\"\\n\");\n    // ...\n  } catch (e) { /* 文件不可读，pLines 保持空数组 */ }",
+      "rule_reference": "variable-scope / defensive-programming",
+      "confidence": 0.95
+    },
+    {
+      "id": "A-002",
+      "file": "server/index.js",
+      "line": 36,
+      "line_range": [
+        35,
+        38
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "XSS 注入：import-data.json 内容直接拼接进 HTML script 标签",
+      "description": "/import-localstorage 路由将 import-data.json 的原始内容通过字符串拼接（'var d=' + importData）直接嵌入 HTML 的 <script> 标签中，没有任何转义或 sanitization。如果 import-data.json 的值中包含 </script><script>alert(1)</script> 等 payload，浏览器会提前关闭 script 标签并执行注入的脚本。虽然该文件是服务器本地文件，攻击面相对有限，但如果该文件被篡改（供应链攻击、共享目录写入等），XSS 将在用户的浏览器上下文中执行，可以访问同源 localStorage、发起内网请求等。",
+      "suggestion": "对 importData 进行 JSON 安全编码，或使用 CSP nonce。最简单的修复：将数据作为 HTML 实体编码的 JSON 放入一个隐藏的 data 属性中，再由 JS 读取并 JSON.parse。至少应对 <、>、&、'、\" 进行 HTML 实体转义。",
+      "code_snippet_bad": "var importData = fs.readFileSync(importFile, \"utf8\");\nvar html = '...var d=' + importData + ';...';",
+      "code_snippet_good": "var importData = fs.readFileSync(importFile, \"utf8\");\n// 验证是合法 JSON，防止注入\ntry { JSON.parse(importData); } catch(e) {\n  res.writeHead(400); res.end(\"import-data.json format error\"); return;\n}\n// HTML 实体转义后再嵌入\nvar safeData = importData.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');\nvar html = '...var d=' + safeData + ';...';",
+      "rule_reference": "OWASP XSS Prevention / CWE-79",
+      "confidence": 0.92
+    },
+    {
+      "id": "A-003",
+      "file": "server/index.js",
+      "line": 96,
+      "line_range": [
+        94,
+        198
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "configName 查询参数未校验——路径遍历 + bat 文件命令注入",
+      "description": "/api/create-and-open 路由从 URL 查询参数读取 configName，未做任何校验即传入 path.join(homeDir, '.claude', configName) 用于文件存在性检查、读取配置、写入 bat 文件的 set 命令、以及作为 sessionConfigMap 的 key。虽然 path.join 会规范化路径，但 configName='../../etc/passwd' 仍可逃逸 .claude 目录。更严重的是，在 spawnWithBat（open.js:64-68）中，configName 对应的配置文件的 env 变量被直接写入 bat 的 set 命令（'set ' + k + '=' + cfg.env[k]），如果 cfg.env 中的值包含换行符或 cmd 特殊字符，可注入额外的 bat 命令。",
+      "suggestion": "对 configName 做白名单校验：只允许匹配 /^[a-zA-Z0-9_-]+\\.json$/ 的格式。在 spawnWithBat 中对 env 值做 cmd 转义（至少过滤 \\n、\\r、&、|、> 等字符）。",
+      "code_snippet_bad": "var configName = urlObj.searchParams.get(\"config\");\nif (!configName) { ... }\nvar settingsPath = path.join(homeDir, \".claude\", configName);",
+      "code_snippet_good": "var configName = urlObj.searchParams.get(\"config\");\nif (!configName || !/^[a-zA-Z0-9_-]+\\.json$/.test(configName)) {\n  res.writeHead(400, { \"Content-Type\": \"application/json\" });\n  res.end(JSON.stringify({ ok: false, error: \"invalid config name\" }));\n  return;\n}",
+      "rule_reference": "CWE-22 Path Traversal / CWE-78 Command Injection",
+      "confidence": 0.88
+    },
+    {
+      "id": "A-004",
+      "file": "server/index.js",
+      "line": 108,
+      "line_range": [
+        107,
+        111
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "Math.random() 生成会话 ID——可预测且有碰撞风险",
+      "description": "sessionId 使用 Math.random() 生成 UUID v4 格式的标识符。Math.random() 不是密码学安全的 PRNG，在 V8 引擎上可被预测。同时，Math.random() 的 128 位空间碰撞概率虽低，但 fakePid（第 172 行）使用 Math.random() * 900000 + 100000 仅有 ~90 万种可能，在高频创建时极易碰撞，导致 session 元数据被覆盖。",
+      "suggestion": "使用 crypto.randomUUID()（Node.js 14.17+）或 crypto.randomBytes(16) 生成 session ID。fakePid 应使用递增计数器或 PID 文件管理，避免碰撞。",
+      "code_snippet_bad": "var sessionId = \"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, function(c) {\n  var r = Math.random() * 16 | 0, ...",
+      "code_snippet_good": "var crypto = require(\"crypto\");\nvar sessionId = crypto.randomUUID();",
+      "rule_reference": "CWE-330 Use of Insufficiently Random Values",
+      "confidence": 0.9
+    },
+    {
+      "id": "A-005",
+      "file": "server/routes/open.js",
+      "line": 89,
+      "line_range": [
+        82,
+        114
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "settings.json 竞态条件——并发请求可导致配置文件内容错乱",
+      "description": "swapSettingsJson 在同一进程中对全局 settings.json 进行 read-modify-write 操作，没有任何锁机制。当两个 /api/open-session 或 /api/create-and-open 请求几乎同时到达时：请求 A 写入 config-A → 请求 B 写入 config-B → 5 秒后请求 A 的 restore 用 ORIGINAL_SETTINGS 覆盖了 config-B 的内容。此外，5 秒的 restore 延迟是硬编码的——如果 VSCode 启动超过 5 秒，settings.json 会在 Claude Code 读取前被恢复，导致会话使用错误的配置。",
+      "suggestion": "引入文件锁（proper-lockfile 包）或使用写入临时文件 + rename 的原子操作。restore 时机应改为：监听 VSCode 进程启动完成事件，或使用文件内容 hash 比较而非固定延时。短期修复：将 restore 延迟增大到 15-30 秒。",
+      "code_snippet_bad": "function swapSettingsJson(configFile) {\n  // ...\n  fs.writeFileSync(defaultSettingsPath, targetSettings, \"utf-8\");\n  // ...\n}\n// 5 秒后恢复\nsetTimeout(function() {\n  fsModule.writeFileSync(defaultSettingsPath, ORIGINAL_SETTINGS, \"utf-8\");\n}, 5000);",
+      "code_snippet_good": "var lockfile = require('proper-lockfile');\nfunction swapSettingsJson(configFile) {\n  // ...\n  lockfile.lock(defaultSettingsPath, { retries: 3 }).then(function(release) {\n    fs.writeFileSync(defaultSettingsPath, targetSettings, \"utf-8\");\n    // 由调用方决定何时 restore\n    return release;\n  });\n}",
+      "rule_reference": "race-condition / atomic-file-operations",
+      "confidence": 0.88
+    },
+    {
+      "id": "A-006",
+      "file": "server/index.js",
+      "line": 154,
+      "line_range": [
+        153,
+        159
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "时间戳替换过于激进——匹配数据内容中的 ISO 时间戳导致语义破坏",
+      "description": "正则 /\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z/g 会匹配 JSONL 文件中所有符合 ISO 8601 格式的字符串，包括消息内容中的时间引用（如用户说'请检查 2024-01-15T10:30:00.000Z 的日志'）。替换后这些引用变成递增的假时间戳，破坏了原始对话的语义完整性。此外 tsCounter++ 生成的时间戳间隔仅 1ms，在并发环境下可能导致多个 JSONL 行拥有相同时间戳。",
+      "suggestion": "只替换顶层 JSON 对象的 timestamp 字段，而非全文盲替。可以逐行 JSON.parse 后只修改 obj.timestamp 字段再序列化回去，避免误伤消息内容中的时间字符串。",
+      "code_snippet_bad": "var tsRegex = /\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z/g;\nnewContent = newContent.replace(tsRegex, function() {\n  return new Date(tsBase + tsCounter++).toISOString();\n});",
+      "code_snippet_good": "// 逐行处理，只替换顶层 timestamp 字段\nvar lines = newContent.split('\\n');\nfor (var i = 0; i < lines.length; i++) {\n  try {\n    var obj = JSON.parse(lines[i]);\n    if (obj.timestamp) obj.timestamp = new Date(tsBase + i).toISOString();\n    lines[i] = JSON.stringify(obj);\n  } catch(e) {}\n}\nnewContent = lines.join('\\n');",
+      "rule_reference": "semantic-preservation / targeted-replacement",
+      "confidence": 0.85
+    },
+    {
+      "id": "A-007",
+      "file": "server/index.js",
+      "line": 118,
+      "line_range": [
+        117,
+        119
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "错误响应泄露服务器内部路径",
+      "description": "当源会话文件不存在时，错误消息直接包含完整服务器路径：'Source session not found: ' + sourceFile。类似地，第 211 行的通用错误处理泄露 err.message。这些信息帮助攻击者映射服务器目录结构，降低后续攻击的难度。在生产环境中，内部路径不应暴露给客户端。",
+      "suggestion": "返回通用错误消息，将详细错误信息记录到服务器日志。",
+      "code_snippet_bad": "res.end(JSON.stringify({ ok: false, error: \"Source session not found: \" + sourceFile }));",
+      "code_snippet_good": "console.error(\"[create-and-open] Source session not found:\", sourceFile);\nres.end(JSON.stringify({ ok: false, error: \"Source session not found\" }));",
+      "rule_reference": "CWE-209 Information Exposure Through Error Messages",
+      "confidence": 0.88
+    },
+    {
+      "id": "A-008",
+      "file": "server/routes/sessions.js",
+      "line": 45,
+      "line_range": [
+        43,
+        48
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "delete 操作修改共享缓存对象——后续请求可能读到残缺数据",
+      "description": "/api/sessions 路由中对 sessions[i] 执行 delete s._file、delete s.fileMtimeMs 等操作。由于 scanner.scanSessions 返回的对象与 shared.sessionCache 中的对象是同一个引用（mergeSessionData 就地修改），这些 delete 操作会永久移除缓存对象上的属性。在下一次 scanSessions 重新赋值之前，/api/session/:id/relations 和 /api/session/:id 等路由如果命中同一个缓存对象，会因缺少 _file 属性而无法读取文件内容，导致 404 错误或静默失败。",
+      "suggestion": "在发送响应前创建对象的浅拷贝，而非直接修改缓存对象。使用 Object.assign({}, s) 或在构造响应对象时选择性地只包含需要的字段。",
+      "code_snippet_bad": "for (var i = 0; i < sessions.length; i++) {\n  var s = sessions[i];\n  // ...\n  delete s._file;\n  delete s.fileMtimeMs;\n  delete s._dirty;",
+      "code_snippet_good": "for (var i = 0; i < sessions.length; i++) {\n  var s = sessions[i];\n  var safe = Object.assign({}, s);\n  delete safe._file;\n  delete safe.fileMtimeMs;\n  delete safe._dirty;\n  // push safe instead of s",
+      "rule_reference": "shared-state-mutation / defensive-copy",
+      "confidence": 0.9
+    },
+    {
+      "id": "A-009",
+      "file": "server/routes/session.js",
+      "line": 209,
+      "line_range": [
+        199,
+        220
+      ],
+      "severity": "important",
+      "category": "performance",
+      "title": "loadAgentNames() 在循环内每次迭代都读取磁盘文件",
+      "description": "在 buildRelationsResponse 的 dispatch 匹配循环中，agentsMod.loadAgentNames() 在第 209 行被调用，位于 for (var ci = 0; ci < sortedCalls.length; ci++) 循环体内。loadAgentNames 使用 fs.readFileSync 读取磁盘文件。如果一个会话有 50 次 dispatch 调用，就会产生 50 次同步文件读取，每次都在事件循环中阻塞。对于大型会话（频繁的 Agent/Task dispatch），这会显著增加 API 响应时间。",
+      "suggestion": "将 loadAgentNames() 调用移到循环外部，只读取一次。或者在 agents 模块中添加缓存层（TTL 缓存或 fileMtime 检查）。",
+      "code_snippet_bad": "for (var ci = 0; ci < sortedCalls.length; ci++) {\n  // ...\n  if (bestMatch) {\n    var nameCfg = agentsMod.loadAgentNames(); // ← 每次迭代都读文件!",
+      "code_snippet_good": "var nameCfg = agentsMod.loadAgentNames(); // 循环外读取一次\nfor (var ci = 0; ci < sortedCalls.length; ci++) {\n  // ...\n  if (bestMatch) {\n    if (nameCfg.agents && nameCfg.agents[bestMatch.id]) {",
+      "rule_reference": "hoist-invariant-out-of-loop / sync-io-in-hot-path",
+      "confidence": 0.92
+    },
+    {
+      "id": "A-010",
+      "file": "server/routes/session.js",
+      "line": 142,
+      "line_range": [
+        142,
+        191
+      ],
+      "severity": "nit",
+      "category": "maintainability",
+      "title": "subAgentMap 变量声明后从未使用——死代码",
+      "description": "在 buildRelationsResponse 中，subAgentMap 在第 142 行声明，第 190 行赋值，但整个函数中从未被读取或引用。这是一段死代码，增加了认知负担，让读者误以为后续有逻辑依赖这个映射。可能是重构过程中遗留的未清理代码。",
+      "suggestion": "删除 subAgentMap 的声明和赋值。如果未来需要按 ID 查找子 agent，可以从 nodes 数组中构建。",
+      "code_snippet_bad": "var subAgentMap = {};\n// ...\nsubAgentMap[saAgentId] = saInfo; // 赋值后再无引用",
+      "code_snippet_good": "// 删除 subAgentMap，直接使用 nodes 数组",
+      "rule_reference": "dead-code-elimination",
+      "confidence": 0.95
+    },
+    {
+      "id": "A-011",
+      "file": "server/routes/session.js",
+      "line": 101,
+      "line_range": [
+        101,
+        367
+      ],
+      "severity": "suggestion",
+      "category": "maintainability",
+      "title": "buildRelationsResponse 是 266 行的巨型函数——职责过多难以维护和测试",
+      "description": "buildRelationsResponse 承担了至少 5 个独立职责：(1) 解析主会话文件提取 dispatch 事件，(2) 解析子 agent 文件，(3) 按时间匹配 dispatch→agent，(4) 阶段检测算法，(5) waterfall trace 生成。每个职责都有独立的数据结构和算法逻辑，耦合在一个函数中使得任何一处修改都可能意外影响其他部分。该函数也没有任何单元测试覆盖。",
+      "suggestion": "将函数拆分为 5 个独立函数：extractDispatchCalls(pLines)、parseSubAgentNodes(subDirs)、matchDispatchToAgents(dispatchCalls, agents)、detectPhases(matchedEdges, userMessages)、buildWaterfallTrace(pLines)。每个函数可以独立测试。",
+      "code_snippet_bad": "function buildRelationsResponse(relTarget, relId, res) {\n  // 266 行，5 个独立职责混在一起",
+      "code_snippet_good": "function buildRelationsResponse(relTarget, relId, res) {\n  var pLines = readFileLines(relTarget._file);\n  var dispatchCalls = extractDispatchCalls(pLines);\n  var subAgentNodes = parseSubAgentNodes(parentDir, relId);\n  var { edges, matched } = matchDispatchToAgents(dispatchCalls, subAgentNodes, relId);\n  var phases = detectPhases(matched, extractUserMessages(pLines));\n  var waterfall = buildWaterfallTrace(pLines);\n  // ...\n}",
+      "rule_reference": "Single Responsibility Principle / Extract Method",
+      "confidence": 0.85
+    },
+    {
+      "id": "A-012",
+      "file": "server/scanner.js",
+      "line": 60,
+      "line_range": [
+        55,
+        80
+      ],
+      "severity": "suggestion",
+      "category": "performance",
+      "title": "parseSessionChunk 使用同步文件 I/O——大文件时阻塞事件循环",
+      "description": "parseSessionChunk 使用 fs.statSync、fs.openSync、fs.readSync 等同步 API 读取文件。在 HTTP 请求处理链中（session detail API 通过 buildSessionDetailResponse 调用 parseSessionChunk），这些同步调用会阻塞 Node.js 事件循环。对于数百 MB 的大型 JSONL 文件（长时间运行的会话），阻塞时间可能达到数百毫秒甚至秒级，影响所有并发请求的响应时间。",
+      "suggestion": "对于 HTTP 请求上下文，使用 fs.promises API 或 fs.createReadStream 进行流式解析。对于启动时的初始化扫描，同步 I/O 可以接受（启动是一次性的）。可以维护两套路径：启动用 sync，运行时用 async。",
+      "code_snippet_bad": "var stat = fs.statSync(filePath);\nvar fd = fs.openSync(filePath, \"r\");\nvar bytesRead = fs.readSync(fd, buf, 0, buf.length, startOffset);",
+      "code_snippet_good": "var stat = await fsp.stat(filePath);\nvar fh = await fsp.open(filePath, 'r');\ntry {\n  var { bytesRead } = await fh.read(buf, 0, buf.length, startOffset);\n} finally { await fh.close(); }",
+      "rule_reference": "async-io-in-event-loop",
+      "confidence": 0.8
+    },
+    {
+      "id": "A-013",
+      "file": "server/index.js",
+      "line": 22,
+      "line_range": [
+        21,
+        22
+      ],
+      "severity": "suggestion",
+      "category": "security",
+      "title": "CORS 设为完全开放（Access-Control-Allow-Origin: *）——所有网站可调用 API",
+      "description": "HTTP 服务器对所有响应设置 Access-Control-Allow-Origin: *。这意味着互联网上任何网站都可以向该服务器发起跨域请求，读取 API 响应数据（包括会话内容、token 使用量等敏感信息）。虽然该面板运行在 localhost，但如果用户同时浏览恶意网页，恶意 JS 可以读取 localhost:5022 的所有 API 数据。",
+      "suggestion": "限制 CORS origin 为 localhost 或特定的前端域名。如果需要开发便利，至少限制为 http://localhost:5022 或 file:// 协议。",
+      "code_snippet_bad": "res.setHeader(\"Access-Control-Allow-Origin\", \"*\");",
+      "code_snippet_good": "var origin = req.headers.origin;\nif (origin && /^https?:\\/\\/localhost(:\\d+)?$/.test(origin)) {\n  res.setHeader(\"Access-Control-Allow-Origin\", origin);\n}",
+      "rule_reference": "CORS Security / OWASP",
+      "confidence": 0.82
+    },
+    {
+      "id": "A-014",
+      "file": "server/routes/session.js",
+      "line": 287,
+      "line_range": [
+        286,
+        288
+      ],
+      "severity": "nit",
+      "category": "maintainability",
+      "title": "wfParentStack 变量赋值后从未被读取——残留的未完成逻辑",
+      "description": "wfParentStack 在第 287 行声明为 []，在第 309 行和第 317 行被重置为 []，但整个函数中从未被读取或用于构建 parent-child 关系。这看起来是 waterfall trace 功能的未完成实现——原本可能计划用 parentStack 来追踪 tool_use → tool_result 的嵌套关系，但最终采用了简单的 depth: 1 硬编码方案。残留代码误导读者认为存在父子层级追踪。",
+      "suggestion": "删除 wfParentStack 及所有赋值语句。如果未来需要实现嵌套层级追踪，再重新引入。",
+      "code_snippet_bad": "var wfParentStack = [];\n// ...\nwfParentStack = []; // 赋值后再无读取",
+      "code_snippet_good": "// 删除 wfParentStack 相关代码",
+      "rule_reference": "dead-code-elimination",
+      "confidence": 0.93
+    }
+  ],
+  "metrics": {
+    "total_findings": 14,
+    "by_severity": {
+      "blocking": 3,
+      "important": 5,
+      "nit": 2,
+      "suggestion": 3,
+      "learning": 0,
+      "praise": 0
+    },
+    "by_category": {
+      "security": 5,
+      "bug": 4,
+      "performance": 2,
+      "maintainability": 4,
+      "correctness": 0
+    },
+    "review_duration_seconds": 480
+  },
+  "praise": [
+    {
+      "file": "server/scanner.js",
+      "line": 110,
+      "comment": "增量解析设计（parseSessionChunk + mergeSessionData + fileOffsets）是一个很好的性能优化模式——通过记录文件偏移量避免每次全量重解析，对大型 JSONL 文件的扫描效率提升显著。"
+    },
+    {
+      "file": "server/shared.js",
+      "line": 29,
+      "comment": "sessionConfigMap 的持久化设计（loadSessionConfigMap + saveSessionConfigMap）简洁实用，使用 Map 而非普通对象保持了语义清晰性，序列化/反序列化的封装也恰到好处。"
+    },
+    {
+      "file": "server/watcher.js",
+      "line": 22,
+      "comment": "watcher 的 debounce 实现（pendingChanges Map + setTimeout 清理）避免了高频文件变更导致的扫描风暴，设计简洁有效。"
+    },
+    {
+      "file": "server/sse.js",
+      "line": 3,
+      "comment": "SSE 广播中的死连接清理（dead 数组收集后反向 splice）是一个实用的模式，避免了遍历时修改数组的经典陷阱。"
+    },
+    {
+      "file": "server/scanner.js",
+      "line": 24,
+      "comment": "getStatus 的状态机设计基于 stop_reason + 时间衰减的组合逻辑，覆盖了 end_turn / stop_sequence / tool_use / null 四种情况并附带时间维度降级，是一个经过深思熟虑的状态判断模型。"
+    }
+  ]
+}

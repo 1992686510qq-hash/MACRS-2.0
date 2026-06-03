@@ -1,0 +1,16 @@
+[
+  {
+    "conflict_id": "CFL-001",
+    "type": "severity",
+    "merged_finding": "M-001",
+    "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+    "severity_gap": 3,
+    "needs_human": true,
+    "disagreement": {
+      "B": {
+        "severity": "suggestion",
+        "unified_severity": "P3 MEDIUM"
+      }
+    }
+  }
+]

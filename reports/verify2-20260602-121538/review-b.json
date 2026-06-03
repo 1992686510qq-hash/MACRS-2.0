@@ -1,0 +1,283 @@
+{
+  "agent_id": "B",
+  "skill": "Claude-BugHunter",
+  "philosophy": "你是'攻击者思维'的安全审计专家。你审查代码时的默认假设是：有恶意攻击者会仔细阅读这段代码，寻找任何可能的突破口。你不是在找'不优雅'的代码——你是在找'可利用'的代码。你的核心理念来自 574+ 个真实 HackerOne 漏洞报告的模式提炼。",
+  "review_scope": {
+    "files": [
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\agents.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\pricing.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\open.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\session.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\sessions.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\snapshots.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\scanner.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\shared.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\snapshot.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\sse.js",
+      "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\watcher.js"
+    ],
+    "lines_total": 1955
+  },
+  "findings": [
+    {
+      "id": "B-001",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "line": 27,
+      "line_range": [
+        27,
+        28
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "XSS via </script> injection in /import-localstorage",
+      "description": "The /import-localstorage route reads import-data.json and embeds it directly into an HTML <script> block via string concatenation: `var html = '...var d=' + safeData + ';...'`. While JSON.stringify(JSON.parse(...)) ensures valid JSON, JSON.stringify does NOT escape `</script>` sequences. If import-data.json contains a string like `</script><img src=x onerror=alert(document.cookie)>`, the HTML parser will close the script tag prematurely and execute the injected payload. This is a classic script-tag breakout XSS (CWE-79). An attacker who can control or poison import-data.json achieves arbitrary JavaScript execution in the admin's browser.",
+      "suggestion": "Escape forward-slash sequences before embedding JSON in HTML: `var safeData = JSON.stringify(JSON.parse(importData)).replace(/<\\//g, '<\\\\/');`. Better yet, serve the data as a JSON endpoint (`/api/import-data`) and fetch it via `fetch().then(r=>r.json())` from the HTML page, completely separating data from script context.",
+      "code_snippet_bad": "var safeData = JSON.stringify(JSON.parse(importData));\nvar html = '...<script>...var d=' + safeData + ';...</script>...';",
+      "code_snippet_good": "// Option A: Escape </script> sequences\nvar safeData = JSON.stringify(JSON.parse(importData)).replace(/<\\//g, '<\\\\/');\n\n// Option B (preferred): Serve via API endpoint\n// GET /api/import-data → return JSON\n// In HTML: fetch('/api/import-data').then(r=>r.json()).then(d => { ... })",
+      "rule_reference": "CWE-79: Cross-site Scripting (XSS)",
+      "confidence": 0.95
+    },
+    {
+      "id": "B-002",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "line": 97,
+      "line_range": [
+        97,
+        105
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "Math.random() used for session UUID generation — predictable IDs",
+      "description": "The /api/create-and-open endpoint generates session IDs using `Math.random()` (`var r = Math.random() * 16 | 0`). Math.random() is not cryptographically secure — its output is predictable given a few samples (especially on V8/Node.js, where the xorshift128+ PRNG can be fully recovered after observing ~3 outputs). An attacker who observes or guesses a session ID can hijack that session by calling /api/open-session/{id} to launch it in their VSCode, or /api/terminal-bat/{id} to resume it in their terminal. This also applies to the `fakePid` generation (line ~128) which uses the same weak PRNG.",
+      "suggestion": "Replace Math.random() with crypto.randomUUID() (Node.js 14.17+) or `require('crypto').randomBytes(16)` for all ID generation:\n```javascript\nvar crypto = require('crypto');\nvar sessionId = crypto.randomUUID();\n```",
+      "code_snippet_bad": "var sessionId = \"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, function(c) {\n  var r = Math.random() * 16 | 0, v = c === \"x\" ? r : (r & 0x3 | 0x8);\n  return v.toString(16);\n});",
+      "code_snippet_good": "var crypto = require('crypto');\nvar sessionId = crypto.randomUUID();",
+      "rule_reference": "CWE-330: Use of Insufficiently Random Values",
+      "confidence": 0.92
+    },
+    {
+      "id": "B-003",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\session.js",
+      "line": 95,
+      "line_range": [
+        95,
+        95
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "Internal file path disclosure via /api/session/{id} response",
+      "description": "The buildSessionDetailResponse function includes the full server-side file path in the response: `filePath: fpath`. This exposes the internal directory structure (e.g., `C:\\Users\\Administrator\\.claude\\projects\\C--Users-Administrator\\{uuid}.jsonl`) to any caller. Combined with other information, this helps an attacker map the filesystem for path traversal or targeted file access. (CWE-200: Exposure of Sensitive Information)",
+      "suggestion": "Remove the `filePath` field from the API response, or return only a relative/basename path if the frontend needs it for display purposes.",
+      "code_snippet_bad": "var resp = {\n  id: cached.id, title: cached.title, /* ... */\n  filePath: fpath  // exposes C:\\Users\\Administrator\\.claude\\projects\\...\n};",
+      "code_snippet_good": "var resp = {\n  id: cached.id, title: cached.title, /* ... */\n  // filePath removed — internal paths should not be exposed\n};",
+      "rule_reference": "CWE-200: Exposure of Sensitive Information to an Unauthorized Actor",
+      "confidence": 0.88
+    },
+    {
+      "id": "B-004",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "line": 18,
+      "line_range": [
+        18,
+        21
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "No security headers — missing CSP, X-Content-Type-Options, X-Frame-Options",
+      "description": "The HTTP server sets CORS headers for localhost origins but does not set any security response headers: no Content-Security-Policy, no X-Content-Type-Options (allows MIME sniffing), no X-Frame-Options (allows clickjacking via iframe embedding), no Referrer-Policy. The /import-localstorage and /migrate routes serve HTML pages that could be framed by a malicious page on the same origin, enabling clickjacking attacks to trick the user into triggering session creation or other actions.",
+      "suggestion": "Add security headers to all responses in the main server handler:\n```javascript\nres.setHeader('X-Content-Type-Options', 'nosniff');\nres.setHeader('X-Frame-Options', 'DENY');\nres.setHeader('Referrer-Policy', 'no-referrer');\n```",
+      "code_snippet_bad": "var server = http.createServer(function(req, res) {\n  var origin = req.headers.origin;\n  if (origin && /^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/.test(origin)) {\n    res.setHeader(\"Access-Control-Allow-Origin\", origin);\n  }\n  // no security headers set\n});",
+      "code_snippet_good": "var server = http.createServer(function(req, res) {\n  var origin = req.headers.origin;\n  if (origin && /^https?:\\/\\/(localhost|127\\.0\\.0\\.1)(:\\d+)?$/.test(origin)) {\n    res.setHeader(\"Access-Control-Allow-Origin\", origin);\n  }\n  res.setHeader('X-Content-Type-Options', 'nosniff');\n  res.setHeader('X-Frame-Options', 'DENY');\n  res.setHeader('Referrer-Policy', 'no-referrer');\n});",
+      "rule_reference": "CWE-693: Protection Mechanism Failure",
+      "confidence": 0.85
+    },
+    {
+      "id": "B-005",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "line": 128,
+      "line_range": [
+        128,
+        130
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "PID collision risk — Math.random() generates 6-digit PIDs that can overwrite existing session metadata",
+      "description": "The /api/create-and-open endpoint generates a fake PID with `Math.floor(Math.random() * 900000) + 100000` and writes it to `{sessionsDir}/{fakePid}.json`. If this PID collides with an existing session metadata file (probability ~1/900000 per call, non-negligible over time), it silently overwrites the existing session's metadata. This could corrupt another session's state or cause the panel to display incorrect information. Combined with B-002 (predictable Math.random), an attacker could predict the PID and target a specific existing file.",
+      "suggestion": "Use crypto.randomInt() for PID generation, or better yet, use a UUID-based filename instead of a numeric PID:\n```javascript\nvar metaFilename = sessionId + '.json'; // reuse the already-generated UUID\nfs.writeFileSync(path.join(sessionsDir, metaFilename), JSON.stringify(sessionMeta));\n```",
+      "code_snippet_bad": "var fakePid = Math.floor(Math.random() * 900000) + 100000;\nvar sessionMeta = { pid: fakePid, sessionId: sessionId, /* ... */ };\nfs.writeFileSync(path.join(sessionsDir, fakePid + \".json\"), JSON.stringify(sessionMeta, null, 2));",
+      "code_snippet_good": "// Use sessionId as filename — already unique (if using crypto.randomUUID per B-002)\nvar metaFilename = sessionId + '.json';\nvar sessionMeta = { pid: process.pid, sessionId: sessionId, /* ... */ };\nfs.writeFileSync(path.join(sessionsDir, metaFilename), JSON.stringify(sessionMeta, null, 2));",
+      "rule_reference": "CWE-362: Race Condition / CWE-330: Insufficient Randomness",
+      "confidence": 0.8
+    },
+    {
+      "id": "B-006",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\open.js",
+      "line": 1,
+      "line_range": [
+        1,
+        5
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "No authentication — all API endpoints accessible to any local process",
+      "description": "The server has zero authentication. Any process running on the same machine (including browser tabs, malicious extensions, or other user-space malware) can call any endpoint: /api/create-and-open to spawn new Claude Code sessions with arbitrary configs, /api/terminal-bat/{id} to hijack existing sessions, /api/snapshot/delete/{id} to destroy snapshots, or /api/open-session/{id} to launch sessions. While the CORS check limits browser-based cross-origin access to localhost, any local process (curl, another Node.js script, a browser extension with native messaging) can freely interact with all endpoints. This is especially dangerous because the server spawns child processes (claude CLI) with user-level privileges.",
+      "suggestion": "Add a shared secret/token authentication mechanism:\n1. Generate a random token on server start, write it to a config file\n2. Require the token in a custom header (X-Panel-Token) for all mutating endpoints\n3. For the HTML dashboard, pass the token as a URL parameter or cookie\nAlternatively, use a Unix socket instead of a TCP port for local-only access.",
+      "code_snippet_bad": "// No auth check — any request is processed\nvar server = http.createServer(function(req, res) {\n  if (sse.handleSSE(req, res)) return;\n  if (req.url === \"/import-localstorage\") { /* ... */ }\n  // ... all endpoints open\n});",
+      "code_snippet_good": "var crypto = require('crypto');\nvar PANEL_TOKEN = crypto.randomBytes(32).toString('hex');\n// Write to file for dashboard to read\nfs.writeFileSync(path.join(__dirname, '.panel-token'), PANEL_TOKEN);\n\nfunction checkAuth(req, res) {\n  var token = req.headers['x-panel-token'];\n  if (token !== PANEL_TOKEN) {\n    res.writeHead(401); res.end('Unauthorized');\n    return false;\n  }\n  return true;\n}",
+      "rule_reference": "CWE-306: Missing Authentication for Critical Function",
+      "confidence": 0.82
+    },
+    {
+      "id": "B-007",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "line": 140,
+      "line_range": [
+        140,
+        175
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "Mass UUID replacement in forked sessions — collateral damage to JSONL content",
+      "description": "The /api/create-and-open endpoint forks a source session by reading its JSONL file and replacing ALL UUIDs found via a greedy regex (`/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi`). This regex matches UUIDs embedded in file paths, tool outputs, error messages, and user-provided content — not just session/participant IDs. A tool output containing a UUID (e.g., a git commit hash, npm package ID, or database record) would be silently corrupted. This could cause the forked session to malfunction or produce incorrect results. The timestamp replacement (`/\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z/g`) has the same problem — it replaces timestamps in user messages and tool outputs, not just metadata timestamps.",
+      "suggestion": "Instead of blind regex replacement, parse each JSONL line as JSON and only replace UUIDs/timestamps in known structural fields (sessionId, promptId, timestamp at the top level). Leave message content untouched.",
+      "code_snippet_bad": "var uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;\nvar foundUuids = sourceContent.match(uuidRegex);\n// replaces ALL UUIDs everywhere in the file content\nnewContent = newContent.split(oldUuids[oi]).join(uuidMap[oldUuids[oi]]);\n\nvar tsRegex = /\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z/g;\nnewContent = newContent.replace(tsRegex, function() { /* ... */ });",
+      "code_snippet_good": "// Parse line by line, only replace in structural fields\nvar lines = sourceContent.split('\\n');\nvar newLines = lines.map(function(line) {\n  try {\n    var obj = JSON.parse(line);\n    if (obj.sessionId && uuidMap[obj.sessionId]) obj.sessionId = uuidMap[obj.sessionId];\n    if (obj.promptId && uuidMap[obj.promptId]) obj.promptId = uuidMap[obj.promptId];\n    if (obj.timestamp) obj.timestamp = new Date(Date.now()++).toISOString();\n    // Do NOT touch obj.message.content — it may contain arbitrary text\n    return JSON.stringify(obj);\n  } catch(e) { return line; }\n});",
+      "rule_reference": "CWE-20: Improper Input Validation",
+      "confidence": 0.85
+    },
+    {
+      "id": "B-008",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\session.js",
+      "line": 53,
+      "line_range": [
+        53,
+        66
+      ],
+      "severity": "nit",
+      "category": "security",
+      "title": "No size limit on JSONL file reading — potential memory exhaustion",
+      "description": "The buildSessionDetailResponse function reads session JSONL files either via a tail-based approach (limited by `limit * 1200 + 32768` bytes) or fully (`fs.readFileSync(fpath, 'utf-8')` when limit=0 via `?full=1`). The full-read path has no size cap — a corrupted or adversarially large JSONL file (e.g., a file filled with repeated 'A' characters) could exhaust server memory. Similarly, parseSubAgent in agents.js reads entire subagent JSONL files without size limits.",
+      "suggestion": "Add a maximum file size check before reading:\n```javascript\nvar MAX_READ_SIZE = 50 * 1024 * 1024; // 50MB\nvar fsize = fs.statSync(fpath).size;\nif (fsize > MAX_READ_SIZE && limit === 0) {\n  limit = 500; // force tail mode for large files\n}\n```",
+      "code_snippet_bad": "if (limit > 0) {\n  // tail-based read with size calc\n} else {\n  var raw = fs.readFileSync(fpath, \"utf-8\").trim().split(\"\\n\"); // no size check\n}",
+      "code_snippet_good": "var MAX_FULL_READ = 50 * 1024 * 1024;\nvar fsize = fs.statSync(fpath).size;\nif (limit <= 0 && fsize > MAX_FULL_READ) {\n  limit = 500; // auto-downgrade to tail mode\n}\nif (limit > 0) {\n  // tail-based read\n} else {\n  var raw = fs.readFileSync(fpath, \"utf-8\").trim().split(\"\\n\");\n}",
+      "rule_reference": "CWE-400: Uncontrolled Resource Consumption",
+      "confidence": 0.78
+    },
+    {
+      "id": "B-009",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "line": 156,
+      "line_range": [
+        156,
+        165
+      ],
+      "severity": "nit",
+      "category": "security",
+      "title": "Error responses leak internal file paths",
+      "description": "When the source session file is not found, the error response includes the full server path: `{ ok: false, error: 'Source session not found: ' + sourceFile }`. This exposes the internal directory structure to the caller. Similarly, console.error calls throughout the codebase log full paths which could appear in log files accessible to other processes.",
+      "suggestion": "Return generic error messages to clients; log details server-side only:\n```javascript\nres.end(JSON.stringify({ ok: false, error: 'Source session not found' }));\nconsole.error('[create-and-open] Source not found:', sourceFile);\n```",
+      "code_snippet_bad": "res.end(JSON.stringify({ ok: false, error: \"Source session not found: \" + sourceFile }));",
+      "code_snippet_good": "console.error('[create-and-open] Source not found:', sourceFile);\nres.end(JSON.stringify({ ok: false, error: \"Source session not found\" }));",
+      "rule_reference": "CWE-209: Generation of Error Message Containing Sensitive Information",
+      "confidence": 0.8
+    },
+    {
+      "id": "B-010",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\open.js",
+      "line": 100,
+      "line_range": [
+        100,
+        115
+      ],
+      "severity": "nit",
+      "category": "security",
+      "title": "Environment variable injection via config file — ANTHROPIC_* and CLAUDE_* vars forwarded to child process",
+      "description": "The spawnDirect function reads a config file and injects any environment variables starting with ANTHROPIC_ or CLAUDE_ into the child process environment. If an attacker can modify a config file (e.g., setting-evil.json), they could inject ANTHROPIC_BASE_URL to redirect API calls to a malicious proxy, or ANTHROPIC_API_KEY to steal credentials. The config file path is validated against a regex pattern (setting-[a-zA-Z0-9_-]+.json), but the content is not sanitized — only the filename is checked, not the env var values.",
+      "suggestion": "Validate that injected env var values are within expected bounds (e.g., ANTHROPIC_BASE_URL must be a valid HTTPS URL). Alternatively, maintain an allowlist of specific env vars that can be overridden rather than forwarding all ANTHROPIC_* and CLAUDE_* prefixed vars.",
+      "code_snippet_bad": "if (cfg.env) {\n  var envKeys = Object.keys(cfg.env);\n  for (var i = 0; i < envKeys.length; i++) {\n    var k = envKeys[i];\n    if (k.startsWith(\"ANTHROPIC_\") || k.startsWith(\"CLAUDE_\")) {\n      env[k] = cfg.env[k]; // no value validation\n    }\n  }\n}",
+      "code_snippet_good": "var SAFE_ENV_VARS = ['ANTHROPIC_MODEL', 'ANTHROPIC_BASE_URL', 'CLAUDE_CODE_ENTRYPOINT'];\nif (cfg.env) {\n  for (var i = 0; i < SAFE_ENV_VARS.length; i++) {\n    var k = SAFE_ENV_VARS[i];\n    if (cfg.env[k]) {\n      // Optional: validate URL format for ANTHROPIC_BASE_URL\n      if (k === 'ANTHROPIC_BASE_URL' && !/^https:\\/\\//.test(cfg.env[k])) continue;\n      env[k] = cfg.env[k];\n    }\n  }\n}",
+      "rule_reference": "CWE-74: Injection (Environment Variable)",
+      "confidence": 0.72
+    },
+    {
+      "id": "B-011",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\snapshot.js",
+      "line": 20,
+      "line_range": [
+        20,
+        28
+      ],
+      "severity": "nit",
+      "category": "security",
+      "title": "Snapshot data includes truncated tool inputs that may contain secrets",
+      "description": "The saveSnapshot function includes `keyDecisions` (truncated to 200 chars) in snapshots. These key decisions contain serialized tool inputs (e.g., file contents being written, API calls being made) which may include API keys, passwords, tokens, or other secrets. While truncated to 200 chars, a 200-char prefix of a secret is often enough for an attacker to reconstruct or brute-force the full value. Snapshots are stored as plain JSON files on disk with no access control beyond filesystem permissions.",
+      "suggestion": "Redact or hash sensitive fields in keyDecisions before saving to snapshots. At minimum, strip inputs for tools known to handle secrets (e.g., Write, Edit, shell commands).",
+      "code_snippet_bad": "keyDecisions: (s.keyDecisions || []).slice(-20),\n// These contain: { tool: 'Write', input: '{\"path\":\"/secret\",\"content\":\"API_KEY=sk-...\"}'.slice(0,200) }",
+      "code_snippet_good": "keyDecisions: (s.keyDecisions || []).slice(-20).map(function(d) {\n  return { timestamp: d.timestamp, tool: d.tool, type: d.type, input: '[redacted]' };\n}),",
+      "rule_reference": "CWE-200: Exposure of Sensitive Information",
+      "confidence": 0.75
+    },
+    {
+      "id": "B-012",
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\open.js",
+      "line": 80,
+      "line_range": [
+        80,
+        95
+      ],
+      "severity": "nit",
+      "category": "security",
+      "title": "Terminal bat endpoint lacks UUID validation — accepts arbitrary input as --resume argument",
+      "description": "The /api/terminal-bat/{id} endpoint decodes the URL segment but does NOT validate it against the UUID format before passing it to `claude --resume {batId}`. While spawn() uses array arguments (preventing shell injection), a non-UUID value like `--settings` or an empty string would be passed directly to the claude CLI, potentially causing unexpected behavior. Unlike /api/session/{id} and /api/open-session/{id} which validate UUID format, this endpoint accepts any string.",
+      "suggestion": "Add UUID validation consistent with other endpoints:\n```javascript\nif (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(batId)) {\n  res.writeHead(400); res.end(JSON.stringify({ error: 'invalid session id' }));\n  return true;\n}\n```",
+      "code_snippet_bad": "var batId = decodeURI(req.url.split(\"/api/terminal-bat/\")[1]);\nvar batCached = shared.sessionCache.get(batId);\n// batId not validated — could be anything",
+      "code_snippet_good": "var batId = decodeURI(req.url.split(\"/api/terminal-bat/\")[1]);\nif (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(batId)) {\n  res.writeHead(400); res.end(JSON.stringify({ error: 'invalid session id format' }));\n  return true;\n}",
+      "rule_reference": "CWE-20: Improper Input Validation",
+      "confidence": 0.78
+    }
+  ],
+  "metrics": {
+    "total_findings": 12,
+    "by_severity": {
+      "blocking": 1,
+      "important": 6,
+      "nit": 5
+    },
+    "by_category": {
+      "security": 11,
+      "bug": 1,
+      "performance": 0,
+      "correctness": 0,
+      "maintainability": 0
+    },
+    "review_duration_seconds": 0
+  },
+  "praise": [
+    {
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "line": 109,
+      "comment": "Good use of regex validation for configName (`/^setting-[a-zA-Z0-9_-]+\\.json$/`) to prevent path traversal in /api/create-and-open. This is applied consistently across index.js and routes/open.js (isValidConfigName function)."
+    },
+    {
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\session.js",
+      "line": 17,
+      "comment": "UUID format validation is applied consistently on session ID parameters across session.js routes using strict regex, preventing path traversal and injection via malformed IDs."
+    },
+    {
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\snapshots.js",
+      "line": 18,
+      "comment": "Snapshot ID validation (`/^[a-zA-Z0-9_\\-]+$/`) correctly prevents path traversal in snapshot detail, delete, and rollback endpoints. Defense-in-depth applied here."
+    },
+    {
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\index.js",
+      "line": 19,
+      "comment": "CORS origin validation is correctly restricted to localhost/127.0.0.1 with a strict regex, preventing cross-origin abuse from external websites."
+    },
+    {
+      "file": "C:\\Users\\Administrator\\Claude-Code\\cc-tools\\Xun-CC-Panel\\server\\routes\\open.js",
+      "line": 80,
+      "comment": "The spawnDirect function uses spawn() with array arguments instead of exec() with string concatenation, which is the correct pattern to prevent command injection when invoking child processes."
+    }
+  ]
+}

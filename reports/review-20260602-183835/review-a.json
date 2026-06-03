@@ -1,0 +1,326 @@
+{
+  "agent_id": "A",
+  "skill": "code-review-skill",
+  "philosophy": "你是'可维护性优先'的代码审查专家。你的核心理念来自 The Pragmatic Programmer 和 Clean Code 传统：代码首先是写给人看的，其次才是给机器执行的。",
+  "review_scope": {
+    "files": [
+      "D:\\CC项目\\00\\ccl-launcher.js"
+    ],
+    "lines_total": 1532
+  },
+  "findings": [
+    {
+      "id": "A-001",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 1,
+      "line_range": [
+        1,
+        14
+      ],
+      "severity": "blocking",
+      "category": "bug",
+      "title": "IIFE 中变量 b, f, h 与外层作用域严重冲突（变量遮蔽）",
+      "description": "顶部 IIFE 内声明了 `var b = p.join(d, 'blessed', 'package.json')`、`var f = require('fs')`、`var h = p.join(o.homedir(), '.claude')`。但在后续外层代码中，`b` 被重新声明为返回配置目录的函数（line ~83），`f` 被用作 blessed 列表组件实例（line ~143），`h` 被重新赋值为 `m(require('fs'))`（line ~542）。这导致 IIFE 内的变量被遮蔽，虽然 IIFE 执行完毕后不再使用旧值，但极易引发维护时的误判。更严重的是，`f` 在 IIFE 中是 `fs` 模块，在外层是 blessed 列表组件，任何人在外层误用 `f` 以为是 fs 就会踩坑。",
+      "suggestion": "将 IIFE 内的变量名改为不与外层冲突的名称，如 `blessedPkgPath`、`fsModule`、`claudeHome`。或者将 IIFE 提取为具名函数。",
+      "code_snippet_bad": "var p = require(\"path\"),\n    f = require(\"fs\"),    // 与 line ~143 的 blessed list 冲突\n    o = require(\"os\"),\n    c = require(\"child_process\"),\n    h = p.join(o.homedir(), \".claude\"),  // 与 line ~542 的 fs 模块冲突\n    d = p.join(h, \"node_modules\"),\n    b = p.join(d, \"blessed\", \"package.json\"); // 与 line ~83 的函数冲突",
+      "code_snippet_good": "var _path = require(\"path\"),\n    _fs = require(\"fs\"),\n    _os = require(\"os\"),\n    _cp = require(\"child_process\"),\n    _claudeHome = _path.join(_os.homedir(), \".claude\"),\n    _nodeModules = _path.join(_claudeHome, \"node_modules\"),\n    _blessedPkg = _path.join(_nodeModules, \"blessed\", \"package.json\");",
+      "rule_reference": "Clean Code: 避免变量名遮蔽；JavaScript: no-shadow",
+      "confidence": 0.95
+    },
+    {
+      "id": "A-002",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 400,
+      "line_range": [
+        395,
+        405
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "Shell 注入风险：编辑器命令未转义文件路径",
+      "description": "在 session_action_screen 的 `onSelect` 中，当用户选择「编辑配置」时，使用字符串拼接构造 shell 命令。Linux 分支 `me.exec('${EDITOR:-vi} \"' + cfgPath + '\"', ...)` 中，`cfgPath` 如果包含单引号或特殊字符，可以注入任意 shell 命令。Windows 分支也有类似风险（虽然 `start` 命令注入难度更高）。",
+      "suggestion": "使用 `execFile` 替代 `exec`，避免 shell 解析。或对路径进行严格的转义/验证。",
+      "code_snippet_bad": "if (process.platform === \"win32\") {\n  me.exec('start \"\" \"' + cfgPath + '\"', () => {})\n} else {\n  me.exec('${EDITOR:-vi} \"' + cfgPath + '\"', () => {})\n}",
+      "code_snippet_good": "if (process.platform === \"win32\") {\n  me.execFile('cmd', ['/c', 'start', '', cfgPath], () => {})\n} else {\n  const editor = process.env.EDITOR || 'vi';\n  me.execFile(editor, [cfgPath], () => {})\n}",
+      "rule_reference": "OWASP: Command Injection Prevention; CWE-78",
+      "confidence": 0.92
+    },
+    {
+      "id": "A-003",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 150,
+      "line_range": [
+        145,
+        165
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "全局变量使用单字母命名，完全不可读",
+      "description": "blessed TUI 组件全部使用单字母变量名：`g`（screen）、`F`（header box）、`f`（list）、`D`（footer bar）、`S`（textbox）、`P`（prompt marker）、`Y`（select handler）、`V`（cancel handler）、`k`（item highlight handler）。这些变量在整个文件中被大量引用，没有任何注释说明其用途，维护成本极高。",
+      "suggestion": "将单字母变量重命名为有意义的名称：`g` → `screen`，`F` → `headerBox`，`f` → `listWidget`，`D` → `footerBar`，`S` → `inputBox`，`P` → `promptMarker`，`Y` → `onSelectHandler`，`V` → `onCancelHandler`，`k` → `onHighlightHandler`。",
+      "code_snippet_bad": "var ke = m(require(\"blessed/lib/widgets/screen\")),\n  le = m(require(\"blessed/lib/widgets/box\")),\n  He = m(require(\"blessed/lib/widgets/list\")),\n  Ue = m(require(\"blessed/lib/widgets/textbox\")),\n  g, F, f, D, S, P, Y = null,\n  V = null,\n  k = null;",
+      "code_snippet_good": "var ScreenClass = m(require(\"blessed/lib/widgets/screen\")),\n  BoxClass = m(require(\"blessed/lib/widgets/box\")),\n  ListClass = m(require(\"blessed/lib/widgets/list\")),\n  TextboxClass = m(require(\"blessed/lib/widgets/textbox\"));\nvar screen, headerBox, listWidget, footerBar, inputBox, promptMarker;\nvar onSelectHandler = null,\n  onCancelHandler = null,\n  onHighlightHandler = null;",
+      "rule_reference": "Clean Code: 有意义的命名；Martin Fowler: \"Any fool can write code that a computer can understand. Good programmers write code that humans can understand.\"",
+      "confidence": 0.97
+    },
+    {
+      "id": "A-004",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 235,
+      "line_range": [
+        220,
+        250
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "screen 状态管理函数使用无意义的缩写名",
+      "description": "`R()` 返回当前屏幕名、`xe()` 返回选中索引、`pe()` 设置屏幕、`$e()` 入栈、`Re()` 出栈、`oe()` 重置、`N()` 设置上下文值、`O()` 获取上下文值。这些是整个 TUI 导航系统的核心函数，但命名完全无法表达意图。任何人（包括原作者几个月后）都无法从函数名理解其作用。",
+      "suggestion": "重命名为自解释的名称：`R()` → `getCurrentScreen()`，`xe()` → `getSelectedIndex()`，`pe()` → `setCurrentScreen()`，`$e()` → `pushScreen()`，`Re()` → `popScreen()`，`oe()` → `resetNavigation()`，`N()` → `setContext()`，`O()` → `getContext()`。",
+      "rule_reference": "Clean Code: 函数名应该描述它做什么；The Pragmatic Programmer: \"DRY — Don't Repeat Yourself\" 的前提是代码可读",
+      "confidence": 0.96
+    },
+    {
+      "id": "A-005",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 295,
+      "line_range": [
+        290,
+        310
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "大量空 catch 块吞掉错误，静默失败",
+      "description": "文件中至少有 15 处空 catch 块（`catch {}` 或 `catch (e) {}`），包括配置读取、文件写入、JSON 解析等关键操作。当这些操作失败时，程序会静默继续执行，可能导致后续逻辑基于错误的数据运行。例如 line 295 的 `ot()` 函数中 HTTP 请求的错误被完全忽略，line 305 的 `st()` 配置读取失败也无任何提示。",
+      "suggestion": "至少在 catch 块中记录日志（通过已有的 `_trace` 函数）。对于关键操作（如配置读写），应向用户报告错误。对于非关键操作（如网络请求获取 tips），可以保持静默但应记录调试日志。",
+      "code_snippet_bad": "try {\n  let s = JSON.parse(r);\n  // ...\n} catch {}",
+      "code_snippet_good": "try {\n  let s = JSON.parse(r);\n  // ...\n} catch (err) {\n  _trace('TIPS', `Parse failed: ${err.message}`);\n}",
+      "rule_reference": "Clean Code: 错误处理不能被忽略；JavaScript Best Practice: no-empty-catch",
+      "confidence": 0.93
+    },
+    {
+      "id": "A-006",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 340,
+      "line_range": [
+        320,
+        370
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "mt（model 屏幕）的 onSelect 函数超过 80 行，职责过多",
+      "description": "model 屏幕的 `onSelect` 函数是一个巨大的 switch-like 结构，包含了：1）判断前一个屏幕来源；2）会话模型切换逻辑（含文件读写、元数据更新、CLAUDE.local.md 更新）；3）从项目屏幕进入时的模型选择逻辑；4）设置默认模型逻辑。这些完全不同的职责挤在一个函数中，违反单一职责原则。",
+      "suggestion": "将 onSelect 拆分为三个独立函数：`handleSessionModelChange(e, t)`、`handleProjectModelSelect(e, t)`、`handleDefaultModelChange(e, t)`。每个函数只处理一种场景。",
+      "rule_reference": "Clean Code: 函数应该做且只做一件事（SRP）；Robert C. Martin: \"The first rule of functions is that they should be small.\"",
+      "confidence": 0.94
+    },
+    {
+      "id": "A-007",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 55,
+      "line_range": [
+        50,
+        70
+      ],
+      "severity": "important",
+      "category": "correctness",
+      "title": "同一模块被 require 多次且用不同方式包装",
+      "description": "`fs` 模块在文件中被 require 了至少 4 次：IIFE 中的 `var f = require(\"fs\")`、外层的 `var T = m(require(\"fs\"))`、`var Z = m(require(\"fs\"))`、`var Qt = m(require(\"fs\"))`、`var ht = m(require(\"fs\"))`、`var h = m(require(\"fs\"))`（在 Mt 函数附近）。`path` 模块同样被多次 require。虽然 Node.js 的 require 缓存会返回同一实例，但这种写法导致：1）变量名混乱，不知道哪个是哪个；2）`m()` 包装和不包装混用，行为可能不一致。",
+      "suggestion": "在文件顶部统一 require 一次，用有意义的变量名导出。后续所有位置引用同一变量。",
+      "code_snippet_bad": "var T = m(require(\"fs\")),    // 外层\nvar Z = m(require(\"fs\")),    // 配置模块\nvar Qt = m(require(\"fs\")),   // 会话模块\nvar ht = m(require(\"fs\")),   // 移除项目模块\nvar h = m(require(\"fs\")),    // 新建配置模块",
+      "code_snippet_good": "// 文件顶部统一声明\nvar fs = m(require(\"fs\"));\nvar path = m(require(\"path\"));\nvar os = m(require(\"os\"));\n// 后续全部使用 fs, path, os",
+      "rule_reference": "DRY 原则；模块管理最佳实践",
+      "confidence": 0.95
+    },
+    {
+      "id": "A-008",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 470,
+      "line_range": [
+        460,
+        530
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "配置创建流程（Mt 函数）中存在大量重复的文件编号逻辑",
+      "description": "在 `Mt()` 函数中，「典型模式」和「自定义模式」两个分支都包含完全相同的设置文件编号逻辑：扫描目录找 `setting-s{N}.json` 的最大编号，然后 +1。这段代码约 10 行，在同一函数中出现了两次。同样，「更新 settings.json」的逻辑也重复了两次。",
+      "suggestion": "提取为独立函数 `getNextSettingFileNumber()` 和 `ensureGlobalSettings(baseUrl, authToken)`。这消除重复，也让两个创建模式的代码更聚焦于各自的差异逻辑。",
+      "code_snippet_bad": "let maxNum = 0;\ntry {\n  let files = h.readdirSync(b());\n  files.forEach(fn => {\n    let m = fn.match(/^setting-s(\\d+)\\.json$/);\n    if (m) { let n = parseInt(m[1], 10); if (n > maxNum) maxNum = n; }\n  });\n} catch {}",
+      "code_snippet_good": "function getNextSettingFileNumber() {\n  let maxNum = 0;\n  try {\n    const files = fs.readdirSync(getConfigDir());\n    files.forEach(fn => {\n      const match = fn.match(/^setting-s(\\d+)\\.json$/);\n      if (match) maxNum = Math.max(maxNum, parseInt(match[1], 10));\n    });\n  } catch (err) {\n    _trace('CONFIG', `Scan setting files failed: ${err.message}`);\n  }\n  return maxNum + 1;\n}",
+      "rule_reference": "DRY 原则；Refactoring: Extract Method",
+      "confidence": 0.96
+    },
+    {
+      "id": "A-009",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 83,
+      "line_range": [
+        80,
+        90
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "函数 b() 与变量 b 同名，且与 IIFE 中的 b 冲突",
+      "description": "文件中定义了 `function b() { return _e }` 返回配置目录路径。但在 IIFE（line 1-14）中，`b` 是一个局部变量指向 blessed 的 package.json 路径。此外，`b` 还被用作其他用途。这种三重含义的变量名极易导致 bug。更严重的是，在 `Dt` 函数和 `Mt` 函数中，`b()` 被频繁调用来获取配置目录，但开发者如果不小心写成 `b`（不带括号），就会引用到完全不同的值。",
+      "suggestion": "将 `function b()` 重命名为 `function getConfigDir()`，所有调用处同步修改。",
+      "rule_reference": "Clean Code: 避免歧义命名",
+      "confidence": 0.94
+    },
+    {
+      "id": "A-010",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 650,
+      "line_range": [
+        640,
+        680
+      ],
+      "severity": "important",
+      "category": "correctness",
+      "title": "Ht() 函数中 CLAUDE.local.md 写入逻辑存在竞态和格式问题",
+      "description": "在 `Ht()` 函数中，写入 CLAUDE.local.md 时先读取现有内容，查找 `\\n\\n## CCL Session` 标记来截断旧内容，然后追加新内容。问题：1）如果文件不存在，`CCL_EXIST` 为空字符串，追加后文件以 `\\n\\n## CCL Session` 开头，有两个前导空行；2）使用 `indexOf` 查找标签，如果用户在 CLAUDE.local.md 中手动写了 `## CCL Session`（非 CCL 生成），也会被错误截断；3）没有使用原子写入模式（其他地方都用了 tmp+rename），直接 writeFileSync，写入中途崩溃会损坏文件。",
+      "suggestion": "1）使用更唯一的标记如 `<!-- CCL Session Start -->`；2）对空文件特殊处理，避免前导空行；3）使用与其他地方一致的原子写入模式。",
+      "rule_reference": "数据完整性：原子写入；防御性编程",
+      "confidence": 0.88
+    },
+    {
+      "id": "A-011",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 135,
+      "line_range": [
+        130,
+        140
+      ],
+      "severity": "nit",
+      "category": "maintainability",
+      "title": "_trace 函数内部重复 require 已加载的模块",
+      "description": "`_trace` 函数内部每次调用都执行 `var n = m(require(\"fs\")), o = m(require(\"path\"))`。虽然 Node.js 的 require 有缓存，`m()` 包装也会创建新对象。这个函数在调试时可能被高频调用，每次都创建包装对象是不必要的开销。",
+      "suggestion": "使用文件顶部已有的 `T`（fs）和 `ye`（path）模块引用，或在闭包中缓存。",
+      "code_snippet_bad": "function _trace(e, t) {\n  _traceStep++;\n  var n = m(require(\"fs\")), o = m(require(\"path\"));\n  // ...\n}",
+      "code_snippet_good": "function _trace(e, t) {\n  _traceStep++;\n  try {\n    var s = new Date().toISOString().slice(11, 23);\n    T.appendFileSync(traceLogPath, `[${s}] #${_traceStep} [${e}] ${t}\\n`);\n  } catch {}\n}",
+      "rule_reference": "性能：避免不必要的对象创建",
+      "confidence": 0.85
+    },
+    {
+      "id": "A-012",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 490,
+      "line_range": [
+        480,
+        510
+      ],
+      "severity": "important",
+      "category": "correctness",
+      "title": "Dt 函数中设置文件复制未验证 JSON 有效性",
+      "description": "`Dt` 函数将模板配置文件复制到新文件名，然后尝试读取并追加 `_ccl_meta`。但复制后读取时用 `JSON.parse(r)` 解析，如果模板文件不是有效 JSON（如被手动编辑损坏），会抛出异常。虽然有 try-catch，但 fallback 是 `'{}'`，这意味着会静默丢失模板内容，创建一个空配置文件。",
+      "suggestion": "在复制前先验证源文件的 JSON 有效性。如果无效，向用户报告错误而非静默创建空文件。",
+      "rule_reference": "防御性编程：输入验证",
+      "confidence": 0.87
+    },
+    {
+      "id": "A-013",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 750,
+      "line_range": [
+        740,
+        760
+      ],
+      "severity": "nit",
+      "category": "performance",
+      "title": "Xt（字符串截断）函数中的 _strWidth 对每个字符重复计算 Unicode 范围",
+      "description": "`_strWidth` 函数对字符串中每个字符都检查三个 Unicode 范围（CJK 统一表意文字、CJK 符号和标点、全角字符）。虽然对于短字符串影响微小，但在会话列表显示中可能对长路径频繁调用。更关键的是，这个函数没有处理 surrogate pair（UTF-16 代理对），对于某些 emoji 或扩展 CJK 字符会计算错误。",
+      "suggestion": "1）考虑使用 `Array.from(e)` 正确处理 surrogate pair；2）对于已知的短字符串场景可以保持现状，但应添加注释说明局限性。",
+      "rule_reference": "Unicode 处理最佳实践",
+      "confidence": 0.78
+    },
+    {
+      "id": "A-014",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 900,
+      "line_range": [
+        880,
+        950
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "re（导航处理）函数的 switch 分支缺少 break 语句",
+      "description": "在 `re` 函数的 switch 语句中，`case \"exit\"` 分支没有 `break`，会 fall-through 到 `case \"flow\"`。虽然 `process.exit(0)` 会终止程序所以实际不会 fall-through，但这是不良实践。如果未来有人修改 `exit` 逻辑（如改为不立即退出），就会引入 bug。",
+      "suggestion": "在 `case \"exit\"` 末尾添加 `break`，或改为 `return` 语句。",
+      "code_snippet_bad": "case \"exit\":\n  se(), process.exit(0);\ncase \"flow\":\n  Kt(e.name);\n  break;",
+      "code_snippet_good": "case \"exit\":\n  se();\n  process.exit(0);\n  break; // unreachable but defensive",
+      "rule_reference": "ESLint: no-fallthrough",
+      "confidence": 0.9
+    },
+    {
+      "id": "A-015",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 170,
+      "line_range": [
+        165,
+        200
+      ],
+      "severity": "nit",
+      "category": "maintainability",
+      "title": "函数 Ke 参数命名不可读",
+      "description": "`Ke(e, t, n, o, r)` 函数设置 header 内容和布局，但参数名 `e, t, n, o, r` 完全无法表达含义。实际含义分别是：header 行数组、list top 位置、footer 偏移、footer 文本、主题色。调用处需要对照函数体才能理解每个参数是什么。",
+      "suggestion": "重命名为 `(headerLines, listTop, footerOffset, footerText, themeColor)`。",
+      "rule_reference": "Clean Code: 函数参数应该自解释",
+      "confidence": 0.92
+    },
+    {
+      "id": "A-016",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 570,
+      "line_range": [
+        560,
+        590
+      ],
+      "severity": "suggestion",
+      "category": "security",
+      "title": "agentBase URL 从环境变量读取但未验证格式",
+      "description": "`ie()` 函数返回 `process.env.CCL_AGENT_BASE || u.agentBase || Ne`，其中 `Ne` 是硬编码的 `https://ai.cnfan.vip`。这个 URL 后续被用于拼接 API 请求（如 `ot()` 函数中的 `${ie()}/api/ccl/tips`）。如果环境变量被恶意设置为非 HTTPS URL 或包含路径遍历的 URL，可能导致 SSRF 或请求被重定向到恶意服务器。",
+      "suggestion": "对 URL 进行基本验证：必须以 `https://` 开头（或 `http://localhost` 用于开发），不包含 `..` 等路径遍历字符。",
+      "rule_reference": "OWASP: SSRF Prevention; 输入验证",
+      "confidence": 0.75
+    }
+  ],
+  "metrics": {
+    "total_findings": 16,
+    "by_severity": {
+      "blocking": 2,
+      "important": 8,
+      "nit": 3,
+      "suggestion": 1,
+      "learning": 0,
+      "praise": 0
+    },
+    "by_category": {
+      "security": 2,
+      "bug": 3,
+      "performance": 1,
+      "correctness": 3,
+      "maintainability": 7
+    },
+    "review_duration_seconds": 480
+  },
+  "praise": [
+    {
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 68,
+      "comment": "原子写入模式（先写 tmp 文件再 rename）在整个项目中一致使用，这是防止写入中途崩溃导致数据损坏的优秀实践。_()、Dt()、Mt()、Ht() 等所有写配置的地方都遵循了这个模式。"
+    },
+    {
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 260,
+      "comment": "_trace 调试日志系统的设计很好：独立的 trace 文件、时间戳、步骤计数器、不影响主流程。在排查 TUI 状态机问题时会非常有用。"
+    },
+    {
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 100,
+      "comment": "配置文件读取时处理 BOM 标记（`e.replace(/^\\uFEFF/, '')`）是处理 Windows 记事本等工具保存的 UTF-8 BOM 文件的好细节。"
+    },
+    {
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 920,
+      "comment": "TUI 导航系统使用栈（push/pop）管理屏幕历史，支持多级返回，这是一个清晰的状态机设计。"
+    }
+  ]
+}

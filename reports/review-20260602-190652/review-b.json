@@ -1,0 +1,257 @@
+{
+  "agent_id": "B",
+  "skill": "Claude-BugHunter",
+  "philosophy": "你是'攻击者思维'的安全审计专家。你审查代码时的默认假设是：有恶意攻击者会仔细阅读这段代码，寻找任何可能的突破口。你不是在找'不优雅'的代码——你是在找'可利用'的代码。你的核心理念来自 574+ 个真实 HackerOne 漏洞报告的模式提炼。",
+  "review_scope": {
+    "files": [
+      "D:\\CC项目\\00\\ccl-launcher.js"
+    ],
+    "lines_total": 1532
+  },
+  "findings": [
+    {
+      "id": "B-001",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 941,
+      "line_range": [
+        938,
+        944
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "命令注入：session_action 编辑配置时 cfgPath 未转义直接拼入 shell 命令",
+      "description": "在 session_action_screen 的 '编辑配置' 分支中，cfgPath 由 session.settingsFile（来自 .ccl-sessions.json）拼接而成，然后直接用 me.exec() 以双引号包裹的方式传入 shell。Windows 上双引号可被 \" 转义突破；Unix 上 EDITOR 环境变量可包含空格/分号等 shell 元字符。攻击者若能写入恶意 .ccl-sessions.json（通过篡改配置文件或路径注入），即可在 '编辑配置' 操作时执行任意系统命令。",
+      "suggestion": "1. Windows: 使用 me.spawnSync('cmd', ['/c', 'start', '', cfgPath]) 代替 me.exec() 拼接，或使用 child_process.execFile 避免 shell 解释。2. Unix: 使用 me.spawnSync(process.env.EDITOR || 'vi', [cfgPath], {stdio: 'inherit'}) 代替 shell 字符串拼接。3. 对 settingsFile 做路径规范化并验证其在预期目录内。",
+      "code_snippet_bad": "if (process.platform === 'win32') {\n  me.exec('start \"\" \"' + cfgPath + '\"', () => {})\n} else {\n  me.exec('${EDITOR:-vi} \"' + cfgPath + '\"', () => {})\n}",
+      "code_snippet_good": "if (process.platform === 'win32') {\n  me.spawnSync('cmd', ['/c', 'start', '', cfgPath], { stdio: 'inherit' });\n} else {\n  const editor = process.env.EDITOR || 'vi';\n  me.spawnSync(editor, [cfgPath], { stdio: 'inherit' });\n}",
+      "rule_reference": "CWE-78: OS Command Injection",
+      "confidence": 0.95
+    },
+    {
+      "id": "B-002",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 633,
+      "line_range": [
+        629,
+        636
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "命令注入：Unix 下 project_path 仅单引号转义，可通过注入突破",
+      "description": "ct() 函数在 Unix 平台构造 shell 命令时，对 project_path 仅做单引号转义（replace(/'/g, \"'\\\\''\"）），然后拼入 shell 字符串通过 execFileSync('/bin/sh', ['-c', s]) 执行。虽然单引号转义通常是安全的，但 project_path 来自配置文件中的 projects 数组，该数组可被用户或攻击者通过修改 claude-launcher-config.json 注入。更关键的是，该路径同时被用作 cwd 参数和 shell 命令的一部分，若路径包含特殊字符（如换行符 \\n），可能在 shell 解释时产生意外行为。",
+      "suggestion": "1. 将 cwd 作为 execFileSync 的 cwd 选项传入，不要拼入 shell 命令字符串。2. 将 claude 命令及其参数通过 execFileSync 直接传参数数组，避免 '-c' + shell 字符串模式。3. 对 project_path 做路径规范化和白名单校验。",
+      "code_snippet_bad": "let o = [t, ...e].map(d => \"'\" + d.replace(/'/g, \"'\\\\''\") + \"'\").join(' '),\n  s = 'stty sane < /dev/tty 2>/dev/null; ...; ' +\n    (n ? \"cd '\" + n.replace(/'/g, \"'\\\\''\") + \"'; \" : '') + 'exec ' + o;\nme.execFileSync('/bin/sh', ['-c', s], { stdio: 'inherit' })",
+      "code_snippet_good": "let cleanArgs = [t, ...e];\nlet preCommands = 'stty sane < /dev/tty 2>/dev/null; ...';\nme.execFileSync('/bin/sh', ['-c', preCommands + 'exec \"$@\"', '--', ...cleanArgs], {\n  stdio: 'inherit',\n  cwd: n || undefined\n});",
+      "rule_reference": "CWE-78: OS Command Injection",
+      "confidence": 0.85
+    },
+    {
+      "id": "B-003",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 1196,
+      "line_range": [
+        1187,
+        1208
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "供应链投毒：远程 providers 列表可注入恶意配置（API URL + API Key）",
+      "description": "Ut() 函数从 ie()（默认 https://ai.cnfan.vip）获取 providers 列表，其中 anthropic_base_url 字段直接写入用户的 Claude Code settings.json。若该服务器被入侵或 DNS 被劫断，攻击者可返回恶意 providers 列表，将 anthropic_base_url 指向攻击者控制的服务器，从而截获用户的 API 请求（包含 API Key 和所有对话内容）。该数据流：远程服务器 → JSON.parse → 直接写入 settings.json → Claude Code 使用。无任何签名验证、完整性校验或域名白名单。",
+      "suggestion": "1. 对远程返回的 anthropic_base_url 做域名白名单校验（至少检查 HTTPS + 已知域名列表）。2. 添加响应签名验证机制。3. 在写入配置前向用户展示即将写入的 URL 并要求确认。4. 考虑对 providers 列表做本地缓存 + 手动更新模式，避免每次自动拉取。",
+      "code_snippet_bad": "let i = JSON.parse(s);\ni && i.ok && Array.isArray(i.providers) ? e(i.providers) : e(ge)",
+      "code_snippet_good": "let i = JSON.parse(s);\nif (i && i.ok && Array.isArray(i.providers)) {\n  // Validate URLs before using\n  const validated = i.providers.filter(p => {\n    try {\n      const u = new URL(p.anthropic_base_url);\n      return u.protocol === 'https:' && ALLOWED_HOSTS.includes(u.hostname);\n    } catch { return false; }\n  });\n  e(validated.length > 0 ? validated : ge);\n} else { e(ge); }",
+      "rule_reference": "CWE-494: Download of Code Without Integrity Check / CWE-346: Origin Validation Error",
+      "confidence": 0.92
+    },
+    {
+      "id": "B-004",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 474,
+      "line_range": [
+        474,
+        506
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "远程配置注入：tips 接口 force_update 可覆盖本地配置文件",
+      "description": "ot() 函数从远程服务器获取 tips 数据。当返回的 JSON 中 force_update === true 时，整个响应对象直接通过 Oe(s) 写入 .ccl.config 文件，不做任何字段校验。攻击者控制该服务器后，可注入任意配置内容。此外，即使 force_update 为 false，响应的 tips 字段也被直接写入，且 protect_days 字段可被设为 0 使得每次启动都重新拉取（绕过缓存保护）。该配置文件由 de() 读取后直接 JSON.parse 使用。",
+      "suggestion": "1. 对 force_update 写入的内容做字段白名单校验，只允许写入 tips 相关字段。2. 设置 protect_days 的最小值（如 1 天），不允许远程配置将其设为 0。3. 添加响应完整性校验（如 HMAC 签名）。4. 向用户显示远程更新内容并要求确认。",
+      "code_snippet_bad": "if (i) {\n  let p = de();\n  p?.tips?.current_index !== void 0 && (s.tips.current_index = p.tips.current_index);\n  Oe(s);  // writes ENTIRE response object to config\n  return\n}",
+      "code_snippet_good": "if (i) {\n  // Only allow tips-related fields to be updated\n  const allowed = { tips: s.tips };\n  if (allowed.tips?.protect_days < 1) allowed.tips.protect_days = 1;\n  let p = de() || {};\n  p.tips = allowed.tips;\n  if (p.tips && p.tips.current_index === undefined) p.tips.current_index = 0;\n  Oe(p);\n  return;\n}",
+      "rule_reference": "CWE-494: Download of Code Without Integrity Check",
+      "confidence": 0.9
+    },
+    {
+      "id": "B-005",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 1258,
+      "line_range": [
+        1255,
+        1272
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "API Key 明文存储且同时写入全局 settings.json",
+      "description": "在新建配置流程中，用户输入的 API Key（c = ANTHROPIC_AUTH_TOKEN）被明文写入两个位置：1) 独立的 setting-sN.json 文件；2) 当 models 数组为空时，同时写入全局 settings.json。这意味着 API Key 以明文 JSON 存储在磁盘上，且全局 settings.json 是 Claude Code 的标准配置文件，任何读取该文件的进程/脚本都能获取 API Key。此外，该 Key 还通过网络提示的 coding_plan_url 泄露风险——用户可能在不安全的网络环境中注册。",
+      "suggestion": "1. 使用操作系统密钥链（如 Windows Credential Manager、macOS Keychain）存储 API Key。2. 至少对配置文件设置严格的文件权限（600）。3. 不要将 API Key 写入全局 settings.json，仅写入独立的配置文件。4. 在 UI 中提醒用户 API Key 的存储位置和保护措施。",
+      "code_snippet_bad": "if (t.models.length === 0) {\n  let M = U.join(b(), 'settings.json'),\n    y = JSON.parse(h.readFileSync(M, 'utf-8'));\n  y.env || (y.env = {});\n  y.env.ANTHROPIC_BASE_URL = i.anthropic_base_url;\n  y.env.ANTHROPIC_AUTH_TOKEN = c;  // API key written to global config\n}",
+      "code_snippet_good": "// Only write to isolated config file, never to global settings.json\n// Set restrictive file permissions\nlet X = K + '.tmp.' + process.pid;\nh.writeFileSync(X, JSON.stringify($, null, 2));\nh.renameSync(X, K);\n// On Unix: fs.chmodSync(K, 0o600);",
+      "rule_reference": "CWE-256: Unprotected Storage of Credentials / CWE-522: Insufficiently Protected Credentials",
+      "confidence": 0.88
+    },
+    {
+      "id": "B-006",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 598,
+      "line_range": [
+        598,
+        607
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "Markdown 注入：未验证的 model_name/project 写入 CLAUDE.local.md 可注入恶意指令",
+      "description": "Ht() 函数将 n?.name（模型名称）和 s（配置文件名）等字段直接拼接写入项目的 CLAUDE.local.md 文件。这些字段来自配置文件（claude-launcher-config.json），如果攻击者能修改该配置文件（如通过路径遍历、共享环境、或供应链攻击），可以注入恶意的 Markdown 内容。由于 CLAUDE.local.md 是 Claude Code 的指令文件，注入的内容会被 Claude 解析执行，可能导致提示注入攻击（Prompt Injection），让 Claude 在后续对话中执行攻击者预设的指令。",
+      "suggestion": "1. 对写入 CLAUDE.local.md 的所有字段做 Markdown 转义（至少过滤 #、-、`、| 等 Markdown 控制字符）。2. 使用结构化格式（如 YAML frontmatter）代替自由文本拼接。3. 在写入前检查是否已存在 CCL Session 区块，如果有则只更新该区块而非追加。4. 对 model_name 和 configFile 做白名单字符校验（仅允许字母数字和有限标点）。",
+      "code_snippet_bad": "CCL_EXIST += '\\n\\n## CCL Session\\n\\n- 启动方式: CCL\\n- 启动时间: ' +\n  new Date().toISOString() + '\\n- 模型: ' + (n?.name || '') +\n  ' (' + (n?.id || '') + ')\\n- 配置文件: ' + s + '\\n- 模板: ' +\n  (n?.configFile || '') + '\\n';",
+      "code_snippet_good": "// Sanitize all values before writing to markdown\nconst safe = s => String(s || '').replace(/[#\\-`|{}\\[\\]<>]/g, '');\nCCL_EXIST += `\\n\\n## CCL Session\\n\\n- 启动方式: CCL\\n- 启动时间: ${new Date().toISOString()}\\n- 模型: ${safe(n?.name)} (${safe(n?.id)})\\n- 配置文件: ${safe(s)}\\n- 模板: ${safe(n?.configFile)}\\n`;",
+      "rule_reference": "CWE-79: Improper Neutralization of Input / CWE-94: Code Injection via Prompt Injection",
+      "confidence": 0.85
+    },
+    {
+      "id": "B-007",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 1098,
+      "line_range": [
+        1095,
+        1105
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "路径遍历：新建项目名称未校验，可创建任意目录",
+      "description": "vt() 函数接受用户输入的项目名称，直接与固定基础路径 'D:\\CC项目' 拼接后创建目录。用户输入如 '../../Windows/System32/malicious' 会导致 path.join 解析为上级目录，可能在非预期位置创建目录和文件（CLAUDE.md、CLAUDE.local.md、.claude/settings.json）。虽然存在 existsSync 检查，但这只阻止覆盖已存在的目录，不能阻止在任意位置创建新目录。",
+      "suggestion": "1. 对项目名称做严格校验：仅允许字母、数字、连字符、下划线（如 /^[a-zA-Z0-9_-]+$/）。2. 创建目录前验证解析后的绝对路径是否仍在 sProjectBase 下（path.resolve 后检查前缀）。3. 拒绝包含路径分隔符（/、\\）或遍历序列（..）的输入。",
+      "code_snippet_bad": "let sName = oName.trim();\nlet sPath = ue.join(sProjectBase, sName);\n// No validation that sPath is within sProjectBase",
+      "code_snippet_good": "let sName = oName.trim();\nif (!/^[a-zA-Z0-9_-]+$/.test(sName)) {\n  await E('错误', '{red-fg}项目名称只能包含字母、数字、连字符和下划线{/red-fg}', e);\n  return;\n}\nlet sPath = ue.join(sProjectBase, sName);\nif (!ue.resolve(sPath).startsWith(ue.resolve(sProjectBase))) {\n  await E('错误', '{red-fg}非法的项目路径{/red-fg}', e);\n  return;\n}",
+      "rule_reference": "CWE-22: Path Traversal",
+      "confidence": 0.82
+    },
+    {
+      "id": "B-008",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 621,
+      "line_range": [
+        619,
+        627
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "Windows shell: spawnSync 使用 shell: true 可被参数注入",
+      "description": "ct() 函数在 Windows 分支中使用 me.spawnSync(t, e, { shell: true })，其中 t='claude'，e 是参数数组。shell: true 意味着参数会经过 cmd.exe 解释。虽然参数来自内部逻辑而非直接用户输入，但 e 中包含的 --settings 路径、project_path、session_uuid 等字段都来自配置文件，如果包含 cmd.exe 特殊字符（如 &、|、^、>），可能被解释为命令分隔符。",
+      "suggestion": "1. 在 Windows 上尽量避免 shell: true，直接传参数数组。2. 如果必须使用 shell: true，对所有参数做 cmd.exe 转义（用双引号包裹并转义内部双引号）。3. 对 project_path 和 settingsFile 做路径规范化和字符白名单校验。",
+      "code_snippet_bad": "let o = {\n  stdio: 'inherit',\n  shell: true  // enables cmd.exe interpretation\n};\nn && (o.cwd = n);\nlet r = me.spawnSync(t, e, o);",
+      "code_snippet_good": "let o = {\n  stdio: 'inherit'\n  // No shell: true — arguments passed directly\n};\nn && (o.cwd = n);\nlet r = me.spawnSync(t, e, o);",
+      "rule_reference": "CWE-78: OS Command Injection (Windows cmd.exe variant)",
+      "confidence": 0.8
+    },
+    {
+      "id": "B-009",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 53,
+      "line_range": [
+        53,
+        53
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "硬编码远程服务端点，且可通过环境变量覆盖为 HTTP",
+      "description": "默认 API 端点 Ne = 'https://ai.cnfan.vip' 硬编码在源码中。ie() 函数优先读取环境变量 CCL_AGENT_BASE 或配置中的 agentBase，这意味着攻击者如果能设置环境变量（如通过 .env 文件、进程注入、或共享服务器），可以将所有 API 请求重定向到恶意服务器。此外，ot() 和 Ut() 中的协议选择逻辑 (e.startsWith('https') ? Qe.get : ze.get) 意味着如果 agentBase 被设为 http:// 开头，所有请求（包括可能的 API Key 传输）将通过明文 HTTP 发送。",
+      "suggestion": "1. 强制所有请求使用 HTTPS，移除 HTTP 回退逻辑。2. 如果需要允许自定义端点，对其做 URL 校验（必须 https:// 开头，域名白名单可选）。3. 不要从环境变量覆盖安全关键的端点地址，或至少在覆盖时向用户显示警告。4. 考虑使用证书固定（Certificate Pinning）防止 MITM。",
+      "code_snippet_bad": "var Ne = 'https://ai.cnfan.vip';\nfunction ie() {\n  return process.env.CCL_AGENT_BASE || u.agentBase || Ne\n}\n// Protocol selection based on URL prefix:\n(e.startsWith('https') ? Qe.get : ze.get)(e, ...)",
+      "code_snippet_good": "var Ne = 'https://ai.cnfan.vip';\nfunction ie() {\n  const base = process.env.CCL_AGENT_BASE || u.agentBase || Ne;\n  if (!base.startsWith('https://')) {\n    console.warn('WARNING: Non-HTTPS endpoint detected:', base);\n  }\n  return base;\n}\n// Always use HTTPS module, reject non-HTTPS URLs\nconst url = new URL(e);\nif (url.protocol !== 'https:') throw new Error('Only HTTPS endpoints allowed');",
+      "rule_reference": "CWE-319: Cleartext Transmission of Sensitive Information / CWE-306: Missing Authentication for Critical Function",
+      "confidence": 0.78
+    },
+    {
+      "id": "B-010",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 576,
+      "line_range": [
+        566,
+        576
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "默认权限绕过：defaultPermission 默认值为 bypassPermissions",
+      "description": "配置对象 $t 中 defaultPermission 默认值为 'bypassPermissions'，且在 Le() 初始化函数中，如果配置文件缺少该字段也会被设为 'bypassPermissions'。这意味着所有首次使用的用户（或配置被重置后）将自动跳过所有权限确认，Claude Code 可以执行任意文件操作和命令而无需用户确认。结合上述供应链投毒风险（B-003），攻击者可通过恶意 providers 列表引导用户创建配置，然后利用 bypassPermissions 执行未授权操作。",
+      "suggestion": "1. 将默认权限设为 'default'（需要确认）或 'acceptEdits'（仅自动接受编辑），而非完全绕过。2. 在首次使用时明确提示用户当前权限设置及其含义。3. 对于 bypassPermissions 模式，在启动时显示醒目的安全警告。",
+      "code_snippet_bad": "var $t = {\n  models: [],\n  defaultModel: '',\n  projects: [],\n  defaultPermission: 'bypassPermissions',  // dangerous default\n  theme: 'green'\n}",
+      "code_snippet_good": "var $t = {\n  models: [],\n  defaultModel: '',\n  projects: [],\n  defaultPermission: 'default',  // safe default: ask for permission\n  theme: 'green'\n}",
+      "rule_reference": "CWE-250: Execution with Unnecessary Privileges / CWE-276: Incorrect Default Permissions",
+      "confidence": 0.82
+    },
+    {
+      "id": "B-011",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 14,
+      "line_range": [
+        1,
+        29
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "供应链风险：首次运行自动 npm install blessed，无完整性校验",
+      "description": "IIFE 开头在检测到 blessed 未安装时，自动执行 'npm install blessed --no-package-lock'。该操作：1) 无 --ignore-scripts 标志，blessed 的 postinstall 脚本会被执行；2) 无版本锁定（--no-package-lock），可能安装到被投毒的版本；3) 从公共 npm 注册表下载，无完整性校验。如果攻击者能进行 DNS 劫持、ARP 欺骗或控制 npm 注册表，可注入恶意包。",
+      "suggestion": "1. 添加 --ignore-scripts 防止 postinstall 脚本执行。2. 移除 --no-package-lock，使用 package-lock.json 锁定版本。3. 在安装前校验 blessed 包的完整性（如 npm audit 或 checksum 验证）。4. 考虑将 blessed 作为项目依赖而非运行时动态安装。",
+      "code_snippet_bad": "c.execSync('npm install blessed --no-package-lock', {\n  cwd: h,\n  stdio: 'pipe',\n  timeout: 6e4\n})",
+      "code_snippet_good": "c.execSync('npm install blessed --ignore-scripts', {\n  cwd: h,\n  stdio: 'pipe',\n  timeout: 6e4\n})\n// Then manually run any needed build steps if required",
+      "rule_reference": "CWE-1395: Dependency on Vulnerable Third-Party Component",
+      "confidence": 0.8
+    },
+    {
+      "id": "B-012",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 822,
+      "line_range": [
+        806,
+        843
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "配置注入：model 切换时从 JSON 文件读取的 model_name 未校验直接写入 CLAUDE.local.md",
+      "description": "在 mt（选择配置）的 session_action 分支中，从 .ccl-sessions.json 读取 session 数据，从配置文件读取 cfgJson，然后将 t[e].name（模型显示名称）和 t[e].id（模型 ID）直接拼入 CLAUDE.local.md。这些值来自用户配置文件，如果用户导入了恶意配置或配置被篡改，注入的 Markdown 内容会被 Claude Code 解析。此外，model_history 数组也被直接序列化写入，其中包含历史 model_name 值，扩大了注入面。",
+      "suggestion": "1. 对所有写入 CLAUDE.local.md 的值做 Markdown 特殊字符转义。2. 将 CCL Session 信息放在代码块（```）内，防止被解析为 Markdown 指令。3. 对 model_name 和 model_id 做字符白名单校验。",
+      "code_snippet_bad": "cclMdExist += '\\n\\n## CCL Session\\n\\n- 启动方式: CCL\\n- 启动时间: ' +\n  (oldMeta.launched_at || session.time) + '\\n- 模型: ' + t[e].name +\n  ' (' + t[e].id + ')\\n- 配置文件: ' + session.settingsFile +\n  '\\n- 模板: ' + t[e].configFile + '\\n- 模型变更记录: ' +\n  history.length + ' 次\\n';",
+      "code_snippet_good": "const safeMd = s => String(s || '').replace(/[\\n\\r#\\-`|{}\\[\\]<>]/g, '');\ncclMdExist += `\\n\\n## CCL Session\\n\\n> 以下信息由 CCL 自动生成，请勿手动编辑\\n\\n- 启动方式: CCL\\n- 启动时间: ${safeMd(oldMeta.launched_at || session.time)}\\n- 模型: ${safeMd(t[e].name)} (${safeMd(t[e].id)})\\n- 配置文件: ${safeMd(session.settingsFile)}\\n`;",
+      "rule_reference": "CWE-79: Improper Neutralization / CWE-94: Code Injection",
+      "confidence": 0.83
+    }
+  ],
+  "metrics": {
+    "total_findings": 12,
+    "by_severity": {
+      "blocking": 3,
+      "important": 9
+    },
+    "by_category": {
+      "security": 12
+    },
+    "review_duration_seconds": 0
+  },
+  "praise": [
+    {
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 100,
+      "comment": "使用临时文件 + rename 的原子写入模式保存配置文件，避免了写入中途崩溃导致配置损坏的问题。"
+    },
+    {
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 72,
+      "comment": "读取配置文件时使用 replace(/^\\uFEFF/, '') 处理 BOM，兼容了 Windows 记事本等工具保存的 UTF-8 BOM 文件。"
+    },
+    {
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 503,
+      "comment": "网络请求设置了 5 秒超时（n.setTimeout），避免了网络不可用时的长时间阻塞。"
+    }
+  ]
+}

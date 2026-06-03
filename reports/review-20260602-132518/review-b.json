@@ -1,0 +1,185 @@
+{
+  "agent_id": "B",
+  "skill": "Claude-BugHunter",
+  "philosophy": "你是'攻击者思维'的安全审计专家。你审查代码时的默认假设是：有恶意攻击者会仔细阅读这段代码，寻找任何可能的突破口。你不是在找'不优雅'的代码——你是在找'可利用'的代码。你的核心理念来自 574+ 个真实 HackerOne 漏洞报告的模式提炼。",
+  "review_scope": {
+    "files": [
+      "server/agents.js",
+      "server/index.js",
+      "server/pricing.js",
+      "server/routes/open.js",
+      "server/routes/session.js",
+      "server/routes/sessions.js",
+      "server/routes/snapshots.js",
+      "server/scanner.js",
+      "server/shared.js",
+      "server/snapshot.js",
+      "server/sse.js",
+      "server/watcher.js"
+    ],
+    "lines_total": 2026
+  },
+  "findings": [
+    {
+      "id": "B-001",
+      "file": "server/index.js",
+      "line": 107,
+      "line_range": [
+        106,
+        109
+      ],
+      "severity": "blocking",
+      "category": "security",
+      "title": "XSS: import-localstorage 端点将未净化数据嵌入 HTML script 上下文",
+      "description": "/import-localstorage 是公开路径（PUBLIC_PATHS，无需认证），从 import-data.json 读取 JSON 数据后，通过 JSON.stringify + replace(</script) 拼接进 HTML <script> 标签。攻击面：1) JSON.parse 会将 \\u003c/script> 解码为 </script>，绕过 replace 的字符串匹配；2) 该端点无需认证，任何人可访问；3) 如果攻击者能修改 import-data.json 文件（通过其他漏洞），可注入任意 JS 执行 XSS。虽然 JSON.stringify 对引号/换行做了转义，但 Unicode 转义序列 \\u003c 可产生未转义的 < 字符，HTML 解析器会将其视为标签起始。",
+      "suggestion": "方案一：将 JSON 数据 base64 编码后嵌入 HTML，JS 端解码：var safeData = Buffer.from(JSON.stringify(JSON.parse(importData))).toString('base64'); 然后 JS 端用 atob() 解码。方案二：将数据写入独立 JS 文件，通过 <script src> 引用（CSP 可控）。方案三：至少对 < 字符也做转义：replace(/</g, '\\\\u003c')。方案四：添加认证要求，移出 PUBLIC_PATHS。",
+      "code_snippet_bad": "var safeData = JSON.stringify(JSON.parse(importData)).replace(/<\\/script/gi, '<\\\\/script');\nvar html = '...<script>!function(){var d=' + safeData + ';...}();</script>...';",
+      "code_snippet_good": "// 方案一：base64 编码\nvar safeData = Buffer.from(JSON.stringify(JSON.parse(importData))).toString('base64');\nvar html = '...<script>!function(){var d=JSON.parse(atob(\"' + safeData + '\"));...}();</script>...';",
+      "rule_reference": "CWE-79: Cross-site Scripting (XSS), OWASP A03:2021 Injection",
+      "confidence": 0.85
+    },
+    {
+      "id": "B-002",
+      "file": "server/index.js",
+      "line": 54,
+      "line_range": [
+        54,
+        68
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "SSE 认证 token 通过 URL query 参数传递，易泄露",
+      "description": "authenticateRequest 支持从 URL query param（?token=xxx）获取 token 用于 SSE 连接。问题：1) URL 会记录在浏览器历史、代理服务器日志、Referer header、服务器访问日志中；2) SSE 是长连接，token 在整个会话期间暴露；3) 如果面板通过反向代理暴露，代理日志会明文记录 token。Bearer header 方式安全但 SSE 浏览器 API 不支持自定义 header，导致只能用 query param。这是 SSE 的已知限制，但应有缓解措施。",
+      "suggestion": "1) SSE 连接建立后立即轮换 token（短生命周期 token）；2) 使用一次性 nonce 机制：先通过 POST /api/sse-token 获取一次性 token，用完即废；3) 至少在 Access-Control-Allow-Origin 中严格限制来源（当前已限制 localhost，这点做得好）；4) 在文档中明确说明 token 不应通过反向代理暴露。",
+      "rule_reference": "CWE-598: Use of GET Request Method With Sensitive Query Strings, OWASP A02:2021 Cryptographic Failures",
+      "confidence": 0.9
+    },
+    {
+      "id": "B-003",
+      "file": "server/agents.js",
+      "line": 55,
+      "line_range": [
+        46,
+        56
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "parseSubAgent 无文件大小限制，可被巨型 JSONL 文件触发 OOM",
+      "description": "parseSubAgent 使用 fs.readFileSync 读取整个 subagent JSONL 文件到内存，无大小上限检查。如果攻击者能在 subagents/ 目录下写入一个巨型文件（例如通过其他漏洞、共享目录、或符号链接攻击），服务器在扫描时会分配等量内存，导致 OOM 崩溃或事件循环阻塞。findSubAgentFiles 只检查文件名匹配 agent-*.jsonl，不检查文件大小。",
+      "suggestion": "1) 在 readFileSync 前检查 stat.size，超过阈值（如 10MB）则跳过或截断读取；2) 使用流式逐行读取替代一次性读取；3) 添加异常处理确保 OOM 时进程能优雅恢复。",
+      "code_snippet_bad": "var content;\ntry { content = fs.readFileSync(filePath, 'utf-8'); } catch (e) { return info; }",
+      "code_snippet_good": "var MAX_AGENT_FILE_SIZE = 10 * 1024 * 1024; // 10MB\nif (stat.size > MAX_AGENT_FILE_SIZE) { return info; }\nvar content;\ntry { content = fs.readFileSync(filePath, 'utf-8'); } catch (e) { return info; }",
+      "rule_reference": "CWE-400: Uncontrolled Resource Consumption, CWE-770: Allocation of Resources Without Limits",
+      "confidence": 0.85
+    },
+    {
+      "id": "B-004",
+      "file": "server/routes/open.js",
+      "line": 163,
+      "line_range": [
+        155,
+        180
+      ],
+      "severity": "important",
+      "category": "correctness",
+      "title": "swapSettingsJson 使用非原子写入，进程崩溃可损坏 settings.json",
+      "description": "swapSettingsJson 读取目标配置后直接 fs.writeFileSync 覆盖默认 settings.json。如果在 writeFileSync 执行过程中进程崩溃（SIGKILL、断电），settings.json 会处于半写状态（截断/损坏），导致 Claude Code 后续启动失败。虽然代码注释说不再修改 settings.json，但 swapSettingsJson 函数仍存在且可被调用。",
+      "suggestion": "1) 使用原子写入模式：先写入 .tmp 文件，然后 fs.rename 覆盖（rename 在大多数文件系统上是原子操作）；2) 写入前备份当前 settings.json；3) 如果确认不再需要此功能，删除整个函数。",
+      "code_snippet_bad": "fs.writeFileSync(defaultSettingsPath, targetSettings, 'utf-8');",
+      "code_snippet_good": "var tmpPath = defaultSettingsPath + '.tmp';\nfs.writeFileSync(tmpPath, targetSettings, 'utf-8');\nfs.renameSync(tmpPath, defaultSettingsPath);",
+      "rule_reference": "CWE-668: Exposure of Resource to Wrong Sphere",
+      "confidence": 0.85
+    },
+    {
+      "id": "B-005",
+      "file": "server/scanner.js",
+      "line": 143,
+      "line_range": [
+        140,
+        150
+      ],
+      "severity": "important",
+      "category": "performance",
+      "title": "scanSessions 使用同步 fs 操作，大目录扫描可阻塞事件循环",
+      "description": "scanSessions 虽声明为 async 函数，内部却大量使用 fs.readFileSync、fs.openSync、fs.readSync、fs.closeSync 等同步 I/O。在 projects 目录下有大量 JSONL 文件时（例如长时间运行积累数百个会话），每次 scanSessions 调用会阻塞 Node.js 事件循环，导致所有 HTTP 请求暂停响应。watcher 的 processChanges 每 30 秒触发一次全量扫描，加剧了问题。",
+      "suggestion": "1) 将 parseSessionChunk 中的同步文件操作替换为异步版本（fsp.readFile 等）；2) 使用 fs.promises API 替代 fs 同步方法；3) 考虑增量扫描策略：只扫描 mtime 变化的文件（已有 fileOffsets 机制，但 fallback 路径仍用同步全量读取）。",
+      "rule_reference": "CWE-1050: Excessive Platform Resource Consumption",
+      "confidence": 0.8
+    },
+    {
+      "id": "B-006",
+      "file": "server/index.js",
+      "line": 206,
+      "line_range": [
+        206,
+        215
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "会话 ID 使用 Math.random() 生成，可预测",
+      "description": "create-and-open 端点使用 Math.random() 生成 UUID v4 格式的会话 ID。Math.random() 不是密码学安全的 PRNG，其内部状态可通过观察足够多的输出来推断，从而预测后续生成的会话 ID。此外，同一函数中多次调用 Math.random() 生成 UUID map 时，所有 UUID 共享同一个 PRNG 状态，进一步降低预测难度。攻击者预测到会话 ID 后，可构造 API 请求访问/操作该会话。",
+      "suggestion": "使用 crypto.randomUUID()（Node.js 14.17+）或 crypto.randomBytes(16) 生成会话 ID：var sessionId = crypto.randomUUID(); 或手动实现符合 RFC 4122 v4 的 UUID。",
+      "code_snippet_bad": "var sessionId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {\n  var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);\n  return v.toString(16);\n});",
+      "code_snippet_good": "var sessionId = crypto.randomUUID();",
+      "rule_reference": "CWE-330: Use of Insufficiently Random Values, CWE-338: Use of Cryptographically Weak PRNG",
+      "confidence": 0.9
+    },
+    {
+      "id": "B-007",
+      "file": "server/routes/open.js",
+      "line": 14,
+      "line_range": [
+        14,
+        17
+      ],
+      "severity": "suggestion",
+      "category": "security",
+      "title": "settings-list 端点读取 home 目录下所有 setting-*.json 文件内容",
+      "description": "/api/settings-list 读取 homeDir 下所有匹配 setting-*.json 的文件，解析 JSON 并返回 env.ANTHROPIC_BASE_URL 和 model 字段。如果攻击者能在 home 目录下创建 setting-evil.json 文件（通过文件写入漏洞），可以注入虚假的 API 配置信息误导用户。此外，该端点暴露了所有配置的 API 端点地址，属于信息泄露。",
+      "suggestion": "1) 将配置文件限制在 .claude/ 子目录下搜索（而非 homeDir 根目录）；2) 返回时脱敏 API URL（如只显示域名）；3) 添加认证检查确认请求来自可信来源。",
+      "rule_reference": "CWE-200: Exposure of Sensitive Information",
+      "confidence": 0.75
+    }
+  ],
+  "metrics": {
+    "total_findings": 7,
+    "by_severity": {
+      "blocking": 1,
+      "important": 5,
+      "suggestion": 1
+    },
+    "by_category": {
+      "security": 5,
+      "correctness": 1,
+      "performance": 1
+    },
+    "review_duration_seconds": 180
+  },
+  "praise": [
+    {
+      "file": "server/routes/open.js",
+      "line": 29,
+      "comment": "isValidConfigName 使用严格的正则 /^setting-[a-zA-Z0-9_-]+\\.json$/ 验证配置文件名，有效防止了路径遍历攻击。且在所有使用 configFile 的地方（launchTerminalBat、launchSession、launchSessionDirect、swapSettingsJson）都调用了此验证，防御覆盖完整。"
+    },
+    {
+      "file": "server/index.js",
+      "line": 32,
+      "comment": "CORS 策略正确限制为 localhost/127.0.0.1 来源，使用正则精确匹配，不允许任意 Origin。这防止了跨域恶意网站调用面板 API。"
+    },
+    {
+      "file": "server/index.js",
+      "line": 54,
+      "comment": "认证机制采用 Bearer token + query param 双通道，且 token 使用 crypto.randomBytes(32) 生成，熵值足够（256 位）。token 首次使用时自动生成并持久化，避免了硬编码密钥。"
+    },
+    {
+      "file": "server/routes/snapshots.js",
+      "line": 18,
+      "comment": "快照 ID 验证使用 /^[a-zA-Z0-9_-]+$/ 正则，虽然字符集较宽但排除了路径分隔符（/、\\）和点号（.），有效防止了目录遍历。"
+    },
+    {
+      "file": "server/routes/session.js",
+      "line": 9,
+      "comment": "会话 ID 使用严格的 UUID v4 格式正则验证 /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i，防止了路径注入和格式混淆攻击。"
+    }
+  ]
+}

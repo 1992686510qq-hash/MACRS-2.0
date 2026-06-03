@@ -1,0 +1,282 @@
+{
+  "agent_id": "A",
+  "skill": "code-review-skill",
+  "philosophy": "你是'可维护性优先'的代码审查专家。你的核心理念来自 The Pragmatic Programmer 和 Clean Code 传统：代码首先是写给人看的，其次才是给机器执行的。你关注：命名是否自解释？函数是否做且只做一件事？抽象层次是否一致？重复代码是否可以提取？注释是否解释了'为什么'而非'做了什么'？",
+  "review_scope": {
+    "files": [
+      "D:\\CC项目\\00\\ccl-launcher.js"
+    ],
+    "lines_total": 1464
+  },
+  "findings": [
+    {
+      "id": "A-001",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 1457,
+      "line_range": [
+        1447,
+        1458
+      ],
+      "severity": "blocking",
+      "category": "bug",
+      "title": "全局取消回调 Ye() 计算了导航结果但从未调用 re()，导致 ESC 键在所有非 ve() 渲染的屏幕上失效",
+      "description": "在 Jt() 函数中，通过 Ye() 注册的全局取消回调（第1447-1458行）在计算了 `t.onCancel()` 的返回值后，将其赋值给局部变量 `n`（第1457行），但从未将该结果传递给 `re(n)` 来执行实际的导航操作。相比之下，同一作用域内的 `qe()` 选择回调（第1435-1446行）正确地调用了 `re(o)`。这意味着所有通过 `B()` → `we()` 直接渲染的屏幕（包括主菜单、项目管理、配置管理等）在用户按下 ESC 键时，`V?.()` 被触发但导航结果被丢弃，屏幕冻结无法返回或退出。主屏幕的 `at.onCancel` 返回 `{ type: \"exit\" }` 本应退出程序，但实际上 ESC 键完全无响应。",
+      "suggestion": "在 Ye 回调末尾添加 `re(n)` 调用，与 qe 回调保持对称：\n```js\nYe(() => {\n  let e = he[R()];\n  if (!e) return;\n  let t = e.def;\n  if (t.emptyMsg && t.getOptions().length === 0) {\n    re({ type: \"home\" });\n    return\n  }\n  let n = t.onCancel();\n  re(n);  // ← 缺少这一行\n})\n```",
+      "code_snippet_bad": "Ye(() => {\n  let e = he[R()];\n  if (!e) return;\n  let t = e.def;\n  if (t.emptyMsg && t.getOptions().length === 0) {\n    re({ type: \"home\" });\n    return\n  }\n  let n = t.onCancel();\n})",
+      "code_snippet_good": "Ye(() => {\n  let e = he[R()];\n  if (!e) return;\n  let t = e.def;\n  if (t.emptyMsg && t.getOptions().length === 0) {\n    re({ type: \"home\" });\n    return\n  }\n  let n = t.onCancel();\n  re(n);\n})",
+      "rule_reference": "control-flow-correctness",
+      "confidence": 0.95
+    },
+    {
+      "id": "A-002",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 910,
+      "line_range": [
+        907,
+        913
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "session_action_screen 中编辑配置文件时存在命令注入风险",
+      "description": "在会话操作的「编辑配置」功能中（第907-913行），cfgPath 通过字符串拼接直接嵌入 shell 命令。Windows 上使用 `me.exec('start \"\" \"' + cfgPath + '\"', ...)`，如果 cfgPath 包含双引号字符，命令结构会被破坏。Unix 上使用 `me.exec('${EDITOR:-vi} \"' + cfgPath + '\"', ...)`，同样存在引号逃逸风险。虽然 cfgPath 来源于内部 session 数据（`.ccl-sessions.json`），但如果该 JSON 文件被恶意篡改（例如通过另一个有文件写入权限的进程），cfgPath 可能包含 `\"; rm -rf /; \"` 等注入载荷。",
+      "suggestion": "使用 child_process.execFile 代替 exec，将参数作为数组传递以避免 shell 解析：\n```js\nif (process.platform === \"win32\") {\n  me.execFile(\"cmd\", [\"/c\", \"start\", \"\", cfgPath], () => {})\n} else {\n  me.execFile(process.env.EDITOR || \"vi\", [cfgPath], () => {})\n}\n```",
+      "code_snippet_bad": "if (process.platform === \"win32\") {\n  me.exec('start \"\" \"' + cfgPath + '\"', () => {})\n} else {\n  me.exec('${EDITOR:-vi} \"' + cfgPath + '\"', () => {})\n}",
+      "code_snippet_good": "if (process.platform === \"win32\") {\n  me.spawn(\"cmd\", [\"/c\", \"start\", \"\", cfgPath], { stdio: \"ignore\", detached: true }).unref();\n} else {\n  const editor = process.env.EDITOR || \"vi\";\n  me.spawn(editor, [cfgPath], { stdio: \"inherit\", detached: true }).unref();\n}",
+      "rule_reference": "CWE-78",
+      "confidence": 0.85
+    },
+    {
+      "id": "A-003",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 617,
+      "line_range": [
+        615,
+        627
+      ],
+      "severity": "important",
+      "category": "security",
+      "title": "ct() 函数中通过字符串拼接构建 shell 命令存在注入风险",
+      "description": "在 Unix 分支（第615-627行），启动 Claude 的 shell 命令通过字符串拼接构建：`\"exec \" + o`，其中 `o` 由 `[t, ...e].map(d => \"'\" + d.replace(/'/g, \"'\\\\''\") + \"'\").join(\" \")` 生成。虽然对单引号做了转义，但整体方法（手动拼接 shell 命令字符串）容易出错。特别是项目路径 `n`（第620行）被插入到 `cd '...'` 命令中 — 如果路径以 `-` 开头，可能被 `cd` 解释为选项标志。此外，使用 `/bin/sh -c` 执行拼接字符串本身就增加了攻击面。",
+      "suggestion": "避免手动构建 shell 命令字符串。直接使用 execFileSync 或 spawnSync 传递参数数组：\n```js\nconst args = [\"-c\", \"...\"]; // 或用 spawn 避免 shell 解析\n```\n更好的方案是：先 chdir 到目标目录，然后用 execFileSync 直接执行 claude 命令，完全避免 shell 拼接。",
+      "code_snippet_bad": "let o = [t, ...e].map(d => \"'\" + d.replace(/'/g, \"'\\\\''\") + \"'\").join(\" \"),\n  s = \"stty sane < /dev/tty ...; \" + (n ? \"cd '\" + n.replace(/'/g, \"'\\\\''\") + \"'; \" : \"\") + \"exec \" + o;\ntry {\n  me.execFileSync(\"/bin/sh\", [\"-c\", s], { stdio: \"inherit\" })\n}",
+      "code_snippet_good": "try {\n  if (n) process.chdir(n);\n  const result = me.spawnSync(t, e, { stdio: \"inherit\" });\n  process.exit(result.status ?? 1);\n} catch (d) {\n  process.exit(d.status ?? 1);\n}",
+      "rule_reference": "CWE-78",
+      "confidence": 0.8
+    },
+    {
+      "id": "A-004",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 1,
+      "line_range": [
+        1,
+        1464
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "整个文件使用无意义的单字母变量名，严重阻碍代码阅读和维护",
+      "description": "整个 1464 行代码使用了极短且无语义的变量名，这是典型的代码压缩/混淆产物。例如：`p`, `f`, `o`, `c`, `h`, `d`, `b`（第2-8行）、`u` 作为全局配置对象（第63行）、`g`, `F`, `f`, `D`, `S`, `P` 作为 TUI 组件（第189-191行）、`ce`, `ae`, `ne`, `Ae` 作为导航状态（第136-139行）、`T`, `ye`, `Ie` 作为模块引用（第50-52行）。这些单字母名称完全无法传达变量的用途，任何维护者（包括原作者数月后）都需要逐行回溯才能理解代码意图。",
+      "suggestion": "将变量名改为有意义的名称。例如：\n- `u` → `appConfig`（全局配置对象）\n- `_e` → `claudeHomeDir`（~/.claude 目录路径）\n- `ce` → `screenStack`（屏幕导航栈）\n- `ae` → `currentScreen`（当前屏幕名）\n- `ne` → `currentOption`（当前选中项）\n- `Ae` → `navigationData`（导航上下文数据）\n- `g` → `tuiScreen`（blessed 屏幕对象）\n- `F` → `headerBox`（标题区域）\n- `f` → `listWidget`（列表面板）\n- `D` → `footerBox`（底部信息栏）\n\n注意：由于这是压缩产物，理想情况下应该从原始未压缩源代码进行维护。如果原始源码不可用，建议第一优先级为整个文件执行去混淆重命名。",
+      "rule_reference": "clean-code-naming",
+      "confidence": 0.95
+    },
+    {
+      "id": "A-005",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 1,
+      "line_range": [
+        1,
+        1464
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "单一文件混合了所有关注点，缺乏模块化分离（1464行单体文件）",
+      "description": "该文件将以下所有关注点塞入一个文件：① IIFE 依赖安装逻辑（第1-29行）、② CJS→ESM 模块互操作 polyfill（第31-48行）、③ 配置持久化 CRUD（第54-134行）、④ 屏幕导航状态机（第136-184行）、⑤ Blessed TUI 渲染层（第199-404行）、⑥ HTTP 客户端（tips/提供商获取，第444-556行）、⑦ Claude 启动/会话管理（第525-656行）、⑧ 所有 UI 屏幕定义（第658-1138行）、⑨ 向导式配置创建流程（第1157-1306行）。每个关注点都应提取为独立模块。",
+      "suggestion": "按关注点拆分为至少以下模块：\n- `lib/bootstrap.js` — 依赖检查和安装（IIFE 部分）\n- `lib/config-store.js` — 配置文件的读/写/原子保存（_(), Le(), de(), Oe()）\n- `lib/navigation.js` — 屏幕导航栈（ce/ae/ne/Ae 及相关函数）\n- `lib/tui.js` — Blessed 初始化和通用 UI 组件（Be(), we(), ve(), H(), E() 等）\n- `lib/launcher.js` — Claude 进程启动逻辑（Ht(), ct(), Zt()）\n- `lib/network.js` — HTTP 请求（ot(), Ut()）\n- `screens/main.js` — 主菜单\n- `screens/project.js` — 项目选择\n- `screens/model.js` — 模型/配置管理\n- `screens/sessions.js` — 会话管理\n- `flows/add-project.js` — 新建项目向导\n- `flows/add-model.js` — 新建配置向导\n- `index.js` — 入口点（Jt()）",
+      "rule_reference": "single-responsibility-principle",
+      "confidence": 0.95
+    },
+    {
+      "id": "A-006",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 93,
+      "line_range": [
+        93,
+        1280
+      ],
+      "severity": "important",
+      "category": "correctness",
+      "title": "大量空 catch 块静默吞掉所有错误，导致故障完全不可见",
+      "description": "文件中存在至少 15 处 `catch {}` 或 `catch (e) {}` 空块（第93, 107, 410, 417, 455, 464, 498, 503, 534, 545, 589, 644, 649, 859, 888, 1017, 1194, 1201, 1275, 1280行），以及第108行仅打印错误消息但不包含堆栈信息。这些静默失败使得以下场景完全无法诊断：文件读取失败（磁盘满/权限不足）、JSON 解析失败（配置损坏）、目录遍历失败。用户只会看到「操作失败」的最终表现，但完全无法定位根因。尤其严重的是 config 读写（第455、464行）和 session 数据读取（第545、589、859、888行）的静默失败 — 配置损坏时用户毫不知情。",
+      "suggestion": "每个 catch 块至少应记录错误信息，并提供降级策略的说明：\n```js\n// 之前\ntry { sessions = JSON.parse(Qt.readFileSync(logPath, \"utf-8\")) } catch {}\n\n// 之后\ntry {\n  sessions = JSON.parse(Qt.readFileSync(logPath, \"utf-8\"));\n} catch (err) {\n  _trace(\"WARN\", `Failed to read sessions: ${err.message}`);\n  sessions = [];\n}\n```\n对于配置读写等关键路径，应使用已有的 `_trace()` 函数记录错误，并考虑向用户展示非阻塞的警告提示。",
+      "code_snippet_bad": "try { sessions = JSON.parse(Qt.readFileSync(logPath, \"utf-8\")) } catch {}",
+      "code_snippet_good": "try {\n  sessions = JSON.parse(Qt.readFileSync(logPath, \"utf-8\"));\n} catch (err) {\n  _trace(\"WARN\", `Session read failed: ${err.message}`);\n  sessions = [];\n}",
+      "rule_reference": "error-handling-best-practices",
+      "confidence": 0.9
+    },
+    {
+      "id": "A-007",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 413,
+      "line_range": [
+        413,
+        414
+      ],
+      "severity": "nit",
+      "category": "performance",
+      "title": "se() 函数中使用忙等循环消耗 stdin 缓冲区，阻塞事件循环 100ms",
+      "description": "第413-414行的 `for (; Date.now() < e;) process.stdin.read()` 是一个 CPU 忙等循环（busy-wait），在最多 100ms 内持续轮询读取 stdin。这会完全阻塞 Node.js 事件循环，阻止任何其他 I/O 或定时器回调执行。意图是排空 stdin 缓冲区中的残留数据，但使用忙等循环是不必要的 — 可以先调用 `process.stdin.read()` 若干次直到返回 null，或使用 `setImmediate` / `setTimeout` 进行协作式调度。",
+      "suggestion": "使用非阻塞方式排空 stdin 缓冲区：\n```js\n// 排空 stdin 缓冲区（非阻塞方式）\nlet drained = 0;\nconst MAX_DRAIN = 100;\nwhile (drained < MAX_DRAIN && process.stdin.read() !== null) {\n  drained++;\n}\n```\n或者如果确实需要等待一段时间，使用 `setTimeout` 或 `Atomics.wait` 替代忙等：\n```js\nconst { setTimeout: sleep } = require(\"timers/promises\");\nawait sleep(100);\n```",
+      "code_snippet_bad": "let e = Date.now() + 100;\nfor (; Date.now() < e;) process.stdin.read();",
+      "code_snippet_good": "let drained = 0;\nwhile (drained < 100 && process.stdin.read() !== null) {\n  drained++;\n}",
+      "rule_reference": "performance-busy-wait",
+      "confidence": 0.85
+    },
+    {
+      "id": "A-008",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 136,
+      "line_range": [
+        136,
+        184
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "全局可变状态（ce, ae, ne, Ae）被10+个函数直接修改，缺乏封装",
+      "description": "第136-139行定义的 `ce`（屏幕导航栈）、`ae`（当前屏幕名）、`ne`（当前选项索引）、`Ae`（导航上下文数据）是模块级全局变量。这些状态被以下函数直接读写：`R()`, `xe()`, `Fe()`, `pe()`, `$e()`, `Re()`, `Rt()`, `oe()`, `N()`, `O()`（第141-184行）。此外，`B()`（第1346行）、`re()`（第1377行）、以及多个屏幕定义直接在 `onSelect` 中调用 `N()` 修改 `Ae`。这种裸露的全局状态模式使得：① 状态转换无法追踪（谁在何时修改了哪个状态？）、② 测试几乎不可能（所有测试共享同一状态）、③ 任何函数都可以无意中破坏导航栈。",
+      "suggestion": "将所有导航状态封装进一个对象或闭包中，通过明确的方法接口暴露：\n```js\nfunction createNavigation() {\n  const stack = [];\n  let currentScreen = \"main\";\n  let currentOption = 0;\n  const context = {};\n\n  return {\n    getScreen: () => currentScreen,\n    getOption: () => currentOption,\n    getContext: (key) => context[key] || \"\",\n    setContext: (key, value) => { context[key] = value; },\n    push: (screen, option = 0) => {\n      stack.push({ screen: currentScreen, option: currentOption });\n      currentScreen = screen;\n      currentOption = option;\n    },\n    pop: () => { /* ... */ },\n    reset: () => { /* ... */ }\n  };\n}\n\nconst nav = createNavigation();\n```",
+      "code_snippet_bad": "var ce = [], ae = \"\", ne = 0, Ae = {};\nfunction R() { return ae }\nfunction pe(e, t = 0) { ae = e, ne = t }",
+      "code_snippet_good": "const nav = createNavigation();\n// 使用时：\nconst currentScreen = nav.getScreen();\nnav.setContext(\"project_path\", value);\nnav.push(\"model\");\nnav.pop();",
+      "rule_reference": "encapsulation-principle",
+      "confidence": 0.9
+    },
+    {
+      "id": "A-009",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 381,
+      "line_range": [
+        360,
+        383
+      ],
+      "severity": "important",
+      "category": "correctness",
+      "title": "E() 确认对话框在全局 g 对象上注册按键监听但可能在 Promise 未 resolve 时泄漏",
+      "description": "E() 函数（第360-383行）通过 `g.key(...)` 在全局 blessed screen 对象上注册了 5 个按键监听器（enter, escape, space, right, left）。虽然 `d()` 清理函数（第371-374行）会在任一按键触发后调用 `g.unkey()` 移除监听器，但如果调用方创建了一个 E() 确认框后，在 Promise resolve 之前用户通过其他路径（如 `re()` 直接跳转屏幕、或 `se()` 销毁 TUI）改变了 UI 状态，这些全局按键监听器将永远不会被清理。这会导致：① 内存泄漏（闭包持有引用）、② 幽灵交互（在错误屏幕上按下 enter 触发旧的 resolve）。",
+      "suggestion": "① 在 E() 返回的 Promise 上添加一个 `.finally()` 或在 se() 中强制清理所有活跃的按键监听器；② 使用 blessed 的 `onceKey()` 代替 `key()` + `unkey()` 组合（如果 blessed 支持），或者维护一个全局的活跃监听器注册表，在屏幕切换时统一清理。\n\n最小改动方案：\n```js\nfunction E(e, t, n) {\n  return new Promise(o => {\n    // ... 现有代码 ...\n    const keys = [\"enter\", \"escape\", \"space\", \"right\", \"left\"];\n    keys.forEach(k => g.key(k, /* handlers */));\n    // 新增：返回清理函数，供外部在异常路径中调用\n    // 或者使用 AbortController 模式\n  })\n}\n```",
+      "code_snippet_bad": "g.key(\"enter\", l), g.key(\"escape\", p), g.key(\"space\", l), g.key(\"right\", l), g.key(\"left\", p)",
+      "code_snippet_good": "const keys = [\n  [\"enter\", l], [\"escape\", p], [\"space\", l], [\"right\", l], [\"left\", p]\n];\nkeys.forEach(([k, fn]) => g.key(k, fn));\n// 在 se() 中或导航重置时清理所有活跃监听器",
+      "rule_reference": "resource-leak-prevention",
+      "confidence": 0.8
+    },
+    {
+      "id": "A-010",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 1041,
+      "line_range": [
+        1041,
+        1041
+      ],
+      "severity": "suggestion",
+      "category": "correctness",
+      "title": "vt() 中项目基础路径硬编码为 Windows 绝对路径，工具不可跨平台使用",
+      "description": "第1041行 `sProjectBase = \"D:\\\\CC项目\"` 是一个硬编码的、用户特定的 Windows 绝对路径。这导致：① 在非 Windows 系统（Linux/macOS）上完全不可用；② 即使在 Windows 上，如果用户没有 D 盘或该路径不可写，创建项目会静默失败（第1051行的 try-catch 会捕获错误但 mkdirSync 失败后文件写入不会执行）；③ 路径名包含中文字符，在某些终端编码环境下可能产生问题。",
+      "suggestion": "使用用户主目录下的相对路径，或允许用户通过环境变量/配置文件自定义基础路径：\n```js\n// 方案1：使用环境变量\nconst sProjectBase = process.env.CCL_PROJECTS_DIR ||\n  ue.join(Ie.homedir(), \"claude-projects\");\n\n// 方案2：存储在配置中\nconst sProjectBase = a().projectsBaseDir ||\n  ue.join(Ie.homedir(), \"claude-projects\");\n```\n同时，在第1046行创建目录之前应确保基础目录已存在：\n```js\nz.mkdirSync(sProjectBase, { recursive: true });\n```",
+      "code_snippet_bad": "sProjectBase = \"D:\\\\CC\\u9879\\u76EE\";",
+      "code_snippet_good": "const sProjectBase = process.env.CCL_PROJECTS_DIR ||\n  ue.join(Ie.homedir(), \"claude-projects\");\n// 确保基础目录存在\nz.mkdirSync(sProjectBase, { recursive: true });",
+      "rule_reference": "portability-hardcoded-paths",
+      "confidence": 0.85
+    },
+    {
+      "id": "A-011",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 795,
+      "line_range": [
+        790,
+        796
+      ],
+      "severity": "important",
+      "category": "bug",
+      "title": "parseInt(\"\") 返回 NaN，导致 sessions[NaN] 为 undefined，模型切换操作静默失败",
+      "description": "在 mt 模型选择屏幕的 session_action 分支中（第790-796行），`O(\"selected_session\")` 调用 `Ae[\"selected_session\"] || \"\"`（第183行）。如果 `selected_session` 键在 Ae 中不存在或未被正确设置，`O()` 返回空字符串 `\"\"`。随后 `parseInt(\"\")` 返回 `NaN`（第795行），而 `sessions[NaN]` 在 JavaScript 中返回 `undefined`（因为 JS 将 NaN 转换为字符串 `\"NaN\"` 作为属性键查找）。这导致 `session` 始终为 `undefined`，整个模型切换逻辑（第797-811行）被跳过，用户操作静默无效果。同样的模式也出现在 session_action_screen 的第889行。",
+      "suggestion": "添加 NaN 检查和明确的错误处理：\n```js\nvar idxStr = O(\"selected_session\");\nvar idx = parseInt(idxStr, 10);\nif (isNaN(idx) || idx < 0 || idx >= sessions.length) {\n  _trace(\"ERROR\", `Invalid session index: ${idxStr}`);\n  return { type: \"home\", tip: \"会话数据异常，请重试\" };\n}\nvar session = sessions[idx];\n```\n同时，`O()` 函数（第182-184行）应区分「键不存在」和「值为空字符串」：\n```js\nfunction O(e) {\n  return e in Ae ? Ae[e] : undefined;\n}\n```\n或者在 `N()` 中确保存储的是数字而非字符串：\n```js\n// sessions_screen.onSelect (第873行)\nN(\"selected_session\", e);  // e 当前是 number，O() 返回时变成 string 还是 number？\n```",
+      "code_snippet_bad": "var idx = parseInt(r);\nvar session = sessions[idx];",
+      "code_snippet_good": "var idx = parseInt(r, 10);\nif (isNaN(idx) || idx < 0 || idx >= sessions.length) {\n  _trace(\"ERROR\", `Invalid session index: ${r}`);\n  return { type: \"home\" };\n}\nvar session = sessions[idx];",
+      "rule_reference": "defensive-programming-input-validation",
+      "confidence": 0.75
+    },
+    {
+      "id": "A-012",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 20,
+      "line_range": [
+        20,
+        1394
+      ],
+      "severity": "important",
+      "category": "maintainability",
+      "title": "多个魔法数字散布在代码中，缺乏命名常量或文档说明",
+      "description": "文件中存在多处硬编码的数字常量，其含义和选择依据不明确：\n- `6e4`（第20行）：npm install 超时 60 秒，为什么是 60 秒？\n- `864e5`（第469行）：一天的毫秒数，作为 `nt()` 的除数使用，应定义为 `MS_PER_DAY`\n- `5e3`（第501行）：tips 获取 HTTP 超时 5 秒\n- `3e3`（第1150行）：provider 列表 HTTP 超时 3 秒\n- `1e3`（第1394行）：操作成功后的延迟显示 1 秒\n- `100`（第413行）：stdin 排空等待 100ms\n- `7`（第492, 510行）：tips 保护天数默认值\n- `10`（第1066行）：新项目的默认 weight\n- `2`（第733行）：选中项目时 weight 增量\n- `1`（第733行）：非选中项目的 weight 衰减\n- `18`, `10`（第865-867行）：会话列表的字段显示宽度\n\n这些数字散布在代码中，修改时需要全局搜索替换，且缺乏语义说明。",
+      "suggestion": "在文件顶部定义所有常量：\n```js\nconst CONSTANTS = {\n  NPM_INSTALL_TIMEOUT_MS: 60_000,\n  MS_PER_DAY: 86_400_000,\n  TIPS_FETCH_TIMEOUT_MS: 5_000,\n  PROVIDER_FETCH_TIMEOUT_MS: 3_000,\n  SUCCESS_DISPLAY_DELAY_MS: 1_000,\n  STDIN_DRAIN_WAIT_MS: 100,\n  TIPS_DEFAULT_PROTECT_DAYS: 7,\n  PROJECT_DEFAULT_WEIGHT: 10,\n  PROJECT_SELECT_WEIGHT_INCREMENT: 2,\n  PROJECT_DESELECT_WEIGHT_DECREMENT: 1,\n  SESSION_LIST_NAME_WIDTH: 18,\n  SESSION_LIST_MODEL_WIDTH: 10,\n  SESSION_LIST_FILE_WIDTH: 18,\n};\n```",
+      "code_snippet_bad": "timeout: 6e4",
+      "code_snippet_good": "timeout: CONSTANTS.NPM_INSTALL_TIMEOUT_MS",
+      "rule_reference": "magic-numbers-anti-pattern",
+      "confidence": 0.85
+    },
+    {
+      "id": "A-013",
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 1405,
+      "line_range": [
+        1403,
+        1405
+      ],
+      "severity": "nit",
+      "category": "bug",
+      "title": "switch-case 中 exit 分支缺少 break，虽因 process.exit 不可达但仍违反防御性编程原则",
+      "description": "在 `re()` 函数的 switch 语句中（第1379-1410行），`case \"exit\"` 分支（第1403-1404行）调用 `process.exit(0)` 后缺少 `break` 语句，直接落入 `case \"flow\"` 分支。虽然 Node.js 的 `process.exit()` 是同步的且立即终止进程（不会返回），因此在运行时永远不会执行到 `case \"flow\"`，但这是一个潜在的维护陷阱：如果将来有人在 exit 分支中添加了条件逻辑（如\"如果处于调试模式则只记录而不退出\"），将意外地触发 flow 逻辑。此外，ESLint 的 `no-fallthrough` 规则会标记此处。",
+      "suggestion": "在 `process.exit(0)` 后显式添加 `break` 或 `return`：\n```js\ncase \"exit\":\n  se(), process.exit(0);\n  // break 或 return 永远不会执行，但标明意图\n  break;\n```\n更好的做法是使用 `return` 提前退出整个函数，避免依赖 switch 的 fall-through 语义：\n```js\ncase \"exit\":\n  se();\n  process.exit(0);\n  return;  // 显式标注：此处不可达\n```",
+      "code_snippet_bad": "case \"exit\":\n  se(), process.exit(0);\ncase \"flow\":\n  Kt(e.name);\n  break;",
+      "code_snippet_good": "case \"exit\":\n  se();\n  process.exit(0);\n  break;  // 防御性 break",
+      "rule_reference": "defensive-programming-switch-fallthrough",
+      "confidence": 0.7
+    }
+  ],
+  "metrics": {
+    "total_findings": 13,
+    "by_severity": {
+      "blocking": 1,
+      "important": 9,
+      "nit": 2,
+      "suggestion": 1
+    },
+    "by_category": {
+      "bug": 3,
+      "security": 2,
+      "correctness": 3,
+      "maintainability": 4,
+      "performance": 1
+    },
+    "review_duration_seconds": 0
+  },
+  "praise": [
+    {
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 100,
+      "comment": "原子文件写入模式（write tmp → rename）在 _() 和 Oe() 中一致使用，有效防止了进程崩溃时的配置文件损坏。这是教科书级别的文件持久化最佳实践。"
+    },
+    {
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 157,
+      "comment": "屏幕导航栈（$e/Re/oe push-pop 模式）的设计简洁优雅，使得多层级 TUI 菜单的回退导航逻辑清晰可控。栈模式的采用避免了常见的「全局 flag 地狱」问题。"
+    },
+    {
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 1143,
+      "comment": "Ut() 函数在网络请求失败时优雅降级到内置默认提供商列表（ge），而非直接报错退出。这种「离线可用」的设计思路值得称赞，确保了工具在各种网络条件下的可用性。"
+    },
+    {
+      "file": "D:\\CC项目\\00\\ccl-launcher.js",
+      "line": 72,
+      "comment": "在 Le() 读取配置文件时使用 `.replace(/^\\uFEFF/, \"\")` 主动剥离 UTF-8 BOM 标记，体现了对跨平台文件编码差异的细心处理。Windows 记事本等工具常在 UTF-8 文件头添加 BOM，此处防御性编码避免了隐式的 JSON 解析失败。"
+    }
+  ]
+}

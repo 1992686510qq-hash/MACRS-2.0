@@ -1,0 +1,959 @@
+{
+  "phase": 3,
+  "total_findings": 34,
+  "p0_p1_for_verification": 20,
+  "verdicts": {
+    "DOWNGRADE": 17,
+    "NEEDS_HUMAN": 3
+  },
+  "verified_findings": [
+    {
+      "merged_id": "M-012",
+      "canonical_title": "parseSessionChunk 中嵌套循环变量名 k 在多个作用域中重复使用",
+      "canonical_severity": "P3 LOW",
+      "canonical_description": "parseSessionChunk 在每次调用时使用 fs.statSync、fs.openSync、fs.readSync 读取整个 JSONL 文件。对于一个实时 SSE 推送的仪表盘服务，同步 I/O 会阻塞事件循环，导致所有 SSE 客户端心跳中断、新请求排队。当会话文件较大（数 MB）或并发请求较多时，服务响应将严重退化。同样的问题存在于 agents.js:45（fs.readFileSync）、snapshot.js:7-18（fs.readFileSync）、index.js 中多处 fs.readFileSync。整个代码库形成了一条同步 I/O 链：watcher → scanSessions → parseSessionChunk → readFileSync，任何一个大文件都会阻塞整个服务。",
+      "category": [
+        "performance",
+        "maintainability"
+      ],
+      "file": "scanner.js",
+      "line_range": [
+        66,
+        155
+      ],
+      "sources": [
+        {
+          "agent": "A",
+          "finding_id": "A-012",
+          "severity": "suggestion",
+          "unified_severity": "P3 MEDIUM",
+          "title": "parseSessionChunk 中嵌套循环变量名 k 在多个作用域中重复使用",
+          "description": "parseSessionChunk 函数中有三层嵌套循环，外层用 i，中层用 j/k，内层也用 k。由于 var 的函数级作用域，内层的 k 会覆盖中层的 k。虽然当前逻辑中不会同时使用（if-else 分支），但这是潜在的维护陷阱——未来修改时极易引入 bug。整个函数约 90 行，变量命名如 t、obj、pid 缺乏语义。",
+          "confidence": 0.88,
+          "category": "maintainability",
+          "rule_reference": "Clean Code — 有意义的命名"
+        },
+        {
+          "agent": "C",
+          "finding_id": "C-001",
+          "severity": "blocking",
+          "unified_severity": "P0 BLOCKING",
+          "title": "parseSessionChunk 使用同步 I/O 阻塞事件循环",
+          "description": "parseSessionChunk 在每次调用时使用 fs.statSync、fs.openSync、fs.readSync 读取整个 JSONL 文件。对于一个实时 SSE 推送的仪表盘服务，同步 I/O 会阻塞事件循环，导致所有 SSE 客户端心跳中断、新请求排队。当会话文件较大（数 MB）或并发请求较多时，服务响应将严重退化。同样的问题存在于 agents.js:45（fs.readFileSync）、snapshot.js:7-18（fs.readFileSync）、index.js 中多处 fs.readFileSync。整个代码库形成了一条同步 I/O 链：watcher → scanSessions → parseSessionChunk → readFileSync，任何一个大文件都会阻塞整个服务。",
+          "confidence": 0.95,
+          "category": "performance",
+          "rule_reference": "Clean Architecture - I/O 边界应隔离在最外层；Node.js 事件循环不应被同步 I/O 阻塞"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.915,
+        "consensus_boost": 0.15,
+        "final_confidence": 1.0,
+        "agent_count": 2
+      },
+      "status": "conflict",
+      "conflicts": {
+        "severity_conflict": true,
+        "severity_gap": 3,
+        "category_conflict": true,
+        "categories": [
+          "performance",
+          "maintainability"
+        ]
+      },
+      "code_snippet_bad": "var stat = fs.statSync(filePath);\nvar fd = fs.openSync(filePath, \"r\");\nvar bytesRead = fs.readSync(fd, buf, 0, buf.length, startOffset);",
+      "code_snippet_good": "var stat = await fsp.stat(filePath);\nvar fh = await fsp.open(filePath, 'r');\ntry {\n  var { bytesRead } = await fh.read(buf, 0, buf.length, startOffset);\n} finally { await fh.close(); }",
+      "suggestion": "为每层循环使用语义化变量名：lineIdx、contentBlockIdx、toolUseIdx。或将解析逻辑拆分为更小的函数（parseUserMessage、parseAssistantMessage）。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "The claim is about variable `k` reuse across loop scopes in parseSessionChunk. From the provided scanner.js code and the similar pattern visible in agents.js (parseSubAgent), the loops using `k` and `k2` are sequential, not nested within each other. With JavaScript's `var` (function-scoped), sequential loops reusing the same variable name is a code readability issue, not a correctness bug — each loop fully completes before the next begins. The developer already demonstrated awareness of nested scope issues by using `k2` and `li` for truly nested loops in parseSubAgent. P0 BLOCKING is massively overstated for a variable naming style preference.",
+      "confidence_after_verification": 0.85,
+      "original_severity": "P0 BLOCKING"
+    },
+    {
+      "merged_id": "M-001",
+      "canonical_title": "create-and-open handler 中 urlObj 重复声明，遮蔽外部变量",
+      "canonical_severity": "P3 LOW",
+      "canonical_description": "handler 顶部（约第42行）已声明 var urlObj = new URL(...)，create-and-open 分支内再次 var urlObj = new URL(req.url, ...)。由于 var 是函数级作用域，这实际上是重新赋值而非新建变量。虽然功能上不会出错（覆盖了外部 urlObj 的值），但两个同名 var 声明极易让维护者误以为它们是独立变量，且 configName 的解析依赖第二次赋值——如果未来有人删除或移动第二次声明，configName 将永远为 null。",
+      "category": "maintainability",
+      "file": "index.js",
+      "line_range": [
+        136,
+        138
+      ],
+      "sources": [
+        {
+          "agent": "A",
+          "finding_id": "A-001",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "create-and-open handler 中 urlObj 重复声明，遮蔽外部变量",
+          "description": "handler 顶部（约第42行）已声明 var urlObj = new URL(...)，create-and-open 分支内再次 var urlObj = new URL(req.url, ...)。由于 var 是函数级作用域，这实际上是重新赋值而非新建变量。虽然功能上不会出错（覆盖了外部 urlObj 的值），但两个同名 var 声明极易让维护者误以为它们是独立变量，且 configName 的解析依赖第二次赋值——如果未来有人删除或移动第二次声明，configName 将永远为 null。",
+          "confidence": 0.95,
+          "category": "maintainability",
+          "rule_reference": "Clean Code — 避免变量遮蔽"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.95,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.95,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "maintainability"
+        ]
+      },
+      "code_snippet_bad": "if (req.url.startsWith(\"/api/create-and-open\")) {\n  var urlObj = new URL(req.url, \"http://localhost\");\n  var configName = urlObj.searchParams.get(\"config\");",
+      "code_snippet_good": "if (req.url.startsWith(\"/api/create-and-open\")) {\n  // urlObj 已在 handler 顶部声明，直接使用\n  var configName = urlObj.searchParams.get(\"config\");",
+      "suggestion": "删除 create-and-open 分支内的重复 var urlObj 声明，直接复用外部已有的 urlObj（它在解析 req.url 时已包含 query 参数）。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "Even if a duplicate `var urlObj` exists inside the createServer callback at lines 136-138, JavaScript `var` is function-scoped — both declarations hoist to the same function scope (the createServer callback). There is no actual variable shadowing; the second `var urlObj` simply reassigns the same hoisted variable. The code works correctly. This is a redundant declaration / code style issue, not a bug. The provided code snippet shows urlObj declared once around line 100-101. Without seeing the full handler code, the exact lines can't be confirmed, but even if present, `var` scoping prevents any functional issue.",
+      "confidence_after_verification": 0.8,
+      "original_severity": "P1 CRITICAL"
+    },
+    {
+      "merged_id": "M-003",
+      "canonical_title": "_processing 模块局部变量遮蔽 shared._processing，后者成为死代码",
+      "canonical_severity": "P3 LOW",
+      "canonical_description": "watcher.js 在第46行声明模块级 var _processing = false，processChanges() 使用该局部变量作为并发守卫。但 shared.js 也导出了 shared._processing（初始值 false）。两个变量完全独立：shared._processing 从未被读写，是死代码；模块级 _processing 才是实际使用的守卫。这不仅造成混淆，还意味着未来若有人从 shared._processing 检查状态，将始终得到 false。",
+      "category": "bug",
+      "file": "watcher.js",
+      "line_range": [
+        46,
+        48
+      ],
+      "sources": [
+        {
+          "agent": "A",
+          "finding_id": "A-003",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "_processing 模块局部变量遮蔽 shared._processing，后者成为死代码",
+          "description": "watcher.js 在第46行声明模块级 var _processing = false，processChanges() 使用该局部变量作为并发守卫。但 shared.js 也导出了 shared._processing（初始值 false）。两个变量完全独立：shared._processing 从未被读写，是死代码；模块级 _processing 才是实际使用的守卫。这不仅造成混淆，还意味着未来若有人从 shared._processing 检查状态，将始终得到 false。",
+          "confidence": 0.93,
+          "category": "bug",
+          "rule_reference": "单一职责 — 共享状态应集中管理"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.93,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.93,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "bug"
+        ]
+      },
+      "code_snippet_bad": "var _processing = false;\nfunction processChanges() {\n  if (_processing) return;\n  _processing = true;",
+      "code_snippet_good": "function processChanges() {\n  if (shared._processing) return;\n  shared._processing = true;",
+      "suggestion": "统一使用 shared._processing 作为唯一的并发守卫，删除 watcher.js 的模块级 _processing 变量。或从 shared.js 中移除 _processing 导出。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "The claim is correct that watcher.js declares its own `var _processing = false` (line 46) while shared.js also exports `_processing: false`. watcher.js uses its local `_processing` variable as a concurrency guard in processChanges(), never referencing shared._processing. This makes shared._processing dead code. However, the local _processing in watcher.js works perfectly correctly as a concurrency guard — the boolean flag pattern with try/finally is appropriate for this use case (single-process, localhost tool with debounced file watchers). shared._processing being unused is dead code cleanup, not a critical bug. P1 CRITICAL is wrong — there's no functional defect, just unused exported state.",
+      "confidence_after_verification": 0.9,
+      "original_severity": "P1 CRITICAL"
+    },
+    {
+      "merged_id": "M-024",
+      "canonical_title": "Session ID 使用 Math.random() 生成，可预测",
+      "canonical_severity": "P0 BLOCKING",
+      "canonical_description": "index.js:95 和 index.js:120 中的 genUuid() 使用 Math.random() 生成 session ID。Math.random() 不是密码学安全的 PRNG，生成的 UUID 在理论上可预测。虽然这不是认证 token，但 session ID 用于标识和恢复会话（通过 --resume），如果攻击者能预测 ID，可能访问他人的会话内容。routes/open.js 中也有类似问题。",
+      "category": "security",
+      "file": "index.js",
+      "line_range": [
+        95,
+        100
+      ],
+      "sources": [
+        {
+          "agent": "C",
+          "finding_id": "C-003",
+          "severity": "blocking",
+          "unified_severity": "P0 BLOCKING",
+          "title": "Session ID 使用 Math.random() 生成，可预测",
+          "description": "index.js:95 和 index.js:120 中的 genUuid() 使用 Math.random() 生成 session ID。Math.random() 不是密码学安全的 PRNG，生成的 UUID 在理论上可预测。虽然这不是认证 token，但 session ID 用于标识和恢复会话（通过 --resume），如果攻击者能预测 ID，可能访问他人的会话内容。routes/open.js 中也有类似问题。",
+          "confidence": 0.93,
+          "category": "security",
+          "rule_reference": "OWASP - 使用密码学安全的随机数生成器"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.93,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.93,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "\"xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx\".replace(/[xy]/g, function(c) {\n  var r = Math.random() * 16 | 0, v = c === \"x\" ? r : (r & 0x3 | 0x8);\n  return v.toString(16);\n});",
+      "code_snippet_good": "var sessionId = crypto.randomUUID();",
+      "suggestion": "使用 crypto.randomUUID()（Node.js 14.17+）或 crypto.randomBytes(16) 生成 session ID。代码中已经引入了 crypto 模块，可直接使用。",
+      "skeptic_verdict": "NEEDS_HUMAN",
+      "skeptic_rationale": "The provided index.js code snippet does NOT contain any Math.random() usage for session ID generation. The visible code uses crypto.randomBytes(32) for token generation. The code snippet is incomplete (cuts off in the middle of the HTML serving section). The Math.random() usage referenced at lines 95-100 might exist in the unseen portion of the file, but cannot be verified from the provided code. The visible lines 95-100 correspond to the isPublicPath function and authenticateRequest function — no Math.random() there. Requires access to the complete file to verify.",
+      "confidence_after_verification": 0.5
+    },
+    {
+      "merged_id": "M-002",
+      "canonical_title": "create-and-open handler 中 homeDir 重复声明遮蔽模块级变量",
+      "canonical_severity": "P3 LOW",
+      "canonical_description": "模块顶部（第16行）已声明 var homeDir，create-and-open 分支内再次 var homeDir = process.env.HOME || ...。与 urlObj 一样，var 作用域导致遮蔽。该分支后续使用 homeDir 构造路径——若模块顶部的 homeDir 逻辑未来发生变化（如增加 fallback），分支内的重复声明将绕过该变更。",
+      "category": "maintainability",
+      "file": "index.js",
+      "line_range": [
+        147,
+        148
+      ],
+      "sources": [
+        {
+          "agent": "A",
+          "finding_id": "A-002",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "create-and-open handler 中 homeDir 重复声明遮蔽模块级变量",
+          "description": "模块顶部（第16行）已声明 var homeDir，create-and-open 分支内再次 var homeDir = process.env.HOME || ...。与 urlObj 一样，var 作用域导致遮蔽。该分支后续使用 homeDir 构造路径——若模块顶部的 homeDir 逻辑未来发生变化（如增加 fallback），分支内的重复声明将绕过该变更。",
+          "confidence": 0.92,
+          "category": "maintainability",
+          "rule_reference": "DRY 原则"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.92,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.92,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "maintainability"
+        ]
+      },
+      "code_snippet_bad": "var homeDir = process.env.HOME || process.env.USERPROFILE || \"C:\\\\Users\\\\Administrator\";",
+      "code_snippet_good": "// homeDir 已在模块顶部声明，直接使用",
+      "suggestion": "删除 create-and-open 内的 var homeDir 重新声明，直接复用模块顶部的 homeDir。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "Similar to M-001, even if a duplicate `var homeDir` exists inside a handler at lines 147-148, JavaScript `var` is function-scoped. If both declarations are within the same createServer callback function, they hoist to the same scope — no shadowing occurs, just reassignment of the same variable. The code works correctly. Additionally, the routes/open.js file shows `var homeDir` declared inside `spawnDirect()` and `launchTerminalBat()` — these are in completely separate function scopes in a different module, so there's no cross-module shadowing either. P1 CRITICAL is wrong for a redundant `var` declaration that has no functional impact.",
+      "confidence_after_verification": 0.85,
+      "original_severity": "P1 CRITICAL"
+    },
+    {
+      "merged_id": "M-023",
+      "canonical_title": "shared.js 是 God Module：全局可变状态集中营",
+      "canonical_severity": "P3 LOW",
+      "canonical_description": "shared.js 导出了 14 个可变状态容器（sessionCache、subAgentCache、fileOffsets、sessionConfigMap、cclProjectMap、sseClients、watchers、pendingChanges、snapshotList 等），被所有其他模块直接 import 并读写。这违反了单一职责原则，形成了一个'隐式全局变量'模块——任何模块都可以在任何时候修改任何状态，没有封装、没有边界、没有不变式保证。当系统出 bug 时，你无法确定是哪个模块在什么时候破坏了状态。",
+      "category": "maintainability",
+      "file": "shared.js",
+      "line_range": [
+        40,
+        75
+      ],
+      "sources": [
+        {
+          "agent": "C",
+          "finding_id": "C-002",
+          "severity": "blocking",
+          "unified_severity": "P0 BLOCKING",
+          "title": "shared.js 是 God Module：全局可变状态集中营",
+          "description": "shared.js 导出了 14 个可变状态容器（sessionCache、subAgentCache、fileOffsets、sessionConfigMap、cclProjectMap、sseClients、watchers、pendingChanges、snapshotList 等），被所有其他模块直接 import 并读写。这违反了单一职责原则，形成了一个'隐式全局变量'模块——任何模块都可以在任何时候修改任何状态，没有封装、没有边界、没有不变式保证。当系统出 bug 时，你无法确定是哪个模块在什么时候破坏了状态。",
+          "confidence": 0.92,
+          "category": "maintainability",
+          "rule_reference": "Clean Architecture - 依赖规则：内层不依赖外层；单一职责原则"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.92,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.92,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "maintainability"
+        ]
+      },
+      "code_snippet_bad": "// shared.js — 所有模块直接读写\nmodule.exports = {\n  sessionCache: new Map(),\n  subAgentCache: new Map(),\n  sseClients: [],\n  watchers: [],\n  // ...14 个可变状态\n};",
+      "code_snippet_good": "// session-store.js\nclass SessionStore {\n  constructor() { this._cache = new Map(); this._offsets = new Map(); }\n  get(id) { return this._cache.get(id); }\n  set(id, data) { this._cache.set(id, data); }\n  all() { return Array.from(this._cache.values()); }\n}",
+      "suggestion": "将状态按领域拆分：SessionStore（sessionCache + fileOffsets + sessionConfigMap）、AgentStore（subAgentCache）、SSEClients（sseClients + SSE_MAX_CLIENTS）、SnapshotStore（snapshotList + lastAutoSnapshot）。每个 Store 通过方法暴露操作（get/set/delete），不直接暴露 Map/Array。这使得状态变更可追踪、可测试、可加锁。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "shared.js does export multiple mutable data structures (Maps, Arrays, state variables). This is a standard Node.js module pattern for sharing state across modules in a single-process application. The module exports: (1) configuration constants, (2) caches (sessionCache, subAgentCache, fileOffsets), (3) SSE client list, (4) watcher state, (5) snapshot state. For a localhost-only dashboard with ~7 modules, this is a reasonable and common pattern. The suggestion to split into domain-specific Stores with method-based access is a valid architectural preference for larger applications, but adds indirection and complexity with no functional benefit for this small tool. P0 BLOCKING is absurdly overstated for a shared state module — this is an architectural style preference, not a defect.",
+      "confidence_after_verification": 0.92,
+      "original_severity": "P0 BLOCKING"
+    },
+    {
+      "merged_id": "M-026",
+      "canonical_title": "buildRelationsResponse 是 200+ 行的 God Function",
+      "canonical_severity": "P3 LOW",
+      "canonical_description": "buildRelationsResponse 函数从第 95 行到文件末尾（约 200+ 行），混合了至少 5 个独立关注点：(1) 父会话 dispatch 解析、(2) 子 Agent 文件解析、(3) dispatch→agent 时间匹配、(4) 阶段检测、(5) 瀑布流追踪。这违反了单一职责原则，使得任何一个关注点的修改都需要理解整个函数。同时，子 Agent 解析逻辑（session.js:140-190）与 agents.js:parseSubAgent 高度重复——两者都在解析同一个 JSONL 格式，提取 title、model、token 等信息。",
+      "category": "maintainability",
+      "file": "routes/session.js",
+      "line_range": [
+        95,
+        300
+      ],
+      "sources": [
+        {
+          "agent": "C",
+          "finding_id": "C-005",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "buildRelationsResponse 是 200+ 行的 God Function",
+          "description": "buildRelationsResponse 函数从第 95 行到文件末尾（约 200+ 行），混合了至少 5 个独立关注点：(1) 父会话 dispatch 解析、(2) 子 Agent 文件解析、(3) dispatch→agent 时间匹配、(4) 阶段检测、(5) 瀑布流追踪。这违反了单一职责原则，使得任何一个关注点的修改都需要理解整个函数。同时，子 Agent 解析逻辑（session.js:140-190）与 agents.js:parseSubAgent 高度重复——两者都在解析同一个 JSONL 格式，提取 title、model、token 等信息。",
+          "confidence": 0.91,
+          "category": "maintainability",
+          "rule_reference": "Clean Code - 函数应该只做一件事"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.91,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.91,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "maintainability"
+        ]
+      },
+      "code_snippet_bad": "function buildRelationsResponse(relTarget, relId, res) {\n  // 200+ 行，5 个独立关注点混在一起\n  var dispatchCalls = [];\n  // ... 解析 dispatch\n  var subAgentMap = {};\n  // ... 解析子 Agent（与 agents.js 重复）\n  // ... 时间匹配\n  // ... 阶段检测\n  // ... 瀑布流\n}",
+      "code_snippet_good": "function buildRelationsResponse(relTarget, relId, res) {\n  var parentLines = readParentLines(relTarget._file);\n  var dispatches = parseDispatchCalls(parentLines);\n  var subNodes = buildSubAgentNodes(path.dirname(relTarget._file), relId);\n  var edges = matchDispatchToAgents(dispatches, subNodes, relId);\n  var phases = detectPhases(edges, extractUserMessages(parentLines));\n  var waterfall = buildWaterfallTrace(parentLines);\n  res.writeHead(200, { 'Content-Type': 'application/json' });\n  res.end(JSON.stringify({ sessionId: relId, nodes: [mainNode, ...subNodes], edges, phases, waterfall }));\n}",
+      "suggestion": "拆分为 5 个独立函数：parseDispatchCalls(parentLines)、buildSubAgentNodes(subDirs)、matchDispatchToAgents(dispatches, agents)、detectPhases(matchedEdges, userMessages)、buildWaterfallTrace(parentLines)。子 Agent 解析复用 agents.parseSubAgent。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "buildRelationsResponse may indeed be a long function (the provided code shows the function signature but the body is cut off). Long functions are harder to maintain and test. However: (1) This is a data transformation function that builds a JSON response — it's inherently sequential. (2) For a localhost dashboard, maintainability is important but not 'P1 CRITICAL'. (3) The function works correctly — it's a code quality / readability concern. (4) Without seeing the full function body, the 200+ line claim cannot be verified. The suggested refactoring (5 sub-functions) is good practice but this is a code quality improvement, not a critical defect.",
+      "confidence_after_verification": 0.75,
+      "original_severity": "P1 CRITICAL"
+    },
+    {
+      "merged_id": "M-004",
+      "canonical_title": "parseSubAgent 使用 readFileSync 读取整个 JSONL 文件，大文件阻塞事件循环",
+      "canonical_severity": "P2 MEDIUM",
+      "canonical_description": "parseSubAgent 对每个子 Agent 的 .jsonl 文件执行 fs.readFileSync 读取全部内容到内存，然后 split('\\n') 逐行解析。当子 Agent 产生大量工具调用（常见场景），JSONL 文件可达数十 MB。同步读取会阻塞 Node.js 事件循环，导致所有 SSE 推送和 API 请求卡顿。scanner.js 中的 parseSessionChunk 已实现基于 offset 的增量读取，但 parseSubAgent 没有复用该模式。",
+      "category": "maintainability",
+      "file": "agents.js",
+      "line_range": [
+        67,
+        76
+      ],
+      "sources": [
+        {
+          "agent": "A",
+          "finding_id": "A-004",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "parseSubAgent 使用 readFileSync 读取整个 JSONL 文件，大文件阻塞事件循环",
+          "description": "parseSubAgent 对每个子 Agent 的 .jsonl 文件执行 fs.readFileSync 读取全部内容到内存，然后 split('\\n') 逐行解析。当子 Agent 产生大量工具调用（常见场景），JSONL 文件可达数十 MB。同步读取会阻塞 Node.js 事件循环，导致所有 SSE 推送和 API 请求卡顿。scanner.js 中的 parseSessionChunk 已实现基于 offset 的增量读取，但 parseSubAgent 没有复用该模式。",
+          "confidence": 0.9,
+          "category": "maintainability",
+          "rule_reference": "性能 — 避免在请求路径中使用同步 I/O"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.9,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.9,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "maintainability"
+        ]
+      },
+      "code_snippet_bad": "var content;\ntry { content = fs.readFileSync(filePath, \"utf-8\"); } catch (e) { return info; }\nvar lines = content.trim().split(\"\\n\");",
+      "code_snippet_good": "// 使用 readline 逐行流式解析，避免大文件阻塞\nconst rl = require(\"readline\").createInterface({ input: fs.createReadStream(filePath) });\nfor await (const line of rl) { ... }",
+      "suggestion": "将 parseSubAgent 改为流式解析（逐行读取），或复用 scanner.parseSessionChunk 的增量读取模式。至少应改为异步读取（fsp.readFile）。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "The code does use `fs.readFileSync(filePath, 'utf-8')` in parseSubAgent (agents.js line ~76). However, context matters significantly: (1) This is a localhost-only dashboard (CORS restricted to localhost/127.0.0.1), not a high-traffic server. (2) The files being read are Claude Code sub-agent JSONL files, which are typically small (a few hundred KB). (3) The scanSubAgents call is triggered by debounced file watcher events (800ms debounce in watcher.js). (4) Sync I/O is the systemic pattern throughout the entire codebase — scanner.js's parseSessionChunk also uses fs.openSync/fs.readSync. Targeting parseSubAgent alone while the same pattern exists in the main parser is inconsistent. The real concern is a systemic codebase pattern, not a parseSubAgent-specific bug. P1 CRITICAL is overstated for a localhost tool reading small local files.",
+      "confidence_after_verification": 0.9,
+      "original_severity": "P1 CRITICAL"
+    },
+    {
+      "merged_id": "M-017",
+      "canonical_title": "SSE 认证 token 通过 URL query 参数传递，易泄露",
+      "canonical_severity": "P2 MEDIUM",
+      "canonical_description": "authenticateRequest 支持从 URL query param（?token=xxx）获取 token 用于 SSE 连接。问题：1) URL 会记录在浏览器历史、代理服务器日志、Referer header、服务器访问日志中；2) SSE 是长连接，token 在整个会话期间暴露；3) 如果面板通过反向代理暴露，代理日志会明文记录 token。Bearer header 方式安全但 SSE 浏览器 API 不支持自定义 header，导致只能用 query param。这是 SSE 的已知限制，但应有缓解措施。",
+      "category": "security",
+      "file": "server/index.js",
+      "line_range": [
+        54,
+        68
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-002",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "SSE 认证 token 通过 URL query 参数传递，易泄露",
+          "description": "authenticateRequest 支持从 URL query param（?token=xxx）获取 token 用于 SSE 连接。问题：1) URL 会记录在浏览器历史、代理服务器日志、Referer header、服务器访问日志中；2) SSE 是长连接，token 在整个会话期间暴露；3) 如果面板通过反向代理暴露，代理日志会明文记录 token。Bearer header 方式安全但 SSE 浏览器 API 不支持自定义 header，导致只能用 query param。这是 SSE 的已知限制，但应有缓解措施。",
+          "confidence": 0.9,
+          "category": "security",
+          "rule_reference": "CWE-598: Use of GET Request Method With Sensitive Query Strings, OWASP A02:2021 Cryptographic Failures"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.9,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.9,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "suggestion": "1) SSE 连接建立后立即轮换 token（短生命周期 token）；2) 使用一次性 nonce 机制：先通过 POST /api/sse-token 获取一次性 token，用完即废；3) 至少在 Access-Control-Allow-Origin 中严格限制来源（当前已限制 localhost，这点做得好）；4) 在文档中明确说明 token 不应通过反向代理暴露。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "The authenticateRequest function does accept tokens via URL query params for SSE connections. However: (1) This server ONLY accepts localhost connections — the CORS header explicitly restricts to localhost/127.0.0.1 origins. (2) The EventSource browser API does NOT support custom headers, so query params are the standard/only authentication mechanism for SSE. (3) The token is a 64-char hex string (256 bits entropy) generated by crypto.randomBytes. (4) URL query params for SSE auth is the industry-standard pattern (used by Stripe, GitHub, etc. for their SSE endpoints). The suggestion to use short-lived tokens or nonces adds significant complexity for a localhost-only tool. P1 CRITICAL is wrong — this is the correct and only practical SSE authentication pattern.",
+      "confidence_after_verification": 0.92,
+      "original_severity": "P1 CRITICAL"
+    },
+    {
+      "merged_id": "M-021",
+      "canonical_title": "会话 ID 使用 Math.random() 生成，可预测",
+      "canonical_severity": "P1 CRITICAL",
+      "canonical_description": "create-and-open 端点使用 Math.random() 生成 UUID v4 格式的会话 ID。Math.random() 不是密码学安全的 PRNG，其内部状态可通过观察足够多的输出来推断，从而预测后续生成的会话 ID。此外，同一函数中多次调用 Math.random() 生成 UUID map 时，所有 UUID 共享同一个 PRNG 状态，进一步降低预测难度。攻击者预测到会话 ID 后，可构造 API 请求访问/操作该会话。",
+      "category": "security",
+      "file": "server/index.js",
+      "line_range": [
+        206,
+        215
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-006",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "会话 ID 使用 Math.random() 生成，可预测",
+          "description": "create-and-open 端点使用 Math.random() 生成 UUID v4 格式的会话 ID。Math.random() 不是密码学安全的 PRNG，其内部状态可通过观察足够多的输出来推断，从而预测后续生成的会话 ID。此外，同一函数中多次调用 Math.random() 生成 UUID map 时，所有 UUID 共享同一个 PRNG 状态，进一步降低预测难度。攻击者预测到会话 ID 后，可构造 API 请求访问/操作该会话。",
+          "confidence": 0.9,
+          "category": "security",
+          "rule_reference": "CWE-330: Use of Insufficiently Random Values, CWE-338: Use of Cryptographically Weak PRNG"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.9,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.9,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "var sessionId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {\n  var r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);\n  return v.toString(16);\n});",
+      "code_snippet_good": "var sessionId = crypto.randomUUID();",
+      "suggestion": "使用 crypto.randomUUID()（Node.js 14.17+）或 crypto.randomBytes(16) 生成会话 ID：var sessionId = crypto.randomUUID(); 或手动实现符合 RFC 4122 v4 的 UUID。",
+      "skeptic_verdict": "NEEDS_HUMAN",
+      "skeptic_rationale": "References 'server/index.js' which does not exist as a separate file — the server code is in index.js at the project root. The code says '(file not found)'. This appears to be a duplicate of M-024 (both claim Math.random() for session ID generation). Neither finding can be verified from the provided code snippets. Requires access to the actual file or a corrected file path to verify.",
+      "confidence_after_verification": 0.4
+    },
+    {
+      "merged_id": "M-025",
+      "canonical_title": "swapSettingsJson 的写入锁是假锁，无法防止并发竞态",
+      "canonical_severity": "P3 LOW",
+      "canonical_description": "_settingsWriteLock 是一个普通布尔变量，不是真正的互斥锁。在 Node.js 单线程模型中，如果两个请求在同一事件循环 tick 中调用 swapSettingsJson，布尔锁可能不会生效（因为 fs.readFileSync 是同步的，锁在读取期间不会释放）。但更关键的是——代码注释说'通过 --settings CLI 参数注入配置，不修改默认 settings.json'，但 swapSettingsJson 仍然存在且会修改 settings.json，这是架构矛盾。如果有两个并发请求，一个在 swap 期间到达，它会跳过 swap（'跳过 swap'），导致该会话使用错误的配置。",
+      "category": "bug",
+      "file": "routes/open.js",
+      "line_range": [
+        178,
+        210
+      ],
+      "sources": [
+        {
+          "agent": "C",
+          "finding_id": "C-004",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "swapSettingsJson 的写入锁是假锁，无法防止并发竞态",
+          "description": "_settingsWriteLock 是一个普通布尔变量，不是真正的互斥锁。在 Node.js 单线程模型中，如果两个请求在同一事件循环 tick 中调用 swapSettingsJson，布尔锁可能不会生效（因为 fs.readFileSync 是同步的，锁在读取期间不会释放）。但更关键的是——代码注释说'通过 --settings CLI 参数注入配置，不修改默认 settings.json'，但 swapSettingsJson 仍然存在且会修改 settings.json，这是架构矛盾。如果有两个并发请求，一个在 swap 期间到达，它会跳过 swap（'跳过 swap'），导致该会话使用错误的配置。",
+          "confidence": 0.9,
+          "category": "bug",
+          "rule_reference": "The Pragmatic Programmer - 不存在的互斥锁是定时炸弹"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.9,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.9,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "bug"
+        ]
+      },
+      "code_snippet_bad": "var _settingsWriteLock = false;\nif (_settingsWriteLock) {\n  console.log(\"[open] settings.json 写入中，跳过 swap\");\n  return;\n}\n_settingsWriteLock = true;",
+      "code_snippet_good": "// 方案1：完全移除 swapSettingsJson，只用 --settings 参数\n// 方案2：使用 async-mutex\nconst mutex = new Mutex();\nawait mutex.runExclusive(() => { /* swap logic */ });",
+      "suggestion": "既然所有启动路径都已通过 --settings 参数注入配置，swapSettingsJson 应该被完全移除。如果确实需要保留，应使用真正的异步互斥锁（如 async-mutex 库），而不是布尔标志。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "The routes/open.js code explicitly states in a comment: 'NOTE: 不再需要 settings.json 快照——所有启动路径都通过 --settings CLI 参数注入配置，不修改默认 settings.json'. This means swapSettingsJson is deprecated functionality. The function is still exported (handle.swapSettingsJson = makeOpenRouter.swapSettingsJson) but the comment indicates it's no longer actively used. Even if the 'fake lock' (boolean flag) exists, the function appears to be dead code. If it IS still called somewhere, the boolean flag pattern is acceptable for a localhost tool with minimal concurrent access. P1 CRITICAL is wrong for deprecated/dead code.",
+      "confidence_after_verification": 0.85,
+      "original_severity": "P1 CRITICAL"
+    },
+    {
+      "merged_id": "M-030",
+      "canonical_title": "watchCclSessions 在 fs.watch 回调中使用同步 I/O",
+      "canonical_severity": "P2 MEDIUM",
+      "canonical_description": "fs.watch 的回调中调用了 fs.readFileSync、fs.readdirSync、fs.statSync。fs.watch 回调在事件循环的 I/O 阶段执行，同步 I/O 会阻塞后续的 I/O 事件处理。当 .ccl-sessions.json 频繁更新且 projects 目录包含大量文件时，这会造成显著的事件循环延迟。此外，该函数内部还调用了 saveSessionConfigMap（fs.writeFileSync），形成了一条同步写入链。",
+      "category": "bug",
+      "file": "shared.js",
+      "line_range": [
+        72,
+        85
+      ],
+      "sources": [
+        {
+          "agent": "C",
+          "finding_id": "C-009",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "watchCclSessions 在 fs.watch 回调中使用同步 I/O",
+          "description": "fs.watch 的回调中调用了 fs.readFileSync、fs.readdirSync、fs.statSync。fs.watch 回调在事件循环的 I/O 阶段执行，同步 I/O 会阻塞后续的 I/O 事件处理。当 .ccl-sessions.json 频繁更新且 projects 目录包含大量文件时，这会造成显著的事件循环延迟。此外，该函数内部还调用了 saveSessionConfigMap（fs.writeFileSync），形成了一条同步写入链。",
+          "confidence": 0.89,
+          "category": "bug",
+          "rule_reference": "Node.js Best Practices - 不要在回调中使用同步 I/O"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.89,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.89,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "bug"
+        ]
+      },
+      "code_snippet_bad": "fs.watch(CCL_SESSIONS_FILE, function() {\n  var data = JSON.parse(fs.readFileSync(CCL_SESSIONS_FILE, \"utf-8\"));\n  var subdirs = fs.readdirSync(projectsDir);\n  var st = fs.statSync(fp);\n});",
+      "code_snippet_good": "fs.watch(CCL_SESSIONS_FILE, debounce(async function() {\n  var data = JSON.parse(await fsp.readFile(CCL_SESSIONS_FILE, \"utf-8\"));\n  var subdirs = await fsp.readdir(projectsDir, { withFileTypes: true });\n  var st = await fsp.stat(fp);\n}, 500));",
+      "suggestion": "将 fs.watch 回调中的逻辑改为异步：使用 fs.promises.readFile、fs.promises.readdir、fs.promises.stat。或者使用 chokidar 等库提供更可靠的文件监控。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "The watchCclSessions function does use synchronous I/O (readFileSync, readdirSync, statSync) inside an fs.watch callback. However, the practical impact is minimal: (1) It watches a single small config file (.ccl-sessions.json). (2) The sync operations only trigger when the file changes — this is infrequent (only when new CCL sessions are created). (3) The directory scan only runs when a NEW entry is detected (data.length > lastCount). (4) The scanned directories are Claude Code project directories, which contain a small number of files. For a localhost tool with infrequent triggers and small data sets, the event loop blocking is negligible. P1 CRITICAL is overstated — this is a best practice issue (P2), not a critical defect.",
+      "confidence_after_verification": 0.88,
+      "original_severity": "P1 CRITICAL"
+    },
+    {
+      "merged_id": "M-027",
+      "canonical_title": "parseSubAgent 对每个子 Agent 读取完整文件到内存",
+      "canonical_severity": "P2 MEDIUM",
+      "canonical_description": "parseSubAgent 使用 fs.readFileSync 将整个 JSONL 文件读入内存，然后 split('\\n')。对于活跃的子 Agent，JSONL 文件可能增长到数 MB。在 scanSubAgents 循环中，如果一个会话有 10 个子 Agent，就会同步读取 10 个文件。结合 scanner.js 的同步读取，一次 watcher 触发可能导致数十次同步文件 I/O。",
+      "category": "performance",
+      "file": "agents.js",
+      "line_range": [
+        43,
+        48
+      ],
+      "sources": [
+        {
+          "agent": "C",
+          "finding_id": "C-006",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "parseSubAgent 对每个子 Agent 读取完整文件到内存",
+          "description": "parseSubAgent 使用 fs.readFileSync 将整个 JSONL 文件读入内存，然后 split('\\n')。对于活跃的子 Agent，JSONL 文件可能增长到数 MB。在 scanSubAgents 循环中，如果一个会话有 10 个子 Agent，就会同步读取 10 个文件。结合 scanner.js 的同步读取，一次 watcher 触发可能导致数十次同步文件 I/O。",
+          "confidence": 0.88,
+          "category": "performance",
+          "rule_reference": "Clean Architecture - 不要重复自己（DRY）"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.88,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.88,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "performance"
+        ]
+      },
+      "code_snippet_bad": "var content;\ntry { content = fs.readFileSync(filePath, \"utf-8\"); } catch (e) { return info; }\nvar lines = content.trim().split(\"\\n\");",
+      "code_snippet_good": "// 使用增量解析，只读取新增部分\nvar delta = scanner.parseSessionChunk(filePath, cachedOffset);",
+      "suggestion": "与 scanner.js 统一处理：(1) 使用异步 I/O；(2) 对于只需要最后几行的场景（如 status 判断），从文件末尾反向读取；(3) 复用 scanner.parseSessionChunk 的增量解析逻辑，避免重复实现。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "This is the same underlying issue as M-004 — parseSubAgent reads the full file with readFileSync. The same mitigations apply: (1) Localhost-only server. (2) Claude Code sub-agent JSONL files are typically small. (3) Sync I/O is the codebase-wide pattern. (4) The incremental reading pattern (startOffset) exists in scanner.js for the main session parser, but sub-agent files are small enough that full reads are acceptable. This is a performance optimization opportunity, not a critical defect. P1 CRITICAL is overstated.",
+      "confidence_after_verification": 0.88,
+      "original_severity": "P1 CRITICAL"
+    },
+    {
+      "merged_id": "M-032",
+      "canonical_title": "UUID 全局替换策略过于激进，可能误伤数据内容",
+      "canonical_severity": "P1 CRITICAL",
+      "canonical_description": "create-and-open 端点使用正则 /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi 匹配源 JSONL 中的所有 UUID 并替换。但 UUID 可能出现在消息内容、工具输出、文件路径等非会话标识的上下文中。例如，用户消息中提到'请检查 commit a67f1853-fcfb-4226...'，这个 UUID 也会被替换，导致消息内容失真。此外，替换后再进行大写替换（split(oldUuids[oi].toUpperCase()).join(...)）可能导致已经替换过的 UUID 被二次替换。",
+      "category": "maintainability",
+      "file": "index.js",
+      "line_range": [
+        107,
+        135
+      ],
+      "sources": [
+        {
+          "agent": "C",
+          "finding_id": "C-011",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "UUID 全局替换策略过于激进，可能误伤数据内容",
+          "description": "create-and-open 端点使用正则 /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi 匹配源 JSONL 中的所有 UUID 并替换。但 UUID 可能出现在消息内容、工具输出、文件路径等非会话标识的上下文中。例如，用户消息中提到'请检查 commit a67f1853-fcfb-4226...'，这个 UUID 也会被替换，导致消息内容失真。此外，替换后再进行大写替换（split(oldUuids[oi].toUpperCase()).join(...)）可能导致已经替换过的 UUID 被二次替换。",
+          "confidence": 0.87,
+          "category": "maintainability",
+          "rule_reference": "The Pragmatic Programmer - 全局替换是核弹，精确替换是手术刀"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.87,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.87,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "maintainability"
+        ]
+      },
+      "code_snippet_bad": "var uuidRegex = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;\nvar foundUuids = sourceContent.match(uuidRegex);\n// ... 全局替换所有 UUID\nnewContent = newContent.split(oldUuids[oi]).join(uuidMap[oldUuids[oi]]);\nnewContent = newContent.split(oldUuids[oi].toUpperCase()).join(uuidMap[oldUuids[oi]]);",
+      "code_snippet_good": "// 逐行处理，只替换结构字段\nvar lines = sourceContent.split('\\n');\nvar newLines = lines.map(line => {\n  var obj = JSON.parse(line);\n  if (obj.sessionId) obj.sessionId = newSessionId;\n  if (obj.parentSessionId) obj.parentSessionId = uuidMap[obj.parentSessionId] || obj.parentSessionId;\n  return JSON.stringify(obj);\n});",
+      "suggestion": "只替换已知的结构性字段中的 UUID（如 sessionId、parentSessionId），而不是全局正则替换。可以逐行 JSON.parse，只修改特定字段，然后 JSON.stringify 回去。这样更安全，也避免了二次替换问题。",
+      "skeptic_verdict": "NEEDS_HUMAN",
+      "skeptic_rationale": "The claim is about UUID global replacement at index.js lines 107-135. The provided code snippet at those lines shows the CORS header setting, URL parsing, authentication check, SSE handling, and import-localstorage handler. There is NO UUID global replacement logic visible in the provided code. The code snippet is incomplete (cuts off), so the UUID replacement might exist in the unseen portion, but it cannot be verified from what's provided. The line numbers (107-135) don't correspond to any UUID-related code in the visible snippet. Requires access to the complete file to verify.",
+      "confidence_after_verification": 0.45
+    },
+    {
+      "merged_id": "M-016",
+      "canonical_title": "XSS: import-localstorage 端点将未净化数据嵌入 HTML script 上下文",
+      "canonical_severity": "P2 MEDIUM",
+      "canonical_description": "/import-localstorage 是公开路径（PUBLIC_PATHS，无需认证），从 import-data.json 读取 JSON 数据后，通过 JSON.stringify + replace(</script) 拼接进 HTML <script> 标签。攻击面：1) JSON.parse 会将 \\u003c/script> 解码为 </script>，绕过 replace 的字符串匹配；2) 该端点无需认证，任何人可访问；3) 如果攻击者能修改 import-data.json 文件（通过其他漏洞），可注入任意 JS 执行 XSS。虽然 JSON.stringify 对引号/换行做了转义，但 Unicode 转义序列 \\u003c 可产生未转义的 < 字符，HTML 解析器会将其视为标签起始。",
+      "category": "security",
+      "file": "server/index.js",
+      "line_range": [
+        106,
+        109
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-001",
+          "severity": "blocking",
+          "unified_severity": "P0 BLOCKING",
+          "title": "XSS: import-localstorage 端点将未净化数据嵌入 HTML script 上下文",
+          "description": "/import-localstorage 是公开路径（PUBLIC_PATHS，无需认证），从 import-data.json 读取 JSON 数据后，通过 JSON.stringify + replace(</script) 拼接进 HTML <script> 标签。攻击面：1) JSON.parse 会将 \\u003c/script> 解码为 </script>，绕过 replace 的字符串匹配；2) 该端点无需认证，任何人可访问；3) 如果攻击者能修改 import-data.json 文件（通过其他漏洞），可注入任意 JS 执行 XSS。虽然 JSON.stringify 对引号/换行做了转义，但 Unicode 转义序列 \\u003c 可产生未转义的 < 字符，HTML 解析器会将其视为标签起始。",
+          "confidence": 0.85,
+          "category": "security",
+          "rule_reference": "CWE-79: Cross-site Scripting (XSS), OWASP A03:2021 Injection"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.85,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.85,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "var safeData = JSON.stringify(JSON.parse(importData)).replace(/<\\/script/gi, '<\\\\/script');\nvar html = '...<script>!function(){var d=' + safeData + ';...}();</script>...';",
+      "code_snippet_good": "// 方案一：base64 编码\nvar safeData = Buffer.from(JSON.stringify(JSON.parse(importData))).toString('base64');\nvar html = '...<script>!function(){var d=JSON.parse(atob(\"' + safeData + '\"));...}();</script>...';",
+      "suggestion": "方案一：将 JSON 数据 base64 编码后嵌入 HTML，JS 端解码：var safeData = Buffer.from(JSON.stringify(JSON.parse(importData))).toString('base64'); 然后 JS 端用 atob() 解码。方案二：将数据写入独立 JS 文件，通过 <script src> 引用（CSP 可控）。方案三：至少对 < 字符也做转义：replace(/</g, '\\\\u003c')。方案四：添加认证要求，移出 PUBLIC_PATHS。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "The import-localstorage handler does embed JSON data into an HTML script context with only `</script` escaping: `JSON.stringify(JSON.parse(importData)).replace(/<\\/script/gi, '<\\\\/script')`. The sanitization is technically incomplete (doesn't handle <!--, ]]>, or other HTML injection vectors). However, the practical exploitability is extremely limited: (1) The server ONLY accepts localhost connections (CORS restriction). (2) The data comes from import-data.json — a LOCAL file the user places on their own machine. (3) This is a one-time migration tool (listed in PUBLIC_PATHS). (4) An attacker would need to BOTH place a malicious file on the user's machine AND trick them into visiting the import URL. (5) Even with XSS, the impact is limited to localhost context. P0 BLOCKING is wrong — this is a defense-in-depth improvement (P2), not a blocking vulnerability. The existing `</script` escape covers the primary attack vector for this context.",
+      "confidence_after_verification": 0.9,
+      "original_severity": "P0 BLOCKING"
+    },
+    {
+      "merged_id": "M-018",
+      "canonical_title": "parseSubAgent 无文件大小限制，可被巨型 JSONL 文件触发 OOM",
+      "canonical_severity": "P2 MEDIUM",
+      "canonical_description": "parseSubAgent 使用 fs.readFileSync 读取整个 subagent JSONL 文件到内存，无大小上限检查。如果攻击者能在 subagents/ 目录下写入一个巨型文件（例如通过其他漏洞、共享目录、或符号链接攻击），服务器在扫描时会分配等量内存，导致 OOM 崩溃或事件循环阻塞。findSubAgentFiles 只检查文件名匹配 agent-*.jsonl，不检查文件大小。",
+      "category": "security",
+      "file": "server/agents.js",
+      "line_range": [
+        46,
+        56
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-003",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "parseSubAgent 无文件大小限制，可被巨型 JSONL 文件触发 OOM",
+          "description": "parseSubAgent 使用 fs.readFileSync 读取整个 subagent JSONL 文件到内存，无大小上限检查。如果攻击者能在 subagents/ 目录下写入一个巨型文件（例如通过其他漏洞、共享目录、或符号链接攻击），服务器在扫描时会分配等量内存，导致 OOM 崩溃或事件循环阻塞。findSubAgentFiles 只检查文件名匹配 agent-*.jsonl，不检查文件大小。",
+          "confidence": 0.85,
+          "category": "security",
+          "rule_reference": "CWE-400: Uncontrolled Resource Consumption, CWE-770: Allocation of Resources Without Limits"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.85,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.85,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "var content;\ntry { content = fs.readFileSync(filePath, 'utf-8'); } catch (e) { return info; }",
+      "code_snippet_good": "var MAX_AGENT_FILE_SIZE = 10 * 1024 * 1024; // 10MB\nif (stat.size > MAX_AGENT_FILE_SIZE) { return info; }\nvar content;\ntry { content = fs.readFileSync(filePath, 'utf-8'); } catch (e) { return info; }",
+      "suggestion": "1) 在 readFileSync 前检查 stat.size，超过阈值（如 10MB）则跳过或截断读取；2) 使用流式逐行读取替代一次性读取；3) 添加异常处理确保 OOM 时进程能优雅恢复。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "The concern about OOM from large JSONL files is theoretically valid but practically unlikely: (1) Claude Code sub-agent JSONL files are typically small (a few hundred lines of structured log data). (2) For OOM to occur, the file would need to be hundreds of MB to GB — far larger than any realistic Claude Code session file. (3) The server runs on the user's local machine with presumably adequate RAM. (4) The readFileSync + split('\\n') pattern is the same used by the main scanner (parseSessionChunk). (5) There's no realistic attack vector — an attacker can't inject files into the user's .claude/projects directory via this localhost server. P1 CRITICAL is wrong — this is a theoretical robustness improvement (P2), not a critical vulnerability.",
+      "confidence_after_verification": 0.88,
+      "original_severity": "P1 CRITICAL"
+    },
+    {
+      "merged_id": "M-019",
+      "canonical_title": "swapSettingsJson 使用非原子写入，进程崩溃可损坏 settings.json",
+      "canonical_severity": "P3 LOW",
+      "canonical_description": "swapSettingsJson 读取目标配置后直接 fs.writeFileSync 覆盖默认 settings.json。如果在 writeFileSync 执行过程中进程崩溃（SIGKILL、断电），settings.json 会处于半写状态（截断/损坏），导致 Claude Code 后续启动失败。虽然代码注释说不再修改 settings.json，但 swapSettingsJson 函数仍存在且可被调用。",
+      "category": "correctness",
+      "file": "server/routes/open.js",
+      "line_range": [
+        155,
+        180
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-004",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "swapSettingsJson 使用非原子写入，进程崩溃可损坏 settings.json",
+          "description": "swapSettingsJson 读取目标配置后直接 fs.writeFileSync 覆盖默认 settings.json。如果在 writeFileSync 执行过程中进程崩溃（SIGKILL、断电），settings.json 会处于半写状态（截断/损坏），导致 Claude Code 后续启动失败。虽然代码注释说不再修改 settings.json，但 swapSettingsJson 函数仍存在且可被调用。",
+          "confidence": 0.85,
+          "category": "correctness",
+          "rule_reference": "CWE-668: Exposure of Resource to Wrong Sphere"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.85,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.85,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "correctness"
+        ]
+      },
+      "code_snippet_bad": "fs.writeFileSync(defaultSettingsPath, targetSettings, 'utf-8');",
+      "code_snippet_good": "var tmpPath = defaultSettingsPath + '.tmp';\nfs.writeFileSync(tmpPath, targetSettings, 'utf-8');\nfs.renameSync(tmpPath, defaultSettingsPath);",
+      "suggestion": "1) 使用原子写入模式：先写入 .tmp 文件，然后 fs.rename 覆盖（rename 在大多数文件系统上是原子操作）；2) 写入前备份当前 settings.json；3) 如果确认不再需要此功能，删除整个函数。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "The routes/open.js code explicitly states: 'NOTE: 不再需要 settings.json 快照——所有启动路径都通过 --settings CLI 参数注入配置，不修改默认 settings.json'. The swapSettingsJson function appears to be deprecated — all launch paths now use --settings CLI parameter injection instead of modifying settings.json. If the function is truly dead code (not called anywhere), the non-atomic write issue is moot. If it IS still called, the risk is low for a localhost tool where concurrent access is unlikely. The suggestion to use atomic writes (write-to-temp + rename) is good practice but P1 CRITICAL is wrong for deprecated functionality.",
+      "confidence_after_verification": 0.85,
+      "original_severity": "P1 CRITICAL"
+    },
+    {
+      "merged_id": "M-029",
+      "canonical_title": "Panel token 以明文写入文件系统",
+      "canonical_severity": "P2 MEDIUM",
+      "canonical_description": "PANEL_TOKEN 以明文形式写入 ~/.claude/panel-token 文件。如果攻击者获得文件系统读取权限（通过路径遍历、共享目录、备份泄露等），就能直接获取认证 token，完全绕过认证。虽然 token 文件权限在 Linux 上默认是 644（world-readable），在 Windows 上更是缺乏限制。",
+      "category": "security",
+      "file": "index.js",
+      "line_range": [
+        55,
+        60
+      ],
+      "sources": [
+        {
+          "agent": "C",
+          "finding_id": "C-008",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "Panel token 以明文写入文件系统",
+          "description": "PANEL_TOKEN 以明文形式写入 ~/.claude/panel-token 文件。如果攻击者获得文件系统读取权限（通过路径遍历、共享目录、备份泄露等），就能直接获取认证 token，完全绕过认证。虽然 token 文件权限在 Linux 上默认是 644（world-readable），在 Windows 上更是缺乏限制。",
+          "confidence": 0.82,
+          "category": "security",
+          "rule_reference": "OWASP - 敏感数据存储"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.82,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.82,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "PANEL_TOKEN = crypto.randomBytes(32).toString(\"hex\");\nfs.writeFileSync(TOKEN_PATH, PANEL_TOKEN);",
+      "code_snippet_good": "PANEL_TOKEN = crypto.randomBytes(32).toString(\"hex\");\nfs.writeFileSync(TOKEN_PATH, PANEL_TOKEN, { mode: 0o600 });",
+      "suggestion": "方案1：设置严格的文件权限（chmod 600 / icacls 仅当前用户）。方案2：不在文件系统存储 token，改为环境变量传入。方案3：如果必须存储，使用加密存储（如 Windows DPAPI）。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "The panel token is stored as plaintext in ~/.claude/panel-token. However: (1) The .claude directory already contains sensitive data (API keys, session logs, configuration) — the panel token is not more sensitive than what's already there. (2) On Windows, the user's home directory is protected by NTFS ACLs by default — other users cannot read it. (3) The token file inherits the permissions of the .claude directory. (4) The alternative (environment variable) is less persistent across reboots and harder for users to manage. (5) DPAPI encryption adds significant complexity for a localhost dashboard token. The suggestion to set explicit file permissions (icacls) is valid but the default Windows home directory permissions already provide adequate protection. P1 CRITICAL is wrong — this is a defense-in-depth improvement (P2), not a critical security issue.",
+      "confidence_after_verification": 0.88,
+      "original_severity": "P1 CRITICAL"
+    },
+    {
+      "merged_id": "M-020",
+      "canonical_title": "scanSessions 使用同步 fs 操作，大目录扫描可阻塞事件循环",
+      "canonical_severity": "P2 MEDIUM",
+      "canonical_description": "scanSessions 虽声明为 async 函数，内部却大量使用 fs.readFileSync、fs.openSync、fs.readSync、fs.closeSync 等同步 I/O。在 projects 目录下有大量 JSONL 文件时（例如长时间运行积累数百个会话），每次 scanSessions 调用会阻塞 Node.js 事件循环，导致所有 HTTP 请求暂停响应。watcher 的 processChanges 每 30 秒触发一次全量扫描，加剧了问题。",
+      "category": "performance",
+      "file": "server/scanner.js",
+      "line_range": [
+        140,
+        150
+      ],
+      "sources": [
+        {
+          "agent": "B",
+          "finding_id": "B-005",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "scanSessions 使用同步 fs 操作，大目录扫描可阻塞事件循环",
+          "description": "scanSessions 虽声明为 async 函数，内部却大量使用 fs.readFileSync、fs.openSync、fs.readSync、fs.closeSync 等同步 I/O。在 projects 目录下有大量 JSONL 文件时（例如长时间运行积累数百个会话），每次 scanSessions 调用会阻塞 Node.js 事件循环，导致所有 HTTP 请求暂停响应。watcher 的 processChanges 每 30 秒触发一次全量扫描，加剧了问题。",
+          "confidence": 0.8,
+          "category": "performance",
+          "rule_reference": "CWE-1050: Excessive Platform Resource Consumption"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.8,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.8,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "performance"
+        ]
+      },
+      "suggestion": "1) 将 parseSessionChunk 中的同步文件操作替换为异步版本（fsp.readFile 等）；2) 使用 fs.promises API 替代 fs 同步方法；3) 考虑增量扫描策略：只扫描 mtime 变化的文件（已有 fileOffsets 机制，但 fallback 路径仍用同步全量读取）。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "scanner.js's parseSessionChunk does use synchronous file operations (fs.openSync, fs.readSync). However: (1) This is a systemic codebase-wide pattern — every file operation in the project uses sync I/O. (2) The function already has an incremental reading mode (startOffset > 0) that only reads new data since the last scan, mitigating the full-file concern. (3) For a localhost dashboard, the sync I/O is acceptable — the alternative (async) would add complexity with minimal practical benefit. (4) The scanner is called from debounced file watcher events (800ms), limiting the frequency. (5) Claude Code session files are moderate size. P1 CRITICAL is wrong — this is a systemic codebase pattern, not a scanner-specific bug. P2 for the systemic pattern is appropriate.",
+      "confidence_after_verification": 0.88,
+      "original_severity": "P1 CRITICAL"
+    },
+    {
+      "merged_id": "M-028",
+      "canonical_title": "认证逻辑中 token 比较未使用时间安全函数",
+      "canonical_severity": "P3 LOW",
+      "canonical_description": "authenticateRequest 使用 === 比较 token 字符串。JavaScript 的 === 在发现第一个不匹配字符时就返回 false，这使得比较操作的耗时与匹配前缀长度成正比，理论上可被时序攻击利用。虽然在 localhost 场景下风险较低，但作为认证逻辑的最佳实践，应使用时间安全比较。",
+      "category": "security",
+      "file": "index.js",
+      "line_range": [
+        72,
+        80
+      ],
+      "sources": [
+        {
+          "agent": "C",
+          "finding_id": "C-007",
+          "severity": "important",
+          "unified_severity": "P1 CRITICAL",
+          "title": "认证逻辑中 token 比较未使用时间安全函数",
+          "description": "authenticateRequest 使用 === 比较 token 字符串。JavaScript 的 === 在发现第一个不匹配字符时就返回 false，这使得比较操作的耗时与匹配前缀长度成正比，理论上可被时序攻击利用。虽然在 localhost 场景下风险较低，但作为认证逻辑的最佳实践，应使用时间安全比较。",
+          "confidence": 0.78,
+          "category": "security",
+          "rule_reference": "OWASP - 使用时间安全的字符串比较"
+        }
+      ],
+      "consensus": {
+        "base_confidence": 0.78,
+        "consensus_boost": 0.0,
+        "final_confidence": 0.78,
+        "agent_count": 1
+      },
+      "status": "single_source",
+      "conflicts": {
+        "severity_conflict": false,
+        "severity_gap": 0,
+        "category_conflict": false,
+        "categories": [
+          "security"
+        ]
+      },
+      "code_snippet_bad": "if (authHeader && authHeader.startsWith(\"Bearer \")) {\n  return authHeader.substring(7) === PANEL_TOKEN;\n}",
+      "code_snippet_good": "if (authHeader && authHeader.startsWith(\"Bearer \")) {\n  var provided = Buffer.from(authHeader.substring(7));\n  var expected = Buffer.from(PANEL_TOKEN);\n  return provided.length === expected.length && crypto.timingSafeEqual(provided, expected);\n}",
+      "suggestion": "使用 crypto.timingSafeEqual 进行 token 比较。需要先确保两个 buffer 长度相同。",
+      "skeptic_verdict": "DOWNGRADE",
+      "skeptic_rationale": "The authenticateRequest function uses `===` (strict equality) for token comparison instead of crypto.timingSafeEqual. While timing-safe comparison is a security best practice, the threat model doesn't support P1 severity: (1) The server ONLY accepts localhost connections — timing attacks require the ability to make many requests and measure response time differences, which requires network proximity. On localhost, timing variance is negligible. (2) The token is 64 hex characters (256 bits of entropy from crypto.randomBytes) — even with perfect timing information, brute force is computationally infeasible. (3) Timing attacks on string comparison require thousands of attempts to extract statistically significant information — the server has no rate limiting, but the token space is 16^64. (4) The real risk model for this localhost tool is physical access to the machine, not remote timing attacks. P1 CRITICAL is wrong — timing-safe comparison is a nice-to-have (P3) for this context, not a critical security fix.",
+      "confidence_after_verification": 0.92,
+      "original_severity": "P1 CRITICAL"
+    }
+  ]
+}
