@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from config import AGENT_TIMEOUT_SECONDS, AGENTS
+from json_utils import extract_json as _extract_json_from_utils
 
 
 def _run_single_agent(agent_id: str, prompt: str, output_dir: Path) -> dict:
@@ -30,20 +31,28 @@ def _run_single_agent(agent_id: str, prompt: str, output_dir: Path) -> dict:
     try:
         # Use claude CLI in print mode (non-interactive)
         # -p/--print: non-interactive mode, prompt via stdin
-        # Use shell=True on Windows to find claude in PATH
+        # Use subprocess.Popen with stdin pipe (Windows compatible, no shell dependency)
         import os
         env = os.environ.copy()
         env["PYTHONIOENCODING"] = "utf-8"
         env["LANG"] = "en_US.UTF-8"
 
-        cmd = f'cat "{prompt_file}" | claude -p --model sonnet --output-format text'
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            timeout=AGENT_TIMEOUT_SECONDS,
-            shell=True,
+        with open(prompt_file, 'r', encoding='utf-8') as f:
+            prompt_content = f.read()
+        proc = subprocess.Popen(
+            ['claude', '-p', '--model', 'sonnet', '--output-format', 'text'],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
             env=env,
         )
+        stdout_str, stderr_str = proc.communicate(input=prompt_content, timeout=AGENT_TIMEOUT_SECONDS)
+        result = type('Result', (), {
+            'returncode': proc.returncode,
+            'stdout': stdout_str.encode('utf-8') if stdout_str else b'',
+            'stderr': stderr_str.encode('utf-8') if stderr_str else b'',
+        })()
         # Decode stdout/stderr manually with utf-8
         stdout = result.stdout.decode("utf-8", errors="replace") if result.stdout else ""
         stderr = result.stderr.decode("utf-8", errors="replace") if result.stderr else ""
@@ -105,68 +114,20 @@ def _run_single_agent(agent_id: str, prompt: str, output_dir: Path) -> dict:
 
 
 def _extract_json(text: str) -> dict | None:
-    """Try to extract a JSON object from agent output text."""
-    import re
+    """Try to extract a JSON object from agent output text.
 
-    if not text or len(text.strip()) < 10:
-        print(f"[AgentRunner] Output too short ({len(text)} chars)")
-        return None
+    Delegates to json_utils.extract_json with agent-specific fallbacks:
+    first tries strict key matching (findings/agent_id), then any dict with >= 3 keys.
+    """
+    # Pass 1: strict keys (findings or agent_id)
+    result = _extract_json_from_utils(text, strict_keys=True)
+    if result is not None:
+        return result
 
-    # Strategy 1: try parsing the whole text as JSON
-    try:
-        result = json.loads(text)
-        if isinstance(result, dict) and len(result) > 0:
-            return result
-    except json.JSONDecodeError:
-        pass
-
-    # Strategy 2: find JSON block in markdown code fence
-    json_blocks = re.findall(r"```(?:json)?\s*\n(.*?)\n```", text, re.DOTALL)
-    for block in json_blocks:
-        try:
-            result = json.loads(block)
-            if isinstance(result, dict) and len(result) > 0:
-                return result
-        except json.JSONDecodeError:
-            continue
-
-    # Strategy 3: find the first { ... } block (must contain "findings" or "agent_id")
-    brace_depth = 0
-    start = -1
-    for i, ch in enumerate(text):
-        if ch == "{":
-            if brace_depth == 0:
-                start = i
-            brace_depth += 1
-        elif ch == "}":
-            brace_depth -= 1
-            if brace_depth == 0 and start >= 0:
-                candidate = text[start:i + 1]
-                try:
-                    result = json.loads(candidate)
-                    if isinstance(result, dict) and ("findings" in result or "agent_id" in result):
-                        return result
-                except json.JSONDecodeError:
-                    start = -1
-
-    # Strategy 4: try to find any JSON object with at least 3 keys
-    brace_depth = 0
-    start = -1
-    for i, ch in enumerate(text):
-        if ch == "{":
-            if brace_depth == 0:
-                start = i
-            brace_depth += 1
-        elif ch == "}":
-            brace_depth -= 1
-            if brace_depth == 0 and start >= 0:
-                candidate = text[start:i + 1]
-                try:
-                    result = json.loads(candidate)
-                    if isinstance(result, dict) and len(result) >= 3:
-                        return result
-                except json.JSONDecodeError:
-                    start = -1
+    # Pass 2: any dict with at least 3 keys
+    result = _extract_json_from_utils(text, min_keys=3)
+    if result is not None:
+        return result
 
     print(f"[AgentRunner] Could not extract valid JSON from {len(text)} chars output")
     print(f"[AgentRunner] First 500 chars: {text[:500]}")

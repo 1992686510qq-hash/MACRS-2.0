@@ -3,7 +3,7 @@
 from pathlib import Path
 
 # === Paths ===
-MACRS_ROOT = Path("C:/Users/Administrator/Claude-Code/cc-tools/MACRS")
+MACRS_ROOT = Path(__file__).parent.parent  # coordinator/ 的上一级
 SKILLS_DIR = MACRS_ROOT / "skills"
 REPORTS_DIR = MACRS_ROOT / "reports"
 DOCS_DIR = MACRS_ROOT / "docs"

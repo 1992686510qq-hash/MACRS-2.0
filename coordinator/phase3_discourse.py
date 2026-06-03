@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
+from json_utils import extract_json as _extract_json
+
 
 # ---------------------------------------------------------------------------
 # Data model
@@ -114,49 +116,6 @@ SURFACE 类型如果提出了新发现，在 `new_finding` 中填入：
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _extract_json(text: str) -> dict | None:
-    """Best-effort JSON extraction from LLM output."""
-    if not text or len(text.strip()) < 10:
-        return None
-
-    # Strategy 1: whole text
-    try:
-        result = json.loads(text)
-        if isinstance(result, dict):
-            return result
-    except json.JSONDecodeError:
-        pass
-
-    # Strategy 2: fenced code block
-    blocks = re.findall(r"```(?:json)?\s*\n(.*?)\n```", text, re.DOTALL)
-    for block in blocks:
-        try:
-            result = json.loads(block)
-            if isinstance(result, dict):
-                return result
-        except json.JSONDecodeError:
-            continue
-
-    # Strategy 3: first balanced {...}
-    brace_depth = 0
-    start = -1
-    for i, ch in enumerate(text):
-        if ch == "{":
-            if brace_depth == 0:
-                start = i
-            brace_depth += 1
-        elif ch == "}":
-            brace_depth -= 1
-            if brace_depth == 0 and start >= 0:
-                try:
-                    result = json.loads(text[start : i + 1])
-                    if isinstance(result, dict):
-                        return result
-                except json.JSONDecodeError:
-                    start = -1
-    return None
-
 
 def _finding_to_text(finding: dict) -> str:
     """Render a single finding dict to a compact text block."""
@@ -526,15 +485,23 @@ class DiscoursePhase:
             tmp.write(prompt)
             tmp_path = tmp.name
 
-        cmd = f'cat "{tmp_path}" | claude -p --model sonnet --output-format text'
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                timeout=600,
-                shell=True,
+            with open(tmp_path, 'r', encoding='utf-8') as f:
+                prompt_content = f.read()
+            proc = subprocess.Popen(
+                ['claude', '-p', '--model', 'sonnet', '--output-format', 'text'],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
                 env=env,
             )
+            stdout_str, stderr_str = proc.communicate(input=prompt_content, timeout=600)
+            result = type('Result', (), {
+                'returncode': proc.returncode,
+                'stdout': stdout_str.encode('utf-8') if stdout_str else b'',
+                'stderr': stderr_str.encode('utf-8') if stderr_str else b'',
+            })()
             stdout = (
                 result.stdout.decode("utf-8", errors="replace")
                 if result.stdout
@@ -568,13 +535,13 @@ def apply_discourse_result(
         fid = f.get("id") or f.get("merged_id", "")
         delta = result.confidence_adjustments.get(fid, 0)
         f["confidence_discourse_delta"] = delta
-        # Clamp final confidence to [0, 1]
-        base = f.get("confidence", 0.5)
-        f["confidence_after_discourse"] = max(0.0, min(1.0, base + delta * 0.1))
+        # Clamp final confidence to [0, 100]
+        base = f.get("confidence", 50)
+        f["confidence_after_discourse"] = max(0, min(100, int(base + delta * 10)))
 
     for nf in result.new_findings:
-        nf["confidence"] = 0.6
-        nf["confidence_after_discourse"] = 0.6
+        nf["confidence"] = 60
+        nf["confidence_after_discourse"] = 60
         findings.append(nf)
 
     return findings

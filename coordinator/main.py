@@ -106,14 +106,22 @@ def run_lens(
             tmp.write(prompt)
             tmp_path = tmp.name
 
-        cmd = f'cat "{tmp_path}" | claude -p --model {lens.model} --output-format text'
-        result = subprocess.run(
-            cmd,
-            capture_output=True,
-            timeout=lens.timeout_seconds,
-            shell=True,
+        with open(tmp_path, 'r', encoding='utf-8') as f:
+            prompt_content = f.read()
+        proc = subprocess.Popen(
+            ['claude', '-p', '--model', lens.model, '--output-format', 'text'],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
             env=env,
         )
+        stdout, stderr = proc.communicate(input=prompt_content, timeout=lens.timeout_seconds)
+        result = type('Result', (), {
+            'returncode': proc.returncode,
+            'stdout': stdout.encode('utf-8') if stdout else b'',
+            'stderr': stderr.encode('utf-8') if stderr else b'',
+        })()
 
         elapsed = time.time() - start_time
         stdout = result.stdout.decode("utf-8", errors="replace") if result.stdout else ""
@@ -341,6 +349,7 @@ def _detect_user_facing(files: dict[str, str], args) -> bool:
     """Detect if changes affect user-facing components."""
     user_facing_patterns = LENS_CONFIG.get("user_facing_patterns", [
         "*.ui", "*.vue", "*.tsx", "*.jsx", "*.html", "*.css",
+        "*.scss", "*.less", "*.svelte", "*.astro",
     ])
 
     file_names = list(files.keys())
@@ -356,7 +365,7 @@ def _detect_user_facing(files: dict[str, str], args) -> bool:
     if any(p in all_content.lower() for p in cli_patterns):
         return True
 
-    return True  # Default to user-facing (conservative)
+    return False
 
 
 def _load_project_context(target_path: Path) -> str:
@@ -833,7 +842,7 @@ def _generate_markdown_report(report: dict) -> str:
         for f in findings:
             lines.append(f"### {f['id']}: {f['title']}")
             lines.append(f"- **File:** `{f['file']}:{f['line']}`")
-            lines.append(f"- **Confidence:** {f['confidence']:.2f}")
+            lines.append(f"- **Confidence:** {f['confidence']}/100")
             lines.append(f"- **Lens:** {f['lens_source']}")
             lines.append(f"- **Description:** {f['description']}")
             if f.get("suggestion"):
@@ -902,7 +911,7 @@ def phase7_autofix(
                 "message": f.get("description", ""),
                 "status": "open",
                 "disposition": f.get("validation", {}).get("disposition", ""),
-                "score": int(f.get("confidence", 0) * 100),
+                "score": int(f.get("confidence", 0)),
                 "category": f.get("category", ""),
             }
             for f in confirmed
@@ -1082,8 +1091,16 @@ def main():
     artifact_manager = None
     if args.autofix:
         from agent_runner import _run_single_agent
+        class _AgentRunnerAdapter:
+            """Adapter: wraps _run_single_agent(agent_id, prompt, output_dir)
+            to match AutoFixPhase's expected agent_runner.run(prompt, source_dir) interface."""
+            def __init__(self, fn):
+                self._fn = fn
+            def run(self, prompt: str, source_dir: str):
+                result = self._fn("autofix", prompt, Path(source_dir))
+                return result
         autofix_phase = AutoFixPhase(
-            agent_runner=_run_single_agent,
+            agent_runner=_AgentRunnerAdapter(_run_single_agent),
             source_dir=context["target_path"],
         )
         artifact_manager = ArtifactManager(

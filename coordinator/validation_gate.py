@@ -15,13 +15,14 @@ Usage:
 
 import json
 import logging
-import re
 import subprocess
 import time
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Optional
+
+from json_utils import extract_json as _extract_json
 
 logger = logging.getLogger(__name__)
 
@@ -168,45 +169,6 @@ Mark as:
 ```"""
 
 
-# ---------------------------------------------------------------------------
-# Utility Functions
-# ---------------------------------------------------------------------------
-
-def _extract_json(text: str) -> Optional[dict]:
-    """Extract a JSON object from potentially noisy text output."""
-    if not text or len(text.strip()) < 10:
-        return None
-
-    # Strategy 1: direct parse
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-
-    # Strategy 2: fenced code block
-    blocks = re.findall(r"```(?:json)?\s*\n(.*?)\n```", text, re.DOTALL)
-    for block in blocks:
-        try:
-            return json.loads(block)
-        except json.JSONDecodeError:
-            continue
-
-    # Strategy 3: first balanced { ... } block
-    brace_depth = 0
-    start = -1
-    for i, ch in enumerate(text):
-        if ch == "{":
-            if brace_depth == 0:
-                start = i
-            brace_depth += 1
-        elif ch == "}":
-            brace_depth -= 1
-            if brace_depth == 0 and start >= 0:
-                try:
-                    return json.loads(text[start:i + 1])
-                except json.JSONDecodeError:
-                    start = -1
-    return None
 
 
 def _call_llm(prompt: str, model: str = "sonnet", timeout: int = AGENT_TIMEOUT) -> Optional[dict]:
@@ -224,11 +186,23 @@ def _call_llm(prompt: str, model: str = "sonnet", timeout: int = AGENT_TIMEOUT) 
         prompt_file = f.name
 
     try:
-        cmd = f'cat "{prompt_file}" | claude -p --model {model} --output-format text'
+        with open(prompt_file, 'r', encoding='utf-8') as f:
+            prompt_content = f.read()
         start = time.time()
-        result = subprocess.run(
-            cmd, capture_output=True, timeout=timeout, shell=True, env=env,
+        proc = subprocess.Popen(
+            ['claude', '-p', '--model', model, '--output-format', 'text'],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
         )
+        stdout_str, stderr_str = proc.communicate(input=prompt_content, timeout=timeout)
+        result = type('Result', (), {
+            'returncode': proc.returncode,
+            'stdout': stdout_str.encode('utf-8') if stdout_str else b'',
+            'stderr': stderr_str.encode('utf-8') if stderr_str else b'',
+        })()
         elapsed = time.time() - start
         logger.info("LLM call completed in %.1fs (model=%s)", elapsed, model)
 
