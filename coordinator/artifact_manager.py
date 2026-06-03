@@ -12,6 +12,8 @@ from datetime import datetime
 import json
 from pathlib import Path
 
+from validation_gate import Disposition
+
 
 class FindingState(Enum):
     OPEN = "open"
@@ -21,21 +23,11 @@ class FindingState(Enum):
     REGRESSION = "regression"
 
 
-class Disposition(Enum):
-    BELOW_GATE = "below_gate"
-    PENDING_VALIDATION = "pending_validation"
-    DISPROVEN = "disproven"
-    UNCERTAIN = "uncertain"
-    CONFIRMED_MECHANICAL = "confirmed_mechanical"
-    CONFIRMED_PARTIAL = "confirmed_partial"
-    CONFIRMED_REGRESSION = "confirmed_regression"
-
-
 # 合法的状态流转表
 _VALID_TRANSITIONS: dict[FindingState, set[FindingState]] = {
     FindingState.OPEN: {FindingState.ATTEMPTED, FindingState.RESOLVED, FindingState.PARTIAL, FindingState.REGRESSION},
     FindingState.ATTEMPTED: {FindingState.RESOLVED, FindingState.PARTIAL, FindingState.REGRESSION},
-    FindingState.RESOLVED: set(),                          # 终态
+    FindingState.RESOLVED: {FindingState.REGRESSION},      # 允许 RESOLVED -> REGRESSION
     FindingState.PARTIAL: {FindingState.RESOLVED, FindingState.REGRESSION},
     FindingState.REGRESSION: {FindingState.ATTEMPTED},     # 可重新尝试
 }

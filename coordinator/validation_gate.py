@@ -22,7 +22,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from json_utils import extract_json as _extract_json
+from json_utils import extract_json
 from llm_client import call_claude
 
 logger = logging.getLogger(__name__)
@@ -184,7 +184,7 @@ def _call_llm(prompt: str, model: str = "sonnet", timeout: int = AGENT_TIMEOUT) 
             logger.error("LLM call failed (no output)")
             return None
 
-        return _extract_json(stdout)
+        return extract_json(stdout)
 
     except FileNotFoundError:
         logger.error("claude CLI not found. Install: npm install -g @anthropic-ai/claude-code")

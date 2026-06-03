@@ -43,7 +43,7 @@ from phase5_discourse import DiscoursePhase, DiscourseResult, apply_discourse_re
 from phase5_autofix import AutoFixPhase
 from artifact_manager import ArtifactManager
 from llm_client import call_claude
-from json_utils import extract_json as _extract_lens_json
+from json_utils import extract_json
 
 # Configure logging
 logging.basicConfig(
@@ -107,7 +107,7 @@ def run_lens(
             )
 
         # Parse JSON from output
-        parsed = _extract_lens_json(stdout)
+        parsed = extract_json(stdout)
         if parsed is None:
             logger.warning("Lens %s: could not parse JSON output", lens.id)
             return LensResult(

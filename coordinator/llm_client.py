@@ -6,11 +6,19 @@ All modules should import from here instead of wrapping subprocess directly.
 
 import os
 import shutil
+import signal
 import subprocess
-import tempfile
+import sys
 import time
-from pathlib import Path
 from typing import Optional
+
+
+def _kill_process_tree(proc):
+    """杀死进程树（跨平台）"""
+    if sys.platform == "win32":
+        os.system(f"taskkill /T /F /PID {proc.pid}")
+    else:
+        os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
 
 
 def call_claude(
@@ -38,18 +46,7 @@ def call_claude(
     env["PYTHONIOENCODING"] = "utf-8"
     env["LANG"] = "en_US.UTF-8"
 
-    # Write prompt to temp file to avoid shell escaping / stdin pipe issues
-    tmp_path = None
     try:
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".md", delete=False, encoding="utf-8"
-        ) as tmp:
-            tmp.write(prompt)
-            tmp_path = tmp.name
-
-        with open(tmp_path, "r", encoding="utf-8") as f:
-            prompt_content = f.read()
-
         proc = subprocess.Popen(
             [claude_bin, "-p", "--model", model, "--output-format", "text"],
             stdin=subprocess.PIPE,
@@ -59,16 +56,11 @@ def call_claude(
         )
 
         stdout_bytes, stderr_bytes = proc.communicate(
-            input=prompt_content.encode("utf-8"),
+            input=prompt.encode("utf-8"),
             timeout=timeout,
         )
 
         if proc.returncode != 0:
-            stderr = (
-                stderr_bytes.decode("utf-8", errors="replace")
-                if stderr_bytes
-                else ""
-            )
             return None
 
         stdout = (
@@ -79,13 +71,7 @@ def call_claude(
         return stdout.strip()
 
     except subprocess.TimeoutExpired:
-        proc.kill()
+        _kill_process_tree(proc)
         return None
     except FileNotFoundError:
         raise
-    finally:
-        if tmp_path:
-            try:
-                Path(tmp_path).unlink(missing_ok=True)
-            except OSError:
-                pass

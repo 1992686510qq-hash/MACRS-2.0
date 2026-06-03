@@ -5,13 +5,12 @@ Each agent runs independently with its own prompt.
 """
 
 import json
-import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from config import AGENT_TIMEOUT_SECONDS, AGENTS
-from json_utils import extract_json as _extract_json_from_utils
+from json_utils import extract_json
 from llm_client import call_claude
 
 
@@ -67,14 +66,6 @@ def _run_single_agent(agent_id: str, prompt: str, output_dir: Path) -> dict:
             "output_file": str(output_file),
         }
 
-    except subprocess.TimeoutExpired:
-        elapsed = time.time() - start_time
-        return {
-            "agent_id": agent_id,
-            "status": "TIMEOUT",
-            "error": f"Agent timed out after {AGENT_TIMEOUT_SECONDS}s",
-            "elapsed_seconds": round(elapsed, 1),
-        }
     except FileNotFoundError:
         return {
             "agent_id": agent_id,
@@ -96,12 +87,12 @@ def _extract_json(text: str) -> dict | None:
     first tries strict key matching (findings/agent_id), then any dict with >= 3 keys.
     """
     # Pass 1: strict keys (findings or agent_id)
-    result = _extract_json_from_utils(text, strict_keys=True)
+    result = extract_json(text, strict_keys=True)
     if result is not None:
         return result
 
     # Pass 2: any dict with at least 3 keys
-    result = _extract_json_from_utils(text, min_keys=3)
+    result = extract_json(text, min_keys=3)
     if result is not None:
         return result
 

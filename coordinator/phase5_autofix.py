@@ -15,16 +15,9 @@ import asyncio
 import logging
 from datetime import datetime
 
+from artifact_manager import FindingState as FixState
+
 logger = logging.getLogger(__name__)
-
-
-class FixState(Enum):
-    """修复状态枚举"""
-    OPEN = "open"                    # 待修复
-    ATTEMPTED = "attempted"          # 已尝试
-    RESOLVED = "resolved"            # 已解决
-    PARTIAL = "partial"              # 部分修复
-    REGRESSION = "regression"        # 回归
 
 
 class GateDisposition(Enum):

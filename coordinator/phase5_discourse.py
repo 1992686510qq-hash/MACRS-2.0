@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Optional
 
-from json_utils import extract_json as _extract_json
+from json_utils import extract_json
 from llm_client import call_claude
 
 
@@ -421,7 +421,7 @@ class DiscoursePhase:
 
         # Try JSON block from the entire text
         joined = "\n".join(raw_responses)
-        parsed_json = _extract_json(joined)
+        parsed_json = extract_json(joined)
         if parsed_json and "responses" in parsed_json:
             return parse_json_responses(parsed_json, reviewer)
 
@@ -459,7 +459,7 @@ class DiscoursePhase:
 
         # Extract new findings from SURFACE responses that carry new_finding
         new_findings: list[dict] = []
-        parsed_json = _extract_json(raw)
+        parsed_json = extract_json(raw)
         if parsed_json:
             for entry in parsed_json.get("responses", []):
                 nf = entry.get("new_finding")
