@@ -1,4 +1,4 @@
-"""MACRS Phase 3 - Discourse Mechanism.
+"""MACRS Phase 5 - Discourse Mechanism.
 
 After individual reviewers produce findings, the Discourse phase lets each
 reviewer react to the others' work.  Four response types are supported:

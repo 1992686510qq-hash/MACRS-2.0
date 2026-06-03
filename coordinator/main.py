@@ -214,45 +214,112 @@ def phase1_context_discovery(args) -> dict:
 
 
 def _detect_change_type(files: dict[str, str]) -> str:
-    """Heuristic detection of change type based on file patterns and content."""
+    """Heuristic detection of change type based on file patterns and content.
+
+    Uses a scoring system: filename matches (strong signal, weight 3) and
+    content pattern matches (weaker signal, weight 1-2) each add points to
+    a category.  The category with the highest total score wins.  Ties are
+    broken by a fixed priority order: security > feature > bugfix > refactor
+    > test > config > docs.
+    """
     import re
 
     all_content = "\n".join(files.values())
     file_names = " ".join(files.keys()).lower()
 
-    # Security indicators
-    security_patterns = [
-        r"password", r"secret", r"token", r"auth", r"crypto",
-        r"sql.*query", r"exec\(", r"eval\(", r"__import__",
-    ]
-    if any(re.search(p, all_content, re.IGNORECASE) for p in security_patterns):
-        # Check if files are auth/security related
-        if any(kw in file_names for kw in ("auth", "security", "login", "token", "crypto")):
-            return "security"
+    scores = {
+        "security": 0,
+        "feature": 0,
+        "bugfix": 0,
+        "refactor": 0,
+        "test": 0,
+        "config": 0,
+        "docs": 0,
+    }
 
-    # Feature indicators
+    # --- Filename-based indicators (strong signal, weight 3) ---
+
+    if any(kw in file_names for kw in (
+        "auth", "security", "login", "token", "crypto",
+        "encrypt", "decrypt", "hash", "credential",
+    )):
+        scores["security"] += 3
+
     if any(kw in file_names for kw in ("feat", "feature", "new", "add")):
-        return "feature"
+        scores["feature"] += 3
 
-    # Bugfix indicators
     if any(kw in file_names for kw in ("fix", "bug", "hotfix", "patch")):
-        return "bugfix"
+        scores["bugfix"] += 3
 
-    # Refactor indicators
-    if any(kw in file_names for kw in ("refactor", "clean", "reorganize")):
-        return "refactor"
+    if any(kw in file_names for kw in (
+        "refactor", "clean", "reorganize", "rename", "move",
+    )):
+        scores["refactor"] += 3
 
-    # Test files
-    if any(kw in file_names for kw in ("test", "spec", "__test__")):
-        return "test"
+    if any(kw in file_names for kw in ("test", "spec", "__test__", "__spec__")):
+        scores["test"] += 3
 
-    # Config files
-    if any(kw in file_names for kw in ("config", "settings", ".env", "yaml", "toml")):
-        return "config"
+    if any(kw in file_names for kw in (
+        "config", "settings", ".env", "yaml", "toml", ".ini", ".cfg",
+    )):
+        scores["config"] += 3
 
-    # Docs
-    if any(kw in file_names for kw in ("readme", "doc", ".md", ".rst")):
-        return "docs"
+    if any(kw in file_names for kw in ("readme", "doc", ".md", ".rst", "changelog")):
+        scores["docs"] += 3
+
+    # --- Content-based indicators (weaker signal, weight 1-2) ---
+
+    # Security: concrete vulnerability patterns (weight 2)
+    security_vuln_patterns = [
+        r"eval\s*\(", r"exec\s*\(", r"__import__\s*\(",
+        r"subprocess\.call.*shell\s*=\s*True",
+        r"sql.*(?:query|execute).*%",
+        r"pickle\.loads", r"yaml\.load\s*\([^)]*$",
+        r"hardcoded.*password", r"plaintext.*password",
+    ]
+    if any(re.search(p, all_content, re.IGNORECASE) for p in security_vuln_patterns):
+        scores["security"] += 2
+
+    # Security: auth/access class/function definitions (weight 1)
+    security_auth_patterns = [
+        r"(?:def|class)\s+\w*(?:auth|login|permission|access|credential)\w*",
+        r"(?:import|from)\s+\w*(?:crypto|hashlib|jwt|bcrypt)\w*",
+    ]
+    if any(re.search(p, all_content, re.IGNORECASE) for p in security_auth_patterns):
+        scores["security"] += 1
+
+    # Bugfix: error-handling and fix-related patterns (weight 1)
+    bugfix_patterns = [
+        r"except\s+\w+", r"raise\s+\w+", r"try\s*:",
+        r"logging\.(?:error|warning|critical)",
+        r"(?:fix|patch|workaround|hotfix|regression)",
+    ]
+    bugfix_hits = sum(1 for p in bugfix_patterns if re.search(p, all_content, re.IGNORECASE))
+    if bugfix_hits >= 2:
+        scores["bugfix"] += 1
+
+    # Feature: new class/function definitions (weight 1)
+    class_count = len(re.findall(r"class\s+\w+", all_content))
+    func_count = len(re.findall(r"def\s+\w+", all_content))
+    if class_count >= 3 or func_count >= 5:
+        scores["feature"] += 1
+
+    # Refactor: rename/move/extract patterns (weight 1)
+    refactor_patterns = [
+        r"(?:rename|move|extract|replace|reorganize|cleanup|deprecat)",
+    ]
+    if any(re.search(p, all_content, re.IGNORECASE) for p in refactor_patterns):
+        scores["refactor"] += 1
+
+    # --- Determine winner ---
+    max_score = max(scores.values())
+    if max_score == 0:
+        return "unknown"
+
+    # Return the first category with the max score (priority order)
+    for category in ("security", "feature", "bugfix", "refactor", "test", "config", "docs"):
+        if scores[category] == max_score:
+            return category
 
     return "unknown"
 

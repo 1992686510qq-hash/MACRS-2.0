@@ -47,12 +47,32 @@ def call_claude(
         )
 
     # Only pass safe, necessary environment variables to subprocess
+    # Whitelist of environment variables to pass to the claude CLI subprocess.
+    # Only safe, necessary variables are included to minimize information leakage.
     _SAFE_ENV_KEYS = {
-        "PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
-        "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "COMSPEC",
-        "LANG", "LC_ALL", "LC_CTYPE",
-        "NODE_PATH", "NPM_CONFIG_PREFIX",
-        "ANTHROPIC_API_KEY", "CLAUDE_API_KEY",
+        # --- OS & shell essentials ---
+        "PATH",               # Executable search path (required to find claude, node, etc.)
+        "HOME",               # Unix-style home directory (used by Node.js, npm)
+        "USERPROFILE",        # Windows-style home directory
+        "APPDATA",            # Windows per-user app data (npm cache, etc.)
+        "LOCALAPPDATA",       # Windows local app data
+        "SYSTEMROOT",         # Windows system directory
+        "WINDIR",             # Windows directory (alias of SYSTEMROOT)
+        "TEMP",               # Temporary directory (Unix convention)
+        "TMP",                # Temporary directory (Windows/convention)
+        "COMSPEC",            # Windows command interpreter path (cmd.exe)
+        # --- Locale (ensures UTF-8 output from child processes) ---
+        "LANG",               # POSIX locale setting
+        "LC_ALL",             # Override all locale categories
+        "LC_CTYPE",           # Character classification locale
+        # --- Node.js / npm ---
+        "NODE_PATH",          # Additional module search paths for Node.js
+        "NPM_CONFIG_PREFIX",  # Global npm install prefix
+        # --- API authentication ---
+        # NOTE: These keys are passed so the claude CLI can authenticate with
+        # the Anthropic API.  They are NOT logged or stored by MACRS itself.
+        "ANTHROPIC_API_KEY",  # Primary Anthropic API key
+        "CLAUDE_API_KEY",     # Alternative key name used by some claude CLI versions
     }
     env = {k: v for k, v in os.environ.items() if k in _SAFE_ENV_KEYS}
     env["PYTHONIOENCODING"] = "utf-8"
