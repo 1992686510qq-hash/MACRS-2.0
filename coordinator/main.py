@@ -42,6 +42,7 @@ from validation_gate import ValidationGate
 from phase3_discourse import DiscoursePhase, DiscourseResult, apply_discourse_result
 from phase5_autofix import AutoFixPhase
 from artifact_manager import ArtifactManager
+from llm_client import call_claude
 
 # Configure logging
 logging.basicConfig(
@@ -73,9 +74,6 @@ def run_lens(
     Returns:
         LensResult with findings or error info.
     """
-    import subprocess
-    import os
-
     start_time = time.time()
     code_files = context["files"]
 
@@ -93,46 +91,17 @@ def run_lens(
 
     logger.info("Running lens %s (%s) - model=%s", lens.id, lens.name, lens.model)
 
-    env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
-    env["LANG"] = "en_US.UTF-8"
-
     try:
-        # Write prompt to temp file to avoid shell escaping issues
-        import tempfile
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".md", delete=False, encoding="utf-8"
-        ) as tmp:
-            tmp.write(prompt)
-            tmp_path = tmp.name
-
-        with open(tmp_path, 'r', encoding='utf-8') as f:
-            prompt_content = f.read()
-        proc = subprocess.Popen(
-            ['claude', '-p', '--model', lens.model, '--output-format', 'text'],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=env,
-        )
-        stdout, stderr = proc.communicate(input=prompt_content, timeout=lens.timeout_seconds)
-        result = type('Result', (), {
-            'returncode': proc.returncode,
-            'stdout': stdout.encode('utf-8') if stdout else b'',
-            'stderr': stderr.encode('utf-8') if stderr else b'',
-        })()
+        stdout = call_claude(prompt, model=lens.model, timeout=lens.timeout_seconds)
 
         elapsed = time.time() - start_time
-        stdout = result.stdout.decode("utf-8", errors="replace") if result.stdout else ""
 
-        if result.returncode != 0:
-            stderr = result.stderr.decode("utf-8", errors="replace") if result.stderr else ""
-            logger.error("Lens %s failed (rc=%d): %s", lens.id, result.returncode, stderr[:300])
+        if stdout is None:
+            logger.error("Lens %s failed", lens.id)
             return LensResult(
                 lens_id=lens.id,
                 status="FAILED",
-                error=f"Exit code {result.returncode}: {stderr[:500]}",
+                error="claude CLI returned no output",
                 elapsed_seconds=round(elapsed, 1),
             )
 
@@ -163,15 +132,6 @@ def run_lens(
             elapsed_seconds=round(elapsed, 1),
         )
 
-    except subprocess.TimeoutExpired:
-        elapsed = time.time() - start_time
-        logger.error("Lens %s timed out after %ds", lens.id, lens.timeout_seconds)
-        return LensResult(
-            lens_id=lens.id,
-            status="TIMEOUT",
-            error=f"Timed out after {lens.timeout_seconds}s",
-            elapsed_seconds=round(elapsed, 1),
-        )
     except FileNotFoundError:
         return LensResult(
             lens_id=lens.id,
@@ -188,11 +148,6 @@ def run_lens(
             error=str(e),
             elapsed_seconds=round(elapsed, 1),
         )
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except (OSError, UnboundLocalError):
-            pass
 
 
 def _extract_lens_json(text: str) -> dict | None:
@@ -408,11 +363,12 @@ def phase2_parallel_reviews(context: dict, lens_manager: LensManager, output_dir
     """
     logger.info("Phase 2: Parallel Reviews (7 Lens)")
 
-    # Get applicable lenses
+    # Get applicable lenses (pass custom lens IDs from --lens CLI arg)
     applicable_lenses = lens_manager.get_applicable_lenses(
         change_type=context["change_type"],
         is_trivial=context["is_trivial"],
         is_user_facing=context["is_user_facing"],
+        custom_lens_ids=context.get("_custom_lens_ids"),
     )
 
     if not applicable_lenses:

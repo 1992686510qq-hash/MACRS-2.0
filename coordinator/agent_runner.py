@@ -12,6 +12,7 @@ from pathlib import Path
 
 from config import AGENT_TIMEOUT_SECONDS, AGENTS
 from json_utils import extract_json as _extract_json_from_utils
+from llm_client import call_claude
 
 
 def _run_single_agent(agent_id: str, prompt: str, output_dir: Path) -> dict:
@@ -29,43 +30,18 @@ def _run_single_agent(agent_id: str, prompt: str, output_dir: Path) -> dict:
     start_time = time.time()
 
     try:
-        # Use claude CLI in print mode (non-interactive)
-        # -p/--print: non-interactive mode, prompt via stdin
-        # Use subprocess.Popen with stdin pipe (Windows compatible, no shell dependency)
-        import os
-        env = os.environ.copy()
-        env["PYTHONIOENCODING"] = "utf-8"
-        env["LANG"] = "en_US.UTF-8"
-
         with open(prompt_file, 'r', encoding='utf-8') as f:
             prompt_content = f.read()
-        proc = subprocess.Popen(
-            ['claude', '-p', '--model', 'sonnet', '--output-format', 'text'],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=env,
-        )
-        stdout_str, stderr_str = proc.communicate(input=prompt_content, timeout=AGENT_TIMEOUT_SECONDS)
-        result = type('Result', (), {
-            'returncode': proc.returncode,
-            'stdout': stdout_str.encode('utf-8') if stdout_str else b'',
-            'stderr': stderr_str.encode('utf-8') if stderr_str else b'',
-        })()
-        # Decode stdout/stderr manually with utf-8
-        stdout = result.stdout.decode("utf-8", errors="replace") if result.stdout else ""
-        stderr = result.stderr.decode("utf-8", errors="replace") if result.stderr else ""
+
+        stdout = call_claude(prompt_content, model="sonnet", timeout=AGENT_TIMEOUT_SECONDS)
 
         elapsed = time.time() - start_time
-        stdout = stdout.strip()
-        stderr = stderr.strip()
 
-        if result.returncode != 0:
+        if stdout is None:
             return {
                 "agent_id": agent_id,
                 "status": "FAILED",
-                "error": f"Exit code {result.returncode}: {stderr}",
+                "error": "claude CLI returned no output",
                 "elapsed_seconds": round(elapsed, 1),
             }
 

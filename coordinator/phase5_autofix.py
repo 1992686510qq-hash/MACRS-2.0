@@ -359,16 +359,75 @@ class AutoFixPhase:
         return results
 
     def _is_finding_fixed(self, response: Any, finding_id: str) -> bool:
-        """检查 finding 是否已修复"""
-        # 实现根据 response 判断的逻辑
+        """检查 finding 是否已被修复
+
+        策略 1: 检查是否有对应的 diff
+        策略 2: 检查响应中是否明确提到修复
+        """
+        response_text = str(response) if response else ""
+
+        # 策略 1: 检查是否有对应的 diff
+        if self._extract_diff(response_text):
+            return True
+
+        # 策略 2: 检查响应中是否明确提到修复
+        fix_indicators = [
+            f"fixed {finding_id}",
+            f"resolved {finding_id}",
+            f"修复了 {finding_id}",
+            f"已修复",
+        ]
+        for indicator in fix_indicators:
+            if indicator.lower() in response_text.lower():
+                return True
+
         return False
 
     def _is_partially_fixed(self, response: Any, finding_id: str) -> bool:
         """检查 finding 是否部分修复"""
+        response_text = str(response) if response else ""
+        partial_indicators = [
+            f"partially fixed {finding_id}",
+            f"partial fix {finding_id}",
+            f"部分修复",
+        ]
+        for indicator in partial_indicators:
+            if indicator.lower() in response_text.lower():
+                return True
         return False
 
-    def _extract_diff(self, response: Any, finding_id: str) -> Optional[str]:
-        """提取特定 finding 的 diff"""
+    def _extract_diff(self, response: Any, finding_id: str = None) -> Optional[str]:
+        """从响应中提取 diff
+
+        策略 1: 提取 ```diff 代码块
+        策略 2: 提取 unified diff 格式
+        """
+        import re
+
+        response_text = str(response) if response else ""
+
+        # 策略 1: 提取 ```diff 代码块
+        diff_match = re.search(r'```diff\s*(.*?)\s*```', response_text, re.DOTALL)
+        if diff_match:
+            return diff_match.group(1)
+
+        # 策略 2: 提取 unified diff 格式
+        diff_pattern = r'---.*?\n\+\+\+.*?\n@@.*?@@'
+        if re.search(diff_pattern, response_text, re.DOTALL):
+            # 提取完整的 diff 块
+            start = response_text.find('---')
+            # 查找 diff 结束位置（下一个非 diff 行或文本结束）
+            remaining = response_text[start:]
+            lines = remaining.split('\n')
+            diff_lines = []
+            for line in lines:
+                if line.startswith(('---', '+++', '@@', '+', '-', ' ')):
+                    diff_lines.append(line)
+                elif diff_lines:
+                    break
+            if diff_lines:
+                return '\n'.join(diff_lines)
+
         return None
 
     # ========== Phase 9: Post-fix 审查 ==========
@@ -521,19 +580,44 @@ class AutoFixPhase:
             return False
 
     def _generate_reverse_diff(self, diff: str) -> str:
-        """生成反向 diff"""
-        lines = diff.split("\n")
-        reversed_lines = []
+        """生成反向 diff
+
+        正确处理 unified diff 格式:
+        - 交换 +/- 前缀
+        - 交换 @@ 行号范围
+        - 保持上下文行不变
+        """
+        import re
+
+        lines = diff.split('\n')
+        result = []
 
         for line in lines:
-            if line.startswith("+"):
-                reversed_lines.append("-" + line[1:])
-            elif line.startswith("-"):
-                reversed_lines.append("+" + line[1:])
+            if line.startswith('---'):
+                # 保持文件头不变
+                result.append(line)
+            elif line.startswith('+++'):
+                # 保持文件头不变
+                result.append(line)
+            elif line.startswith('-'):
+                # 原来的删除变成添加
+                result.append('+' + line[1:])
+            elif line.startswith('+'):
+                # 原来的添加变成删除
+                result.append('-' + line[1:])
+            elif line.startswith('@@'):
+                # 交换行号范围
+                match = re.search(r'@@ -(\d+),?(\d*) \+(\d+),?(\d*) @@', line)
+                if match:
+                    old_start, old_count, new_start, new_count = match.groups()
+                    result.append(f'@@ -{new_start},{new_count} +{old_start},{old_count} @@')
+                else:
+                    result.append(line)
             else:
-                reversed_lines.append(line)
+                # 上下文行保持不变
+                result.append(line)
 
-        return "\n".join(reversed_lines)
+        return '\n'.join(result)
 
     # ========== 辅助方法 ==========
 

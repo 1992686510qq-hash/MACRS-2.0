@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Optional
 
 from json_utils import extract_json as _extract_json
+from llm_client import call_claude
 
 logger = logging.getLogger(__name__)
 
@@ -173,55 +174,21 @@ Mark as:
 
 def _call_llm(prompt: str, model: str = "sonnet", timeout: int = AGENT_TIMEOUT) -> Optional[dict]:
     """Call claude CLI with a prompt and return parsed JSON response."""
-    import os
-    env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
-    env["LANG"] = "en_US.UTF-8"
-
-    # Write prompt to temp file to avoid shell escaping issues
-    import tempfile
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".md", delete=False,
-                                      encoding="utf-8") as f:
-        f.write(prompt)
-        prompt_file = f.name
-
+    start = time.time()
     try:
-        with open(prompt_file, 'r', encoding='utf-8') as f:
-            prompt_content = f.read()
-        start = time.time()
-        proc = subprocess.Popen(
-            ['claude', '-p', '--model', model, '--output-format', 'text'],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            env=env,
-        )
-        stdout_str, stderr_str = proc.communicate(input=prompt_content, timeout=timeout)
-        result = type('Result', (), {
-            'returncode': proc.returncode,
-            'stdout': stdout_str.encode('utf-8') if stdout_str else b'',
-            'stderr': stderr_str.encode('utf-8') if stderr_str else b'',
-        })()
+        stdout = call_claude(prompt, model=model, timeout=timeout)
         elapsed = time.time() - start
         logger.info("LLM call completed in %.1fs (model=%s)", elapsed, model)
 
-        if result.returncode != 0:
-            stderr = result.stderr.decode("utf-8", errors="replace") if result.stderr else ""
-            logger.error("LLM call failed (rc=%d): %s", result.returncode, stderr[:500])
+        if stdout is None:
+            logger.error("LLM call failed (no output)")
             return None
 
-        stdout = result.stdout.decode("utf-8", errors="replace") if result.stdout else ""
         return _extract_json(stdout)
 
-    except subprocess.TimeoutExpired:
-        logger.error("LLM call timed out after %ds", timeout)
-        return None
     except FileNotFoundError:
         logger.error("claude CLI not found. Install: npm install -g @anthropic-ai/claude-code")
         return None
-    finally:
-        Path(prompt_file).unlink(missing_ok=True)
 
 
 def _chunk_list(items: list, chunk_size: int) -> list[list]:

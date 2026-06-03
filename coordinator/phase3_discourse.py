@@ -22,6 +22,7 @@ from enum import Enum
 from typing import Optional
 
 from json_utils import extract_json as _extract_json
+from llm_client import call_claude
 
 
 # ---------------------------------------------------------------------------
@@ -470,53 +471,11 @@ class DiscoursePhase:
 
     @staticmethod
     def _default_agent_runner(prompt: str) -> str | None:
-        """Run a prompt through the claude CLI (same pattern as agent_runner)."""
-        import os
-        import subprocess
-        import tempfile
-
-        env = os.environ.copy()
-        env["PYTHONIOENCODING"] = "utf-8"
-        env["LANG"] = "en_US.UTF-8"
-
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".md", delete=False, encoding="utf-8"
-        ) as tmp:
-            tmp.write(prompt)
-            tmp_path = tmp.name
-
+        """Run a prompt through the claude CLI via shared llm_client."""
         try:
-            with open(tmp_path, 'r', encoding='utf-8') as f:
-                prompt_content = f.read()
-            proc = subprocess.Popen(
-                ['claude', '-p', '--model', 'sonnet', '--output-format', 'text'],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                env=env,
-            )
-            stdout_str, stderr_str = proc.communicate(input=prompt_content, timeout=600)
-            result = type('Result', (), {
-                'returncode': proc.returncode,
-                'stdout': stdout_str.encode('utf-8') if stdout_str else b'',
-                'stderr': stderr_str.encode('utf-8') if stderr_str else b'',
-            })()
-            stdout = (
-                result.stdout.decode("utf-8", errors="replace")
-                if result.stdout
-                else ""
-            )
-            if result.returncode != 0:
-                return None
-            return stdout.strip()
-        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return call_claude(prompt, model="sonnet", timeout=600)
+        except FileNotFoundError:
             return None
-        finally:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
 
 
 # ---------------------------------------------------------------------------
