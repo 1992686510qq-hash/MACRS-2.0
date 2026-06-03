@@ -99,20 +99,34 @@ class AutoFixPhase:
         """消毒 LLM 输出，移除潜在危险内容"""
         import re
 
-        # 移除可能的 prompt 注入
+        # Prompt injection patterns (expanded set)
         dangerous_patterns = [
-            r'ignore previous instructions',
-            r'system prompt',
-            r'you are now',
-            r'act as',
+            r'ignore\s+previous\s+instructions',
+            r'ignore\s+above\s+instructions',
+            r'forget\s+(your|all|previous)\s+instructions',
+            r'system\s*prompt',
+            r'you\s+are\s+now',
+            r'act\s+as',
+            r'pretend\s+(you|to)\s+(are|be)',
+            r'do\s+not\s+follow',
+            r'override\s+(your|system)',
+            r'disregard\s+(your|all|previous)',
+            r'new\s+instructions?\s*:',
+            r'<\s*system\s*>',
+            r'<\s*/\s*system\s*>',
+            r'\[INST\]',
+            r'\[/INST\]',
+            r'<\|im_start\|>',
+            r'<\|im_end\|>',
         ]
         for pattern in dangerous_patterns:
             output = re.sub(pattern, '', output, flags=re.IGNORECASE)
 
-        # 移除可能的代码注入
-        output = output.replace('```python', '```')
-        output = output.replace('```bash', '```')
-        output = output.replace('```sh', '```')
+        # Remove code block language specifiers that could enable code execution
+        output = re.sub(r'```(?:python|bash|sh|shell|powershell|cmd|bat|zsh|fish)\b', '```', output, flags=re.IGNORECASE)
+
+        # Remove inline code execution markers
+        output = re.sub(r'!!\s*(?:python|bash|sh|exec|eval)\b', '', output, flags=re.IGNORECASE)
 
         return output
 
@@ -583,6 +597,11 @@ class AutoFixPhase:
             logger.error("No diff to rollback")
             return False
 
+        # Validate that all file paths in the diff stay within source_dir
+        if not self._validate_diff_paths(fix.diff):
+            logger.error("Rollback rejected: diff contains paths outside source_dir")
+            return False
+
         try:
             # 生成反向 diff
             reverse_diff = self._generate_reverse_diff(fix.diff)
@@ -599,6 +618,25 @@ class AutoFixPhase:
         except Exception as e:
             logger.error(f"Rollback failed: {e}")
             return False
+
+    def _validate_diff_paths(self, diff: str) -> bool:
+        """Validate that all file paths in a diff are within source_dir."""
+        import re
+        source_resolved = self.source_dir.resolve()
+
+        # Extract file paths from unified diff headers (--- a/path, +++ b/path)
+        path_pattern = re.compile(r'^(?:---|\+\+\+)\s+(?:[abi]/)?(.+)$', re.MULTILINE)
+        for match in path_pattern.finditer(diff):
+            file_path = match.group(1).strip()
+            if file_path == '/dev/null':
+                continue
+            resolved = (self.source_dir / file_path).resolve()
+            try:
+                resolved.relative_to(source_resolved)
+            except ValueError:
+                logger.warning("Path traversal in diff blocked: %s", file_path)
+                return False
+        return True
 
     def _generate_reverse_diff(self, diff: str) -> str:
         """生成反向 diff

@@ -16,7 +16,11 @@ from typing import Optional
 def _kill_process_tree(proc):
     """杀死进程树（跨平台）"""
     if sys.platform == "win32":
-        os.system(f"taskkill /T /F /PID {proc.pid}")
+        subprocess.run(
+            ["taskkill", "/T", "/F", "/PID", str(proc.pid)],
+            check=False,
+            capture_output=True,
+        )
     else:
         os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
 
@@ -42,7 +46,15 @@ def call_claude(
             "claude CLI not found. Install: npm install -g @anthropic-ai/claude-code"
         )
 
-    env = os.environ.copy()
+    # Only pass safe, necessary environment variables to subprocess
+    _SAFE_ENV_KEYS = {
+        "PATH", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA",
+        "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "COMSPEC",
+        "LANG", "LC_ALL", "LC_CTYPE",
+        "NODE_PATH", "NPM_CONFIG_PREFIX",
+        "ANTHROPIC_API_KEY", "CLAUDE_API_KEY",
+    }
+    env = {k: v for k, v in os.environ.items() if k in _SAFE_ENV_KEYS}
     env["PYTHONIOENCODING"] = "utf-8"
     env["LANG"] = "en_US.UTF-8"
 

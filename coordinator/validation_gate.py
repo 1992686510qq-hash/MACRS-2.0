@@ -621,7 +621,15 @@ class ValidationGate:
         if not file_path:
             return None
 
-        full_path = self.source_dir / file_path
+        # Path traversal protection: resolve and verify the path is within source_dir
+        full_path = (self.source_dir / file_path).resolve()
+        source_resolved = self.source_dir.resolve()
+        try:
+            full_path.relative_to(source_resolved)
+        except ValueError:
+            logger.warning("Path traversal attempt blocked: %s (resolved outside source_dir)", file_path)
+            return None
+
         if not full_path.exists():
             return None
 
