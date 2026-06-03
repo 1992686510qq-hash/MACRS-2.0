@@ -1,0 +1,88 @@
+{
+  "validations": [
+    {
+      "finding_id": "L6-003",
+      "disposition": "CONFIRMED_PARTIAL",
+      "confidence": 80,
+      "reasoning": "llm_client.py lines 44-51 confirm: prompt is written to temp file with delete=False, then read back, then sent via stdin. The temp file write+read is entirely redundant since the prompt is already in memory as a string. On SIGKILL/power loss the file persists. However, the prompt content is typically a code review prompt (source code snippets), not credentials. The real issue is the unnecessary file I/O, not just crash persistence."
+    },
+    {
+      "finding_id": "L7-001",
+      "disposition": "CONFIRMED_PARTIAL",
+      "confidence": 75,
+      "reasoning": "main.py _extract_lens_json (lines 153-194) is nearly identical to json_utils.extract_json — confirmed DRY violation. However, the claim that agent_runner._extract_json also duplicates is inaccurate: agent_runner.py line 14 imports json_utils and _extract_json (line 92) delegates to _extract_json_from_utils with strict_keys/min_keys wrapping. phase3_discourse.py (line 25) also correctly imports from json_utils. So the duplication is limited to main.py only, not 4 copies as claimed."
+    },
+    {
+      "finding_id": "L7-002",
+      "disposition": "CONFIRMED_PARTIAL",
+      "confidence": 70,
+      "reasoning": "legacy/ directory exists with phase2_validator.py and phase3_skeptic.py. main.py does NOT import from legacy/. The concern about maintenance burden is valid. However, since they are already segregated into a legacy/ directory, they may already be considered deprecated. Without reading the legacy files in detail, the structural observation is correct but the severity depends on whether anyone still uses them."
+    },
+    {
+      "finding_id": "L7-003",
+      "disposition": "CONFIRMED_PARTIAL",
+      "confidence": 70,
+      "reasoning": "The claim '无真并行' is factually incorrect — subprocess I/O releases GIL, so ThreadPoolExecutor does provide real parallelism for subprocess work. The hardcoded max_workers=3 in agent_runner.py (line 118) is confirmed, but main.py (line 388) uses len(applicable_lenses) and discourse (line 438) uses len(tasks), so the hardcoding is limited to agent_runner. The temp file redundancy in llm_client.py is confirmed (write then read back before stdin)."
+    },
+    {
+      "finding_id": "L7-005",
+      "disposition": "CONFIRMED_PARTIAL",
+      "confidence": 70,
+      "reasoning": "phase5_autofix.py _generate_reverse_diff (lines 582-620) does simple +/- prefix swap and @@ line number swap with no format validation. _extract_diff (lines 399-431) uses basic regex. The lack of validation is real, but practical severity depends on LLM output quality. The rollback mechanism (line 570) sends the reverse diff to an agent_runner which would likely fail gracefully on malformed input."
+    },
+    {
+      "finding_id": "L2-001",
+      "disposition": "CONFIRMED_MECHANICAL",
+      "confidence": 95,
+      "reasoning": "main.py clearly shows: Phase 5 = Discourse (line 9, function phase5_discourse at line 570), imported from phase3_discourse.py (line 42). Phase 7 = Auto-Fix (line 10, function phase7_autofix at line 826), imported from phase5_autofix.py (line 43). The file names directly contradict the pipeline phase numbers. This is a clear, verifiable naming inconsistency."
+    },
+    {
+      "finding_id": "L2-002",
+      "disposition": "CONFIRMED_MECHANICAL",
+      "confidence": 95,
+      "reasoning": "main.py _extract_lens_json (lines 153-194) implements the exact same 3 strategies as json_utils.extract_json (lines 9-79): (1) direct json.loads, (2) fenced code block regex, (3) balanced brace scanning. The implementations are functionally identical. main.py even has sys.path.insert at line 32 ensuring json_utils is importable. This is a textbook DRY violation."
+    },
+    {
+      "finding_id": "L2-005",
+      "disposition": "CONFIRMED_MECHANICAL",
+      "confidence": 90,
+      "reasoning": "main.py _AgentRunnerAdapter.run (lines 1055-1057) returns the raw dict from _run_single_agent (agent_id, status, data, elapsed_seconds). AutoFixPhase._is_finding_fixed (line 367) calls str(response) on this dict and searches for natural language patterns like 'fixed {finding_id}'. Python str() of a dict produces repr format with escaped characters (\\\\n not actual newlines), so regex patterns expecting natural language will not match. The _extract_diff regex also breaks on escaped content. This means all fixes default to ATTEMPTED state."
+    },
+    {
+      "finding_id": "L2-010",
+      "disposition": "CONFIRMED_PARTIAL",
+      "confidence": 75,
+      "reasoning": "artifact_manager.py confirms: add_finding (line 129), update_state (line 163), update_disposition (line 176), update_score (line 190) each call self.save(). Each save() does full JSON serialization + atomic write via tmp.replace (line 106). The I/O amplification is real for batch scenarios. However, current usage (Phase 7 single fix) doesn't trigger this. Marked as suggestion severity, which is appropriate."
+    },
+    {
+      "finding_id": "L2-011",
+      "disposition": "CONFIRMED_PARTIAL",
+      "confidence": 75,
+      "reasoning": "agent_runner.py line 118 confirms ThreadPoolExecutor(max_workers=3) is hardcoded. The current AGENTS config has exactly 3 agents, so it works today. The concern about future scalability when agent count changes is valid but speculative. main.py already uses len(applicable_lenses) for its ThreadPoolExecutor (line 388), showing the pattern exists elsewhere."
+    },
+    {
+      "finding_id": "L2-012",
+      "disposition": "CONFIRMED_MECHANICAL",
+      "confidence": 90,
+      "reasoning": "validation_gate.py _validate_deep_lane (lines 439-458) is a serial for-loop: `for sf in candidates: ... response = _call_llm(prompt, model='opus')`. Each Opus call blocks until completion. With 10 deep lane candidates at 10-30s each, total latency is 100-300s. This contrasts with Phase 2's parallel lens execution. The serial execution is clearly visible in the code."
+    },
+    {
+      "finding_id": "L1-001",
+      "disposition": "CONFIRMED_MECHANICAL",
+      "confidence": 90,
+      "reasoning": "phase5_autofix.py line 610: regex `r'@@ -(\\d+),?(\\d*) \\+(\\d+),?(\\d*) @@'`. When count is missing (e.g., `@@ -1 +1 @@`), the regex captures empty strings for count groups, producing `@@ -1, +1, @@` — invalid diff format with trailing commas. Additionally, --- and +++ header lines are passed through unchanged (lines 596-601), so the reverse diff is incomplete for git-style diffs. The bug is clearly demonstrable."
+    },
+    {
+      "finding_id": "L1-002",
+      "disposition": "CONFIRMED_PARTIAL",
+      "confidence": 75,
+      "reasoning": "artifact_manager.py line 87: `Disposition(item['disposition']) if item.get('disposition') else None`. Empty string is safe (falsy -> None). But an invalid non-empty string like 'confirm' (not 'confirmed_mechanical') raises ValueError. The outer try/except (line 76) only catches json.JSONDecodeError and OSError, not ValueError. So corrupted disposition data crashes _load, losing all findings. The risk is real but requires corrupted JSON."
+    },
+    {
+      "finding_id": "L1-003",
+      "disposition": "DISPROVEN",
+      "confidence": 85,
+      "reasoning": "The finding claims 'run_lens 函数只捕获了 FileNotFoundError' but main.py lines 135-150 show both `except FileNotFoundError` AND `except Exception as e` blocks. Additionally, call_claude (llm_client.py lines 81-83) catches subprocess.TimeoutExpired internally and returns None. So TimeoutExpired never propagates to run_lens, and even if other exceptions occur, they are caught by the general Exception handler. The premise of the finding is incorrect."
+    }
+  ]
+}

@@ -102,6 +102,27 @@ class AutoFixPhase:
         self._fix_history: list[FixResult] = []
         self._regression_reports: list[RegressionReport] = []
 
+    def _sanitize_llm_output(self, output: str) -> str:
+        """消毒 LLM 输出，移除潜在危险内容"""
+        import re
+
+        # 移除可能的 prompt 注入
+        dangerous_patterns = [
+            r'ignore previous instructions',
+            r'system prompt',
+            r'you are now',
+            r'act as',
+        ]
+        for pattern in dangerous_patterns:
+            output = re.sub(pattern, '', output, flags=re.IGNORECASE)
+
+        # 移除可能的代码注入
+        output = output.replace('```python', '```')
+        output = output.replace('```bash', '```')
+        output = output.replace('```sh', '```')
+
+        return output
+
     # ========== Phase 7: 门控 ==========
 
     def load_and_gate(self, artifact_path: str) -> list[FixCandidate]:
@@ -301,6 +322,10 @@ class AutoFixPhase:
             source_dir=str(self.source_dir),
         )
 
+        # 消毒 LLM 输出
+        if isinstance(response, str):
+            response = self._sanitize_llm_output(response)
+
         # 解析修复结果
         return self._parse_fix_response(response, candidates)
 
@@ -476,6 +501,10 @@ class AutoFixPhase:
             prompt=review_prompt,
             source_dir=str(self.source_dir),
         )
+
+        # 消毒 LLM 输出
+        if isinstance(review_response, str):
+            review_response = self._sanitize_llm_output(review_response)
 
         # 检测回归
         regression = self._detect_regression(fix, review_response)

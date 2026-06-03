@@ -39,10 +39,11 @@ from prompt_builder import read_target_files
 from lens_manager import LensManager, LensDefinition, LensResult
 from team_config import load_team_config, TeamConfig
 from validation_gate import ValidationGate
-from phase3_discourse import DiscoursePhase, DiscourseResult, apply_discourse_result
+from phase5_discourse import DiscoursePhase, DiscourseResult, apply_discourse_result
 from phase5_autofix import AutoFixPhase
 from artifact_manager import ArtifactManager
 from llm_client import call_claude
+from json_utils import extract_json as _extract_lens_json
 
 # Configure logging
 logging.basicConfig(
@@ -148,50 +149,6 @@ def run_lens(
             error=str(e),
             elapsed_seconds=round(elapsed, 1),
         )
-
-
-def _extract_lens_json(text: str) -> dict | None:
-    """Extract JSON object from lens output text."""
-    if not text or len(text.strip()) < 10:
-        return None
-
-    # Strategy 1: direct parse
-    try:
-        result = json.loads(text)
-        if isinstance(result, dict):
-            return result
-    except json.JSONDecodeError:
-        pass
-
-    # Strategy 2: fenced code block
-    import re
-    blocks = re.findall(r"```(?:json)?\s*\n(.*?)\n```", text, re.DOTALL)
-    for block in blocks:
-        try:
-            result = json.loads(block)
-            if isinstance(result, dict):
-                return result
-        except json.JSONDecodeError:
-            continue
-
-    # Strategy 3: first balanced { ... }
-    brace_depth = 0
-    start = -1
-    for i, ch in enumerate(text):
-        if ch == "{":
-            if brace_depth == 0:
-                start = i
-            brace_depth += 1
-        elif ch == "}":
-            brace_depth -= 1
-            if brace_depth == 0 and start >= 0:
-                try:
-                    result = json.loads(text[start : i + 1])
-                    if isinstance(result, dict):
-                        return result
-                except json.JSONDecodeError:
-                    start = -1
-    return None
 
 
 # ============================================================
