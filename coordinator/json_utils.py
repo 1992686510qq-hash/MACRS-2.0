@@ -51,10 +51,27 @@ def extract_json(
             continue
 
     # Strategy 3: first balanced { ... }
+    # Track whether we are inside a JSON string to avoid counting
+    # escaped braces (e.g., "{" or "}") as structural delimiters.
     brace_depth = 0
     start = -1
+    in_string = False
+    escape_next = False
     for i, ch in enumerate(text):
-        if ch == "{":
+        if escape_next:
+            # Previous char was a backslash inside a string; skip this char
+            escape_next = False
+            continue
+        if in_string:
+            if ch == "\\":
+                escape_next = True
+            elif ch == '"':
+                in_string = False
+            continue
+        # Not inside a string
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
             if brace_depth == 0:
                 start = i
             brace_depth += 1

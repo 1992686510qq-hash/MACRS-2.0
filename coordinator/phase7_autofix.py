@@ -118,6 +118,13 @@ class AutoFixPhase:
             r'\[/INST\]',
             r'<\|im_start\|>',
             r'<\|im_end\|>',
+            r'BEGIN\s+PROMPT',
+            r'END\s+PROMPT',
+            r'BEGIN\s+INSTRUCTION',
+            r'END\s+INSTRUCTION',
+            r'<\|endoftext\|>',
+            r'<\|start_header_id\|>',
+            r'<\|end_header_id\|>',
         ]
         for pattern in dangerous_patterns:
             output = re.sub(pattern, '', output, flags=re.IGNORECASE)
@@ -127,6 +134,15 @@ class AutoFixPhase:
 
         # Remove inline code execution markers
         output = re.sub(r'!!\s*(?:python|bash|sh|exec|eval)\b', '', output, flags=re.IGNORECASE)
+
+        # Neutralize shell command injection patterns in diff content
+        output = re.sub(r'`[^`]*(?:rm\s+-rf|chmod|curl|wget|nc\s|ncat|bash\s+-i|/dev/tcp)[^`]*`', '[SANITIZED]', output, flags=re.IGNORECASE)
+
+        # Remove embedded URLs that could exfiltrate data
+        output = re.sub(r'https?://[^\s<>"]+', '[URL_REMOVED]', output)
+
+        # Remove base64-encoded payloads that could hide malicious content
+        output = re.sub(r'(?:base64\s*[,:]\s*)?[A-Za-z0-9+/]{100,}={0,2}', '[BASE64_REMOVED]', output)
 
         return output
 
@@ -606,6 +622,13 @@ class AutoFixPhase:
             # 生成反向 diff
             reverse_diff = self._generate_reverse_diff(fix.diff)
 
+            # Re-validate reverse diff paths (TOCTOU protection:
+            # the reverse diff may have been modified between initial
+            # validation and application)
+            if not self._validate_diff_paths(reverse_diff):
+                logger.error("Rollback rejected: reverse diff contains paths outside source_dir")
+                return False
+
             # 应用反向 diff
             self.agent_runner.run(
                 prompt=f"Apply the following reverse diff to rollback:\n{reverse_diff}",
@@ -620,16 +643,37 @@ class AutoFixPhase:
             return False
 
     def _validate_diff_paths(self, diff: str) -> bool:
-        """Validate that all file paths in a diff are within source_dir."""
+        """Validate that all file paths in a diff are within source_dir.
+
+        Handles unified diff headers with various formats:
+        - Standard: --- a/path, +++ b/path
+        - No prefix: --- path, +++ path
+        - With timestamps: --- a/path 2024-01-01 00:00:00
+        - With mode: --- a/path	100644
+        """
         import re
         source_resolved = self.source_dir.resolve()
 
-        # Extract file paths from unified diff headers (--- a/path, +++ b/path)
-        path_pattern = re.compile(r'^(?:---|\+\+\+)\s+(?:[abi]/)?(.+)$', re.MULTILINE)
+        # Extract file paths from unified diff headers.
+        # Matches --- or +++ followed by optional a/b/i prefix, then the path.
+        # Strips trailing timestamps (digits/spaces/colons) and tab-separated mode info.
+        path_pattern = re.compile(
+            r'^(?:---|\+\+\+)\s+(?:\w/)?(.+?)(?:\t[\d]+)?(?:\s+\d{4}-\d{2}-\d{2}.*)?$',
+            re.MULTILINE
+        )
         for match in path_pattern.finditer(diff):
             file_path = match.group(1).strip()
             if file_path == '/dev/null':
                 continue
+            # Normalize path separators
+            file_path = file_path.replace('\\', '/')
+            # Block absolute paths and path traversal
+            if file_path.startswith('/') or file_path.startswith('\\'):
+                logger.warning("Absolute path in diff blocked: %s", file_path)
+                return False
+            if '..' in file_path.split('/'):
+                logger.warning("Path traversal in diff blocked: %s", file_path)
+                return False
             resolved = (self.source_dir / file_path).resolve()
             try:
                 resolved.relative_to(source_resolved)

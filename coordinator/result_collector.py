@@ -31,10 +31,10 @@ def validate_agent_output(data: dict) -> list[str]:
             if field not in finding:
                 errors.append(f"Finding[{i}] missing field: {field}")
 
-        # Validate confidence range
+        # Validate confidence range (0-100 scale, consistent with system)
         conf = finding.get("confidence")
-        if conf is not None and (conf < 0 or conf > 1):
-            errors.append(f"Finding[{i}] confidence out of range [0,1]: {conf}")
+        if conf is not None and (conf < 0 or conf > 100):
+            errors.append(f"Finding[{i}] confidence out of range [0,100]: {conf}")
 
         # Validate line_range format
         lr = finding.get("line_range")

@@ -47,6 +47,14 @@ AGENTS = {
             "你审查时的核心问题是：'这段代码会加速还是延缓系统的技术债务累积？'"
         ),
     },
+    "autofix": {
+        "name": "AutoFix Agent",
+        "skill": "autofix",
+        "philosophy": (
+            "你是代码自动修复专家。根据审查发现的问题，生成精确的 unified diff 格式修复补丁。"
+            "你只修复已确认的机械性问题，不进行大规模重构。"
+        ),
+    },
 }
 
 # === Agent Model Config ===

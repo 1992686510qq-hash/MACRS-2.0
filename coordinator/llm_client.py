@@ -69,8 +69,14 @@ def call_claude(
         "NODE_PATH",          # Additional module search paths for Node.js
         "NPM_CONFIG_PREFIX",  # Global npm install prefix
         # --- API authentication ---
-        # NOTE: These keys are passed so the claude CLI can authenticate with
-        # the Anthropic API.  They are NOT logged or stored by MACRS itself.
+        # SECURITY NOTE: These keys are passed so the claude CLI can authenticate
+        # with the Anthropic API.  They are NOT logged or stored by MACRS itself.
+        # Risk mitigation:
+        #   1. Keys are only passed to the claude CLI subprocess, never written to disk
+        #   2. Debug output files are redacted (see main.py _redact_sensitive_data)
+        #   3. If a more secure credential store (e.g., OS keychain) is available,
+        #      consider migrating to it in a future version.
+        #   4. Users should use short-lived / scoped API keys where possible.
         "ANTHROPIC_API_KEY",  # Primary Anthropic API key
         "CLAUDE_API_KEY",     # Alternative key name used by some claude CLI versions
     }

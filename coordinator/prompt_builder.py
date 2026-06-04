@@ -4,17 +4,62 @@ Reads target code files and constructs complete prompts for Agent A/B/C.
 """
 
 import json
+import re
 from pathlib import Path
 from config import AGENTS, SKILL_PATHS
 
+# Maximum file size to read (1 MB per file)
+MAX_FILE_SIZE_BYTES = 1 * 1024 * 1024
+# Maximum total content size (10 MB)
+MAX_TOTAL_SIZE_BYTES = 10 * 1024 * 1024
+
+
+def _sanitize_content_for_llm(content: str) -> str:
+    """Sanitize file content before injecting into LLM prompts.
+
+    Neutralizes common prompt injection patterns found in source code
+    (e.g., comments that try to override system instructions).
+    """
+    injection_patterns = [
+        r'(?i)ignore\s+(all\s+)?(previous|above|prior)\s+instructions',
+        r'(?i)ignore\s+(all\s+)?(previous|above|prior)\s+prompts',
+        r'(?i)forget\s+(your|all|previous)\s+instructions',
+        r'(?i)you\s+are\s+now\s+\w+',
+        r'(?i)act\s+as\s+(?:a\s+)?\w+',
+        r'(?i)pretend\s+(you|to)\s+(are|be)',
+        r'(?i)override\s+(your|system)\s+(instructions|prompt)',
+        r'(?i)new\s+instructions?\s*:',
+        r'(?i)disregard\s+(your|all|previous)',
+        r'<\s*system\s*>',
+        r'<\s*/\s*system\s*>',
+        r'\[INST\]',
+        r'\[/INST\]',
+        r'<\|im_start\|>',
+        r'<\|im_end\|>',
+    ]
+    for pattern in injection_patterns:
+        content = re.sub(pattern, '[SANITIZED]', content)
+    return content
+
 
 def read_target_files(target_path: str) -> dict[str, str]:
-    """Read all target files and return {relative_path: content}."""
+    """Read all target files and return {relative_path: content}.
+
+    Applies file size limits to prevent DoS, and sanitizes content
+    to mitigate prompt injection risks.
+    """
     target = Path(target_path)
     files = {}
+    total_size = 0
 
     if target.is_file():
-        files[str(target)] = target.read_text(encoding="utf-8", errors="replace")
+        size = target.stat().st_size
+        if size > MAX_FILE_SIZE_BYTES:
+            raise ValueError(
+                f"File exceeds size limit ({size} > {MAX_FILE_SIZE_BYTES}): {target}"
+            )
+        content = target.read_text(encoding="utf-8", errors="replace")
+        files[str(target)] = _sanitize_content_for_llm(content)
     elif target.is_dir():
         # Code file extensions to include
         code_exts = {
@@ -29,9 +74,17 @@ def read_target_files(target_path: str) -> dict[str, str]:
                 parts = f.parts
                 if any(p in parts for p in ("node_modules", "vendor", ".git", "__pycache__", "dist", "build")):
                     continue
+                # Check file size
+                size = f.stat().st_size
+                if size > MAX_FILE_SIZE_BYTES:
+                    continue  # skip oversized files
+                if total_size + size > MAX_TOTAL_SIZE_BYTES:
+                    break  # stop reading more files
                 rel = f.relative_to(target)
                 try:
-                    files[str(rel)] = f.read_text(encoding="utf-8", errors="replace")
+                    content = f.read_text(encoding="utf-8", errors="replace")
+                    files[str(rel)] = _sanitize_content_for_llm(content)
+                    total_size += size
                 except Exception:
                     pass  # skip unreadable files
     return files

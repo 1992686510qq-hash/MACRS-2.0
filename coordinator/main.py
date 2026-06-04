@@ -55,6 +55,39 @@ logger = logging.getLogger("MACRS")
 
 
 # ============================================================
+# Sensitive Data Redaction
+# ============================================================
+
+def _redact_sensitive_data(text: str) -> str:
+    """Redact potentially sensitive patterns before writing to disk.
+
+    Masks API keys, tokens, passwords, and other credential-like strings
+    so that debug files do not leak secrets.
+    """
+    import re
+
+    redaction_patterns = [
+        # API keys and tokens (various formats)
+        (r'(?:api[_-]?key|token|secret|password|passwd|credential|auth)\s*[=:]\s*["\']?([A-Za-z0-9_\-\.]{20,})', r'[REDACTED]'),
+        # Bearer tokens
+        (r'Bearer\s+[A-Za-z0-9_\-\.]+', 'Bearer [REDACTED]'),
+        # AWS-style keys
+        (r'(?:AKIA|ASIA)[A-Z0-9]{16}', '[REDACTED_AWS_KEY]'),
+        # Generic long hex/base64 strings that look like secrets
+        (r'(?:sk-|pk-|rk_live_|sk_live_|pk_live_)[A-Za-z0-9]{20,}', '[REDACTED_KEY]'),
+        # JWT tokens
+        (r'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}', '[REDACTED_JWT]'),
+        # Private keys
+        (r'-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----', '[REDACTED_PRIVATE_KEY]'),
+    ]
+
+    for pattern, replacement in redaction_patterns:
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+
+    return text
+
+
+# ============================================================
 # Lens Execution
 # ============================================================
 
@@ -86,9 +119,9 @@ def run_lens(
         other_lens_findings=context.get("other_lens_findings", []),
     )
 
-    # Save prompt for debugging
+    # Save prompt for debugging (with sensitive data redacted)
     prompt_file = output_dir / f"prompt-{lens.id.lower()}.md"
-    prompt_file.write_text(prompt, encoding="utf-8")
+    prompt_file.write_text(_redact_sensitive_data(prompt), encoding="utf-8")
 
     logger.info("Running lens %s (%s) - model=%s", lens.id, lens.name, lens.model)
 
