@@ -90,12 +90,8 @@ def call_claude(
     env["PYTHONIOENCODING"] = "utf-8"
     env["LANG"] = "en_US.UTF-8"
 
-    # Build CLI command with model-specific flags
+    # Build CLI command
     cmd = [claude_bin, "-p", "--model", model, "--output-format", "text"]
-    # opus models need explicit max-tokens to avoid truncated JSON output
-    if "opus" in model.lower():
-        cmd.extend(["--max-tokens", "16384"])
-
     for attempt in range(max_retries + 1):
         try:
             proc = subprocess.Popen(
