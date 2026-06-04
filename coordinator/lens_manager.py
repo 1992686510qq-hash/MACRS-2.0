@@ -310,6 +310,9 @@ class LensManager:
 
         return prompt
 
+    # Maximum characters for the combined review scope to prevent opus timeout
+    MAX_TOTAL_CHARS = 60000
+
     def _build_review_scope(self, code_files: dict[str, str]) -> str:
         """Build the review scope section from target files.
 
@@ -325,14 +328,28 @@ class LensManager:
         total_lines = 0
         file_list = []
         code_blocks = []
+        current_chars = 0
+        truncated = False
 
         for filepath, content in code_files.items():
             lines = content.split("\n")
             total_lines += len(lines)
             file_list.append(filepath)
-            code_blocks.append(f"### File: {filepath}\n```\n{content}\n```")
 
-        header = f"审查文件列表 ({len(file_list)} 个文件, {total_lines} 行):\n"
+            block = f"### File: {filepath}\n```\n{content}\n```"
+            # Check if adding this block would exceed the limit
+            if current_chars + len(block) > self.MAX_TOTAL_CHARS and code_blocks:
+                remaining = len(code_files) - len(code_blocks)
+                code_blocks.append(f"### [Truncated: {remaining} more files omitted to stay within size limit]")
+                truncated = True
+                break
+            code_blocks.append(block)
+            current_chars += len(block)
+
+        header = f"审查文件列表 ({len(file_list)} 个文件, {total_lines} 行"
+        if truncated:
+            header += f", 截断于 {self.MAX_TOTAL_CHARS} 字符"
+        header += "):\n"
         header += "\n".join(f"  - {f}" for f in file_list)
         header += "\n\n---\n\n"
         header += "\n\n".join(code_blocks)

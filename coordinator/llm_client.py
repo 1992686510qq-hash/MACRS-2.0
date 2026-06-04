@@ -4,13 +4,17 @@ Provides a single, consistent interface for calling the claude CLI.
 All modules should import from here instead of wrapping subprocess directly.
 """
 
+import logging
 import os
+import random
 import shutil
 import signal
 import subprocess
 import sys
 import time
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 
 def _kill_process_tree(proc):
@@ -29,6 +33,7 @@ def call_claude(
     prompt: str,
     model: str = "sonnet",
     timeout: int = 600,
+    max_retries: int = 2,
 ) -> Optional[str]:
     """Call claude CLI with a prompt and return raw text output.
 
@@ -36,6 +41,7 @@ def call_claude(
         prompt: The prompt text to send to claude.
         model: Model to use (sonnet, opus, etc.).
         timeout: Timeout in seconds.
+        max_retries: Maximum number of retries on transient failures.
 
     Returns:
         Raw text output from claude, or None on failure.
@@ -84,32 +90,79 @@ def call_claude(
     env["PYTHONIOENCODING"] = "utf-8"
     env["LANG"] = "en_US.UTF-8"
 
-    try:
-        proc = subprocess.Popen(
-            [claude_bin, "-p", "--model", model, "--output-format", "text"],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=env,
-        )
+    # Build CLI command with model-specific flags
+    cmd = [claude_bin, "-p", "--model", model, "--output-format", "text"]
+    # opus models need explicit max-tokens to avoid truncated JSON output
+    if "opus" in model.lower():
+        cmd.extend(["--max-tokens", "16384"])
 
-        stdout_bytes, stderr_bytes = proc.communicate(
-            input=prompt.encode("utf-8"),
-            timeout=timeout,
-        )
+    for attempt in range(max_retries + 1):
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+            )
 
-        if proc.returncode != 0:
+            stdout_bytes, stderr_bytes = proc.communicate(
+                input=prompt.encode("utf-8"),
+                timeout=timeout,
+            )
+
+            if proc.returncode != 0:
+                stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip() if stderr_bytes else ""
+                logger.error(
+                    "claude CLI exited with code %d (model=%s, attempt=%d/%d): %s",
+                    proc.returncode, model, attempt + 1, max_retries + 1,
+                    stderr_text[:500] if stderr_text else "(no stderr)"
+                )
+                # Retry on non-zero exit (may be transient rate-limit or server error)
+                if attempt < max_retries:
+                    delay = (2 ** attempt) + random.uniform(0, 1)
+                    logger.info("Retrying in %.1fs...", delay)
+                    time.sleep(delay)
+                    continue
+                return None
+
+            stdout = (
+                stdout_bytes.decode("utf-8", errors="replace")
+                if stdout_bytes
+                else ""
+            )
+            result = stdout.strip()
+
+            # Detect empty output (model produced nothing)
+            if not result:
+                stderr_text = stderr_bytes.decode("utf-8", errors="replace").strip() if stderr_bytes else ""
+                logger.error(
+                    "claude CLI returned empty output (model=%s, attempt=%d/%d). stderr: %s",
+                    model, attempt + 1, max_retries + 1,
+                    stderr_text[:500] if stderr_text else "(no stderr)"
+                )
+                if attempt < max_retries:
+                    delay = (2 ** attempt) + random.uniform(0, 1)
+                    logger.info("Retrying in %.1fs...", delay)
+                    time.sleep(delay)
+                    continue
+                return None
+
+            return result
+
+        except subprocess.TimeoutExpired:
+            _kill_process_tree(proc)
+            logger.error(
+                "claude CLI timed out after %ds (model=%s, attempt=%d/%d)",
+                timeout, model, attempt + 1, max_retries + 1,
+            )
+            if attempt < max_retries:
+                delay = (2 ** attempt) + random.uniform(0, 1)
+                logger.info("Retrying in %.1fs...", delay)
+                time.sleep(delay)
+                continue
             return None
+        except FileNotFoundError:
+            raise
 
-        stdout = (
-            stdout_bytes.decode("utf-8", errors="replace")
-            if stdout_bytes
-            else ""
-        )
-        return stdout.strip()
-
-    except subprocess.TimeoutExpired:
-        _kill_process_tree(proc)
-        return None
-    except FileNotFoundError:
-        raise
+    return None

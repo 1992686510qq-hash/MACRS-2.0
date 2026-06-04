@@ -435,39 +435,69 @@ def phase2_parallel_reviews(context: dict, lens_manager: LensManager, output_dir
     logger.info("  Applicable lenses: %s", [l.id for l in applicable_lenses])
     logger.info("  Models: %s", {l.id: l.model for l in applicable_lenses})
 
-    # Run lenses in parallel
+    # Run lenses: non-ensemble lenses in parallel first, then L7 (ensemble) serially
     all_findings = []
     lens_results = {}
 
     phase2_dir = output_dir / "phase2"
     phase2_dir.mkdir(parents=True, exist_ok=True)
 
-    with ThreadPoolExecutor(max_workers=len(applicable_lenses)) as executor:
-        futures = {
-            executor.submit(run_lens, lens, context, lens_manager, phase2_dir): lens
-            for lens in applicable_lenses
-        }
+    # Split lenses: non-ensemble vs ensemble (L7)
+    non_ensemble_lenses = [l for l in applicable_lenses if l.run_condition != "ensemble"]
+    ensemble_lenses = [l for l in applicable_lenses if l.run_condition == "ensemble"]
 
-        for future in as_completed(futures):
-            lens = futures[future]
-            try:
-                result = future.result()
-                lens_results[lens.id] = result
+    # --- Phase 2a: Run non-ensemble lenses in parallel ---
+    if non_ensemble_lenses:
+        logger.info("  Phase 2a: Running %d non-ensemble lenses in parallel", len(non_ensemble_lenses))
+        with ThreadPoolExecutor(max_workers=len(non_ensemble_lenses)) as executor:
+            futures = {
+                executor.submit(run_lens, lens, context, lens_manager, phase2_dir): lens
+                for lens in non_ensemble_lenses
+            }
 
-                if result.status == "OK":
-                    # Tag findings with lens source
-                    for finding in result.findings:
-                        finding["_lens_source"] = lens.id
-                        finding["_lens_model"] = lens.model
-                    all_findings.extend(result.findings)
-                    logger.info("  %s: %d findings (%.1fs)", lens.id, len(result.findings), result.elapsed_seconds)
-                else:
-                    logger.warning("  %s: %s - %s", lens.id, result.status, result.error)
-            except Exception as e:
-                logger.error("  %s: exception - %s", lens.id, e)
-                lens_results[lens.id] = LensResult(
-                    lens_id=lens.id, status="FAILED", error=str(e)
-                )
+            for future in as_completed(futures):
+                lens = futures[future]
+                try:
+                    result = future.result()
+                    lens_results[lens.id] = result
+
+                    if result.status == "OK":
+                        # Tag findings with lens source
+                        for finding in result.findings:
+                            finding["_lens_source"] = lens.id
+                            finding["_lens_model"] = lens.model
+                        all_findings.extend(result.findings)
+                        logger.info("  %s: %d findings (%.1fs)", lens.id, len(result.findings), result.elapsed_seconds)
+                    else:
+                        logger.warning("  %s: %s - %s", lens.id, result.status, result.error)
+                except Exception as e:
+                    logger.error("  %s: exception - %s", lens.id, e)
+                    lens_results[lens.id] = LensResult(
+                        lens_id=lens.id, status="FAILED", error=str(e)
+                    )
+
+    # --- Phase 2b: Run ensemble lenses (L7) serially with collected findings ---
+    for lens in ensemble_lenses:
+        logger.info("  Phase 2b: Running ensemble lens %s serially (%d prior findings)", lens.id, len(all_findings))
+        # Inject other_lens_findings into context so L7 can see them
+        enriched_context = {**context, "other_lens_findings": list(all_findings)}
+        try:
+            result = run_lens(lens, enriched_context, lens_manager, phase2_dir)
+            lens_results[lens.id] = result
+
+            if result.status == "OK":
+                for finding in result.findings:
+                    finding["_lens_source"] = lens.id
+                    finding["_lens_model"] = lens.model
+                all_findings.extend(result.findings)
+                logger.info("  %s: %d findings (%.1fs)", lens.id, len(result.findings), result.elapsed_seconds)
+            else:
+                logger.warning("  %s: %s - %s", lens.id, result.status, result.error)
+        except Exception as e:
+            logger.error("  %s: exception - %s", lens.id, e)
+            lens_results[lens.id] = LensResult(
+                lens_id=lens.id, status="FAILED", error=str(e)
+            )
 
     # Save combined results
     _save_lens_summary(lens_results, all_findings, phase2_dir)
